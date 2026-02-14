@@ -1,3 +1,4 @@
+
 export const parseMMSS = (input: string): number => {
   const parts = input.split(':').map(Number);
   if (parts.length === 2) {
@@ -19,8 +20,8 @@ export const computeChunkWindows = (
   durationSec: number, 
   chunkSizeSec: number, 
   overlapSec: number
-): import('../types').ChunkWindow[] => {
-  const chunks: import('../types').ChunkWindow[] = [];
+): import('../types').Chunk[] => {
+  const chunks: import('../types').Chunk[] = [];
   let index = 0;
   
   // We advance by chunkSizeSec each time
@@ -40,7 +41,12 @@ export const computeChunkWindows = (
       clipEnd,
       primaryStart,
       primaryEnd,
-      status: 'pending'
+      status: 'pending',
+      // Explicitly init new spec fields to undefined for clarity
+      phaseARawCount: undefined,
+      phaseBAddedCount: undefined,
+      interactionId: undefined,
+      actionCount: 0
     });
     index++;
   }

@@ -6,11 +6,13 @@ function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 font-sans">
+    <div className="h-full bg-gray-900 text-gray-100 font-sans overflow-hidden">
       {!activeProjectId ? (
-        <Dashboard onOpenProject={setActiveProjectId} />
+        <div className="h-full overflow-y-auto">
+          <Dashboard onOpenProject={setActiveProjectId} />
+        </div>
       ) : (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="h-full p-6 max-w-7xl mx-auto flex flex-col">
           <AnalysisView 
             projectId={activeProjectId} 
             onBack={() => setActiveProjectId(null)} 

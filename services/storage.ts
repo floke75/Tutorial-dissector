@@ -1,4 +1,5 @@
-import { ProjectData, ProjectSummary } from '../types';
+
+import { Project, ProjectSummary } from '../types';
 
 const INDEX_KEY = 'td_projects_index';
 const PROJ_PREFIX = 'td_project_';
@@ -18,7 +19,7 @@ export const getProjects = (): ProjectSummary[] => {
 export const createProject = (): string => {
   const id = generateId();
   const now = Date.now();
-  const newProject: ProjectData = {
+  const newProject: Project = {
     id,
     name: 'Untitled Analysis',
     updatedAt: now,
@@ -65,14 +66,14 @@ export const createProject = (): string => {
   return id;
 };
 
-export const getProject = (id: string): ProjectData | null => {
+export const getProject = (id: string): Project | null => {
   try {
     const data = localStorage.getItem(PROJ_PREFIX + id);
     return data ? JSON.parse(data) : null;
   } catch { return null; }
 };
 
-export const saveProject = (data: ProjectData) => {
+export const saveProject = (data: Project) => {
   const now = Date.now();
   const updated = { ...data, updatedAt: now };
   
