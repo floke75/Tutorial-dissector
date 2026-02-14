@@ -1,3 +1,4 @@
+
 export interface ActionTarget {
   element: string;
   location: string;
@@ -20,34 +21,47 @@ export type ActionType =
   | 'ui_response' 
   | 'transition' 
   | 'narration_cue'
-  | 'chunk_boundary'; // Added for internal use
+  | 'chunk_boundary'; 
+
+export type ActionConfidence = 'high' | 'medium' | 'low';
+export type ActorType = 'user' | 'system' | 'narrator';
+export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
+export type ProcessingStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
 
 export interface ActionItem {
   timestamp: string;
   action_type: ActionType;
-  actor: 'user' | 'system' | 'narrator';
+  actor: ActorType;
   target: ActionTarget;
   detail: string;
   result: string | null;
   context_note: string | null;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: ActionConfidence;
   // Internal tracking
   chunkIndex?: number;
 }
 
-export interface ChunkWindow {
+export interface Chunk {
   index: number;
+  
+  // Time windows
   clipStart: number;
   clipEnd: number;
   primaryStart: number;
   primaryEnd: number;
-  status: 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
+  
+  status: ChunkStatus;
   errorMsg?: string;
-  actionCount?: number;
+  
+  // Analysis Artifacts (Mapped from Allium Spec)
+  phaseARawCount?: number;   // Count of actions detected in stateless phase
+  phaseBAddedCount?: number; // Count of new actions merged in stateful phase
+  interactionId?: string;    // The Gemini Session ID for this chunk's processing
+  actionCount?: number;      // Total finalized actions for this chunk
 }
 
 export interface ProcessingState {
-  status: 'idle' | 'running' | 'paused' | 'completed';
+  status: ProcessingStatus;
   currentChunkIndex: number;
   totalActions: number;
   totalTokens: number;
@@ -59,6 +73,15 @@ export interface PhaseAResponse {
   actions: ActionItem[];
 }
 
+export interface UIState {
+  application: string;
+  active_file: string | null;
+  visible_panels: string[];
+  active_tool: string | null;
+  open_dialogs: string[];
+  other_state: string;
+}
+
 export interface PhaseBResponse {
   chunk_processed: { 
     number: number; 
@@ -67,35 +90,37 @@ export interface PhaseBResponse {
   new_actions_added: number;
   duplicates_removed: number;
   conflicts_resolved: string[];
-  current_ui_state: {
-    application: string;
-    active_file: string | null;
-    visible_panels: string[];
-    active_tool: string | null;
-    open_dialogs: string[];
-    other_state: string;
-  };
+  current_ui_state: UIState;
   cumulative_action_count: number;
   validated_segment_events: ActionItem[]; 
 }
 
-// --- New Types for Project Management ---
+export interface VideoMetadata {
+    url: string;
+    title?: string;
+    duration?: number;
+}
 
 export interface ProjectSummary {
   id: string;
   name: string;
   videoUrl: string;
   updatedAt: number;
-  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  status: ProcessingStatus;
   actionCount: number;
 }
 
-export interface ProjectData extends ProjectSummary {
+export interface Project extends ProjectSummary {
   durationInput: string;
   chunkSize: number;
   overlap: number;
-  chunks: ChunkWindow[];
+  
+  chunks: Chunk[];
   actions: ActionItem[];
+  
+  // Runtime State
   procState: ProcessingState;
-  latestUIState: PhaseBResponse['current_ui_state'] | null;
+  
+  // Context State (from Spec: active_application, etc.)
+  latestUIState: UIState | null;
 }
