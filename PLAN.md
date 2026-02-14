@@ -31,9 +31,10 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
 ```javascript
 { type: 'video', uri: 'https://www.youtube.com/watch?v=VIDEO_ID', mime_type: 'video/*' }  
   
-19. **Output access patterns differ:**  
-    - ==generateContent()== → ==response.candidates[0].content.parts[0].text==  
-    - Interactions API → ==interaction.outputs[interaction.outputs.length - 1].text==  
+
+**Output access patterns differ:**  
+- `generateContent()` → `response.candidates[0].content.parts[0].text`  
+- Interactions API → `interaction.outputs[interaction.outputs.length - 1].text`
   
 ### Architecture (hybrid clipping + stateful memory)  
   
