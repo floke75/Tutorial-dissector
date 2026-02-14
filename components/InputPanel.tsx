@@ -11,10 +11,9 @@ interface InputPanelProps {
   setOverlap: (n: number) => void;
   onStart: () => void;
   disabled: boolean;
-  hasSavedSession: boolean;
-  onResumeSession: () => void;
-  onSaveSession: () => void;
-  lastSavedTime: string | null;
+  onBack: () => void;
+  projectName: string;
+  setProjectName: (s: string) => void;
 }
 
 export const InputPanel: React.FC<InputPanelProps> = ({
@@ -28,35 +27,35 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   setOverlap,
   onStart,
   disabled,
-  hasSavedSession,
-  onResumeSession,
-  onSaveSession,
-  lastSavedTime
+  onBack,
+  projectName,
+  setProjectName
 }) => {
   return (
     <div className="bg-gray-850 p-6 rounded-xl border border-gray-750 shadow-lg">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-blue-400">Configuration</h2>
-        <div className="flex gap-2">
-            {hasSavedSession && !disabled && (
-                <button 
-                  onClick={onResumeSession}
-                  className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded transition border border-gray-600"
-                >
-                  Resume Session
-                </button>
-            )}
-             <button 
-                  onClick={onSaveSession}
-                  disabled={!videoUrl}
-                  className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded transition border border-gray-600 disabled:opacity-50"
-                  title={lastSavedTime ? `Last saved: ${lastSavedTime}` : "Save current progress"}
-                >
-                  Save
-             </button>
-        </div>
+      <div className="flex justify-between items-center mb-6">
+        <button 
+          onClick={onBack}
+          className="text-sm text-gray-400 hover:text-white flex items-center gap-1 transition"
+        >
+          ← Dashboard
+        </button>
+        <span className="text-xs text-gray-600 bg-gray-900 px-2 py-1 rounded border border-gray-800">
+          Autosave Enabled
+        </span>
       </div>
       
+      <div className="mb-6">
+        <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">Project Name</label>
+        <input 
+          type="text" 
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          placeholder="Untitled Project"
+          className="w-full bg-transparent border-b border-gray-700 text-xl font-bold text-white focus:border-blue-500 focus:outline-none py-1"
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Video Input */}
         <div className="space-y-4">
@@ -124,14 +123,11 @@ export const InputPanel: React.FC<InputPanelProps> = ({
         </div>
       </div>
 
-      <div className="mt-8 flex justify-between items-center">
-         <span className="text-xs text-gray-500">
-            {lastSavedTime && `Last saved: ${lastSavedTime}`}
-         </span>
+      <div className="mt-8">
         <button 
           onClick={onStart}
           disabled={disabled || !videoUrl || !durationInput}
-          className={`px-8 py-3 rounded-lg font-bold text-white transition-colors ${
+          className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
             disabled || !videoUrl || !durationInput
               ? 'bg-gray-700 cursor-not-allowed' 
               : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/50'

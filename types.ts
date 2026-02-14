@@ -76,6 +76,26 @@ export interface PhaseBResponse {
     other_state: string;
   };
   cumulative_action_count: number;
-  // We added this field to the prompt to get the actual data back
   validated_segment_events: ActionItem[]; 
+}
+
+// --- New Types for Project Management ---
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  videoUrl: string;
+  updatedAt: number;
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  actionCount: number;
+}
+
+export interface ProjectData extends ProjectSummary {
+  durationInput: string;
+  chunkSize: number;
+  overlap: number;
+  chunks: ChunkWindow[];
+  actions: ActionItem[];
+  procState: ProcessingState;
+  latestUIState: PhaseBResponse['current_ui_state'] | null;
 }

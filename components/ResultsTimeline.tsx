@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem } from '../types';
 
 interface ResultsTimelineProps {
@@ -8,6 +8,7 @@ interface ResultsTimelineProps {
 export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => {
   const [filterType, setFilterType] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const filteredActions = useMemo(() => {
     return actions.filter(a => {
@@ -18,6 +19,13 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => 
       return matchesType && matchesSearch;
     });
   }, [actions, filterType, searchTerm]);
+
+  // Auto-scroll to bottom when new actions are added
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [actions.length]);
 
   const getTypeColor = (type: string) => {
     switch(type) {
@@ -166,6 +174,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => 
             </div>
           );
         })}
+        {/* Scroll anchor */}
+        <div ref={bottomRef} />
       </div>
     </div>
   );
