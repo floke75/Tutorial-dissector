@@ -86,7 +86,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       actions,
       procState,
       latestUIState,
-      status: procState.status === 'running' ? 'running' : 'idle', // Simple status derived
+      status: procState.status, // Fixed: use exact status instead of deriving 'idle'
       actionCount: actions.length
     };
     saveProject(saveData);
@@ -227,7 +227,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         // [Allium Rule: CompletePhaseB]
         // State Transition: analyzing_phase_b -> completed
         // Capture interaction ID and final counts
-        const newActions = result.validated_segment_events ?? phaseAActions;
+        const newActionsRaw = result.validated_segment_events ?? phaseAActions;
+        // Inject chunkIndex as per Allium spec
+        const newActions = newActionsRaw.map(a => ({ ...a, chunkIndex: chunk.index }));
         const addedCount = result.new_actions_added ?? newActions.length;
 
         setLatestUIState(result.current_ui_state);
