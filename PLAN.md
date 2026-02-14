@@ -14,16 +14,17 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
 4. **All Interactions API fields use ==snake_case==**, not camelCase. Using camelCase causes silent failures.  
 5. **Temperature:** Keep at default (1.0). Control reasoning depth via ==thinking_level== only.  
 6. **YouTube video input format for generateContent:**  
-7. {  
-8.   fileData: {  
-9.     fileUri: 'https://www.youtube.com/watch?v=VIDEO_ID',  
-10.     mimeType: 'video/*',  
-11.   },  
-12.   videoMetadata: {  
-13.     startOffset: '120s',  // seconds as string  
-14.     endOffset: '420s',  
-15.   }  
-16. }  
+```javascript
+{  
+  fileData: {  
+    fileUri: 'https://www.youtube.com/watch?v=VIDEO_ID',  
+    mimeType: 'video/*',  
+  },  
+  videoMetadata: {  
+    startOffset: '120s',  // seconds as string  
+    endOffset: '420s',  
+  }  
+}  
   
 17. **Interactions API YouTube input format:**  
 18. { type: 'video', uri: 'https://www.youtube.com/watch?v=VIDEO_ID', mime_type: 'video/*' }  
