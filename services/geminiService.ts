@@ -43,6 +43,11 @@ export async function analyzeChunkPhaseA(
     try {
       // If retrying (especially after a parse error), reinforce JSON requirement
       let currentPrompt = `Analyze this video segment. ${basePrompt}`;
+      
+      // Reinforce the time offset context explicitly for the model
+      // This helps the model map the "00:00" it sees in the clip to the actual full-video timestamp
+      currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
+
       if (attempt > 1) {
         currentPrompt += "\n\nCRITICAL: You MUST respond with valid JSON only. No markdown fences, no commentary. Check for trailing commas or unquoted keys.";
       }
@@ -55,13 +60,13 @@ export async function analyzeChunkPhaseA(
             {
               fileData: {
                 fileUri: videoUrl,
-                mimeType: 'video/mp4',
+                mimeType: 'video/*', // CHANGED: 'video/*' is required for YouTube URL clipping to work reliably
               },
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            },
+            } as any, // Cast to avoid TS issues if SDK types don't fully support videoMetadata on Part yet
             { text: currentPrompt }
           ]
         }],

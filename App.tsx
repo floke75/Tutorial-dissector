@@ -202,7 +202,7 @@ function App() {
         // Update Status: Phase A
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_a' } : c));
 
-        console.log("Starting Phase A...");
+        console.log(`Starting Phase A (Clip: ${chunk.clipStart}s - ${chunk.clipEnd}s)...`);
         // Execute Phase A
         const phaseAActions = await analyzeChunkPhaseA(
           videoUrl,
