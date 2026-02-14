@@ -29,7 +29,6 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
 **Interactions API YouTube input format:**  
 ```javascript
 { type: 'video', uri: 'https://www.youtube.com/watch?v=VIDEO_ID', mime_type: 'video/*' }  
-  
 
 **Output access patterns differ:**  
 - `generateContent()` → `response.candidates[0].content.parts[0].text`  
