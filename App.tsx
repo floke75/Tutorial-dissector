@@ -43,6 +43,9 @@ function App() {
   const chunksRef = useRef(chunks);
   chunksRef.current = chunks;
 
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Check storage on mount
@@ -89,6 +92,32 @@ function App() {
   }, [procState.status]);
 
   const handleStart = () => {
+    console.log("Starting Analysis...");
+    
+    // Input validation
+    const duration = parseMMSS(durationInput);
+    if (duration <= 0) {
+      alert("Please enter a valid duration (MM:SS)");
+      return;
+    }
+    if (!videoUrl) {
+      alert("Please enter a YouTube URL");
+      return;
+    }
+
+    // Prepare Chunks
+    // We calculate explicitly here to ensure they exist before state transition
+    const newChunks = computeChunkWindows(duration, chunkSize, overlap);
+    console.log("Calculated chunks:", newChunks.length);
+    
+    if (newChunks.length === 0) {
+      alert("Duration is too short for the selected chunk size.");
+      return;
+    }
+
+    setChunks(newChunks);
+    chunksRef.current = newChunks; 
+
     setActions([]);
     setProcState({
       status: 'running',
@@ -148,10 +177,21 @@ function App() {
 
     const processNext = async () => {
       const { status, currentChunkIndex, lastInteractionId } = stateRef.current;
-      const currentChunks = chunksRef.current;
+      // Safety: get chunks from ref, if empty try state, if still empty, stop.
+      const currentChunks = chunksRef.current.length > 0 ? chunksRef.current : chunks;
 
       if (status !== 'running' || !active) return;
+      
+      console.log(`Processing Chunk ${currentChunkIndex + 1} / ${currentChunks.length}`);
+
+      if (currentChunks.length === 0) {
+        console.warn("No chunks to process. Stopping.");
+        setProcState(s => ({ ...s, status: 'idle' }));
+        return;
+      }
+
       if (currentChunkIndex >= currentChunks.length) {
+        console.log("All chunks completed.");
         setProcState(s => ({ ...s, status: 'completed' }));
         return;
       }
@@ -162,6 +202,7 @@ function App() {
         // Update Status: Phase A
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_a' } : c));
 
+        console.log("Starting Phase A...");
         // Execute Phase A
         const phaseAActions = await analyzeChunkPhaseA(
           videoUrl,
@@ -171,12 +212,14 @@ function App() {
           chunk.primaryEnd,
           overlap
         );
+        console.log("Phase A Complete. Actions found:", phaseAActions.length);
 
         if (!active) return;
 
         // Update Status: Phase B
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_b' } : c));
 
+        console.log("Starting Phase B...");
         // Execute Phase B
         const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
         const { interactionId, result } = await accumulateChunkPhaseB(
@@ -187,6 +230,7 @@ function App() {
           primaryWindowStr,
           lastInteractionId
         );
+        console.log("Phase B Complete.");
 
         if (!active) return;
 
@@ -194,7 +238,7 @@ function App() {
         setLatestUIState(result.current_ui_state);
         
         // Append new actions
-        const newActions = result.validated_segment_events || phaseAActions; // Fallback if model fails to return validated list
+        const newActions = result.validated_segment_events ?? phaseAActions; // Fallback if model fails to return validated list
         setActions(prev => [...prev, ...newActions]);
 
         // Update Chunk Status to Completed
@@ -214,7 +258,7 @@ function App() {
         const currentData = {
            videoUrl, durationInput, chunkSize, overlap,
            chunks: chunksRef.current.map((c, i) => i === currentChunkIndex ? { ...c, status: 'completed', actionCount: newActions.length } : c),
-           actions: [...actions, ...newActions],
+           actions: [...actionsRef.current, ...newActions],
            procState: { 
              ...stateRef.current, 
              currentChunkIndex: stateRef.current.currentChunkIndex + 1,
@@ -230,9 +274,11 @@ function App() {
 
 
       } catch (err) {
-        console.error(err);
-        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'error', errorMsg: String(err) } : c));
+        console.error("Processing Error:", err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'error', errorMsg } : c));
         setProcState(prev => ({ ...prev, status: 'paused' })); // Pause on error
+        alert(`Analysis paused due to error: ${errorMsg}`);
       }
     };
 
@@ -247,101 +293,94 @@ function App() {
     const s = Math.floor(ms / 1000);
     const m = Math.floor(s / 60);
     const h = Math.floor(m / 60);
-    return `${h > 0 ? h + 'h ' : ''}${m % 60}m ${s % 60}s`;
+    return `${h > 0 ? h + ':' : ''}${m % 60}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100 font-sans">
-      {/* Left Sidebar: Controls & Progress */}
-      <div className="w-[450px] flex flex-col border-r border-gray-800 bg-gray-900 overflow-y-auto">
-        <div className="p-6 pb-0">
-          <h1 className="text-2xl font-bold tracking-tight mb-2 text-white">Tutorial Dissector <span className="text-blue-500 text-sm align-top">PRO</span></h1>
-          <p className="text-gray-400 text-sm mb-6">AI-powered semantic extraction for software tutorials.</p>
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-6 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold text-blue-400">Gemini Tutorial Dissector</h1>
+          <p className="text-gray-400">Deep semantic analysis of software tutorials using Gemini 3 Pro</p>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 space-y-6">
+            <InputPanel
+              videoUrl={videoUrl}
+              setVideoUrl={setVideoUrl}
+              durationInput={durationInput}
+              setDurationInput={setDurationInput}
+              chunkSize={chunkSize}
+              setChunkSize={setChunkSize}
+              overlap={overlap}
+              setOverlap={setOverlap}
+              onStart={handleStart}
+              disabled={procState.status === 'running'}
+              hasSavedSession={hasSavedSession}
+              onResumeSession={restoreSession}
+              onSaveSession={saveSession}
+              lastSavedTime={lastSavedTime}
+            />
+            
+            {/* Stats Panel */}
+            {procState.status !== 'idle' && (
+               <div className="bg-gray-850 p-6 rounded-xl border border-gray-750 shadow-lg">
+                 <h3 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">Processing Stats</h3>
+                 <div className="space-y-3 text-sm">
+                   <div className="flex justify-between">
+                     <span className="text-gray-500">Status</span>
+                     <span className={`font-mono font-bold ${procState.status === 'running' ? 'text-green-400 animate-pulse' : 'text-gray-300'}`}>
+                       {procState.status.toUpperCase()}
+                     </span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-gray-500">Elapsed</span>
+                     <span className="font-mono text-gray-200">{formatTime(elapsedTime)}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-gray-500">Est. Remaining</span>
+                     <span className="font-mono text-gray-200">{formatTime(estimatedRemaining)}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-gray-500">Actions Found</span>
+                     <span className="font-mono text-blue-300">{procState.totalActions}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-gray-500">Est. Token Usage</span>
+                     <span className="font-mono text-purple-300">{Math.round(procState.totalTokens / 1000)}k</span>
+                   </div>
+                 </div>
+               </div>
+            )}
+            
+            {/* Latest UI State */}
+            {latestUIState && (
+               <div className="bg-gray-850 p-6 rounded-xl border border-gray-750 shadow-lg">
+                 <h3 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">Detected Context</h3>
+                 <div className="space-y-2 text-xs">
+                    <p><strong className="text-gray-500">App:</strong> {latestUIState.application}</p>
+                    <p><strong className="text-gray-500">File:</strong> {latestUIState.active_file || 'None'}</p>
+                    <p><strong className="text-gray-500">Tool:</strong> {latestUIState.active_tool || 'None'}</p>
+                    <div>
+                      <strong className="text-gray-500">Panels:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {latestUIState.visible_panels.map((p, i) => (
+                          <span key={i} className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">{p}</span>
+                        ))}
+                      </div>
+                    </div>
+                 </div>
+               </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-2 flex flex-col h-[800px]">
+            <ResultsTimeline actions={actions} />
+          </div>
         </div>
 
-        <div className="px-6 pb-6 space-y-6">
-          <InputPanel 
-            videoUrl={videoUrl}
-            setVideoUrl={setVideoUrl}
-            durationInput={durationInput}
-            setDurationInput={setDurationInput}
-            chunkSize={chunkSize}
-            setChunkSize={setChunkSize}
-            overlap={overlap}
-            setOverlap={setOverlap}
-            onStart={handleStart}
-            disabled={procState.status === 'running'}
-            hasSavedSession={hasSavedSession}
-            onResumeSession={restoreSession}
-            onSaveSession={saveSession}
-            lastSavedTime={lastSavedTime}
-          />
-          
-          {procState.status !== 'idle' && (
-             <div className="bg-gray-850 p-4 rounded-xl border border-gray-750">
-                <div className="flex justify-between items-center mb-2">
-                   <h3 className="font-semibold text-white">Progress</h3>
-                   <div className="flex gap-2">
-                      <span className={`text-[10px] px-2 py-1 rounded font-bold ${procState.status === 'running' ? 'bg-green-900 text-green-300 animate-pulse' : 'bg-yellow-900 text-yellow-300'}`}>
-                         {procState.status.toUpperCase()}
-                      </span>
-                      <button onClick={handlePause} className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded">
-                        {procState.status === 'running' ? 'Pause' : 'Resume'}
-                      </button>
-                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                   <div>
-                     <p className="text-gray-500">Actions Extracted</p>
-                     <p className="text-xl font-mono text-blue-400">{procState.totalActions}</p>
-                   </div>
-                   <div>
-                     <p className="text-gray-500">Chunks</p>
-                     <p className="text-xl font-mono text-white">{procState.currentChunkIndex} / {chunks.length}</p>
-                   </div>
-                   <div>
-                     <p className="text-gray-500">Est. Tokens</p>
-                     <p className="text-lg font-mono text-gray-400">{(procState.totalTokens / 1000).toFixed(1)}k</p>
-                   </div>
-                    <div>
-                     <p className="text-gray-500">Interaction ID</p>
-                     <p className="text-xs font-mono text-gray-400 truncate" title={procState.lastInteractionId || ''}>
-                         {procState.lastInteractionId ? procState.lastInteractionId.slice(-8) : '...'}
-                     </p>
-                   </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-700 grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                        <p className="text-gray-500">Elapsed</p>
-                        <p className="text-gray-300 font-mono">{formatTime(elapsedTime)}</p>
-                    </div>
-                    <div>
-                        <p className="text-gray-500">Est. Remaining</p>
-                        <p className="text-gray-300 font-mono">{estimatedRemaining > 0 ? formatTime(estimatedRemaining) : '--'}</p>
-                    </div>
-                </div>
-             </div>
-          )}
-
-          <ChunkVisualizer chunks={chunks} />
-
-          {latestUIState && (
-            <div className="bg-gray-850 p-4 rounded-xl border border-gray-750 text-xs">
-              <h3 className="font-semibold text-gray-300 mb-2 border-b border-gray-700 pb-1">Current Context Memory</h3>
-              <div className="space-y-2">
-                <div><span className="text-gray-500">App:</span> <span className="text-white">{latestUIState.application}</span></div>
-                <div><span className="text-gray-500">File:</span> <span className="text-white">{latestUIState.active_file || 'None'}</span></div>
-                <div><span className="text-gray-500">Panels:</span> <span className="text-gray-300">{latestUIState.visible_panels.join(', ')}</span></div>
-                <div><span className="text-gray-500">Dialogs:</span> <span className="text-gray-300">{latestUIState.open_dialogs.join(', ') || 'None'}</span></div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content: Results */}
-      <div className="flex-1 bg-gray-950 p-6 h-full overflow-hidden">
-        <ResultsTimeline actions={actions} />
+        <ChunkVisualizer chunks={chunks} />
       </div>
     </div>
   );
