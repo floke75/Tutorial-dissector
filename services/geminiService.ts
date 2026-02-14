@@ -7,9 +7,19 @@ import { formatMMSS } from '../utils/timeUtils';
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Initialize clients
-// We use a fresh instance logic inside functions to ensure API key is current if we were using a selector,
-// but for this environment, we use process.env.API_KEY directly.
-const getClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Direct access relies on build-time replacement of process.env.API_KEY
+// or a global definition. This is the standard pattern for this environment.
+const getClient = () => {
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
+
+// Minimal interface for Interactions API to avoid raw 'any' casting
+interface InteractionsClient {
+  create: (config: any) => Promise<{
+    id: string;
+    outputs: Array<{ text: string }>;
+  }>;
+}
 
 export async function analyzeChunkPhaseA(
   videoUrl: string,
@@ -33,6 +43,11 @@ export async function analyzeChunkPhaseA(
     try {
       // If retrying (especially after a parse error), reinforce JSON requirement
       let currentPrompt = `Analyze this video segment. ${basePrompt}`;
+      
+      // Reinforce the time offset context explicitly for the model
+      // This helps the model map the "00:00" it sees in the clip to the actual full-video timestamp
+      currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
+
       if (attempt > 1) {
         currentPrompt += "\n\nCRITICAL: You MUST respond with valid JSON only. No markdown fences, no commentary. Check for trailing commas or unquoted keys.";
       }
@@ -45,13 +60,13 @@ export async function analyzeChunkPhaseA(
             {
               fileData: {
                 fileUri: videoUrl,
-                mimeType: 'video/mp4', // Defaulting to generic video type, API handles YouTube URLs usually via frame grabbing or direct processing if supported
+                mimeType: 'video/*', // CHANGED: 'video/*' is required for YouTube URL clipping to work reliably
               },
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            },
+            } as any, // Cast to avoid TS issues if SDK types don't fully support videoMetadata on Part yet
             { text: currentPrompt }
           ]
         }],
@@ -83,6 +98,14 @@ export async function analyzeChunkPhaseA(
       console.warn(`Phase A Attempt ${attempt} failed:`, error);
       lastError = error;
 
+      // Fail fast on client errors (4xx) which indicate bad input/permissions
+      // Note: We do NOT fail fast on API_KEY errors here blindly, we let the retries happen 
+      // unless it's clearly a 403 or similar.
+      const errStr = error.toString();
+      if (errStr.includes('400') || errStr.includes('403') || errStr.includes('404')) {
+         throw error;
+      }
+
       if (attempt < 3) {
         // Backoff: 2s, 4s
         const delay = Math.pow(2, attempt) * 1000;
@@ -113,8 +136,8 @@ export async function accumulateChunkPhaseB(
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      // Cast to any because interactions is not in standard types yet for some versions
-      const interactionsClient = (client as any).interactions; 
+      // Use typed access for interactions
+      const interactionsClient = (client as unknown as { interactions: InteractionsClient }).interactions;
       
       if (!interactionsClient) {
           throw new Error("Interactions API not supported in this SDK version");
@@ -153,9 +176,14 @@ export async function accumulateChunkPhaseB(
           throw new Error(`JSON_PARSE_ERROR: ${parseError}`);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Phase B Attempt ${attempt} failed:`, error);
       lastError = error;
+
+       // Fail fast on client errors
+      if (error.toString().includes('400') || error.toString().includes('403')) {
+         throw error;
+      }
 
       if (attempt < 3) {
         // Backoff: 2s, 4s
