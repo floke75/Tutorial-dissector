@@ -24,8 +24,7 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
     startOffset: '120s',  // seconds as string  
     endOffset: '420s',  
   }  
-}  
-  
+}
 
 **Interactions API YouTube input format:**  
 ```javascript
