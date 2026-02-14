@@ -26,8 +26,10 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
   }  
 }  
   
-17. **Interactions API YouTube input format:**  
-18. { type: 'video', uri: 'https://www.youtube.com/watch?v=VIDEO_ID', mime_type: 'video/*' }  
+
+**Interactions API YouTube input format:**  
+```javascript
+{ type: 'video', uri: 'https://www.youtube.com/watch?v=VIDEO_ID', mime_type: 'video/*' }  
   
 19. **Output access patterns differ:**  
     - ==generateContent()== → ==response.candidates[0].content.parts[0].text==  
