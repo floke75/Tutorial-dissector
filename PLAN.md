@@ -12,7 +12,7 @@ Build a web application called **"Tutorial Dissector"** that extracts ultra-deta
 2. **Stateful conversation chaining is ONLY available in the Interactions API** via ==previous_interaction_id==. Use this to maintain a running session where each turn accumulates context from all previous chunks.  
 3. **Model IDs must include ==-preview== suffix:** Use ==gemini-3-pro-preview== for detailed analysis.  
 4. **All Interactions API fields use ==snake_case==**, not camelCase. Using camelCase causes silent failures.  
-5. **Temperature:** Keep at default (1.0). Control reasoning depth via ==thinking_level== only.  
+5. **Temperature:** Keep at default (1.0).
 6. **YouTube video input format for generateContent:**  
 ```javascript
 {  
@@ -213,8 +213,7 @@ async function analyzeChunk(videoUrl, startSec, endSec, primaryStartSec, primary
       ]
     }],
     config: {
-      thinkingConfig: { thinkingLevel: 'HIGH' },
-      mediaResolution: 'MEDIA_RESOLUTION_HIGH',  // need detail for UI element identification
+      // Config removed to rely on defaults
     }
   });
   return JSON.parse(response.candidates[0].content.parts.find(p => p.text)?.text);
@@ -231,7 +230,6 @@ async function accumulateChunk(chunkActions, chunkNumber, primaryWindow, previou
       extracted_actions: chunkActions
     }),
     previous_interaction_id: previousInteractionId || undefined,
-    generation_config: { thinking_level: 'high' },
   });
   return {
     interactionId: interaction.id,
@@ -283,9 +281,6 @@ async function processVideo(videoUrl, durationSec, chunkSizeSec, overlapSec) {
   
 ### Important implementation notes  
   
-- The ==generateContent()== API uses **camelCase** field names (==thinkingConfig==, ==mediaResolution==). The Interactions API uses **snake_case** (==thinking_level==, ==media_resolution==). Do NOT mix them.  
-- For ==generateContent()== config, use the nested structure: ==config: { thinkingConfig: { thinkingLevel: 'HIGH' } }==  
-- For Interactions API config, use flat structure: ==generation_config: { thinking_level: 'high' }==  
+- The ==generateContent()== API uses **camelCase** field names. The Interactions API uses **snake_case**. Do NOT mix them.  
 - Video token cost at high resolution is ~258 tokens/frame at 1 FPS + ~32 tokens/sec audio. A 5-minute clip ≈ ~87,000 video tokens. Budget accordingly.  
-- Set ==media_resolution: 'media_resolution_high'== (Interactions) / ==mediaResolution: 'MEDIA_RESOLUTION_HIGH'== (generateContent) because we need to read small UI text and icons.  
-⸻  
+⸻

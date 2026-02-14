@@ -31,11 +31,18 @@ export async function analyzeChunkPhaseA(
 ): Promise<ActionItem[]> {
   const ai = getClient();
   
+  // EXPAND PRIMARY WINDOW IN PROMPT ONLY
+  // We widen the "active logging" window by 15s into the overlap region
+  // to ensure events at the boundary are captured. Phase B handles deduplication.
+  const SAFETY_BUFFER = 15;
+  const promptPrimaryStart = Math.max(startSec, primaryStartSec - SAFETY_BUFFER);
+  const promptPrimaryEnd = Math.min(endSec, primaryEndSec + SAFETY_BUFFER);
+
   const basePrompt = PHASE_A_SYSTEM_PROMPT
-    .replace('{PRIMARY_START}', formatMMSS(primaryStartSec))
-    .replace('{PRIMARY_END}', formatMMSS(primaryEndSec))
-    .replace('{OVERLAP_START}', formatMMSS(Math.max(0, primaryStartSec - overlapSec)))
-    .replace('{OVERLAP_END}', formatMMSS(endSec)); // endSec is already primaryEnd + overlap
+    .replace('{PRIMARY_START}', formatMMSS(promptPrimaryStart))
+    .replace('{PRIMARY_END}', formatMMSS(promptPrimaryEnd))
+    .replace('{OVERLAP_START}', formatMMSS(startSec))
+    .replace('{OVERLAP_END}', formatMMSS(endSec));
 
   let lastError: any;
 
@@ -71,8 +78,6 @@ export async function analyzeChunkPhaseA(
           ]
         }],
         config: {
-          thinkingConfig: { thinkingLevel: 'HIGH' },
-          mediaResolution: 'MEDIA_RESOLUTION_HIGH',
           responseMimeType: 'application/json',
         }
       });
@@ -152,9 +157,6 @@ export async function accumulateChunkPhaseB(
           extracted_actions: chunkActions
         }),
         previous_interaction_id: previousInteractionId || undefined,
-        generation_config: { 
-            thinking_level: 'high' 
-        },
       });
 
       const lastOutput = interaction.outputs?.[interaction.outputs.length - 1];

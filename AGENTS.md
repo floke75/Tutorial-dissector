@@ -38,9 +38,9 @@ The system addresses the trade-off between *visual resolution* and *context wind
 1.  **Clipping Boundary:** `videoMetadata` is **ONLY** valid in `generateContent`. Do not pass it to `interactions`.
 2.  **Context Boundary:** `previous_interaction_id` is **ONLY** valid in `interactions`. `generateContent` is stateless.
 3.  **Config Casing:**
-    *   `generateContent`: Uses **camelCase** (e.g., `mediaResolution`, `thinkingConfig`).
-    *   `interactions`: Uses **snake_case** (e.g., `media_resolution`, `thinking_level`).
-    *   *Violation causes silent defaults (low res) which breaks the app.*
+    *   `generateContent`: Uses **camelCase** (e.g., `responseMimeType`).
+    *   `interactions`: Uses **snake_case**.
+    *   *Note: We rely on default settings for thinking level and media resolution to avoid configuration issues.*
 4.  **Model Version:** Must use `-preview` models (e.g., `gemini-3-pro-preview`). Standard models drop necessary features.
 5.  **Retry Logic:** `services/geminiService.ts` implements exponential backoff and JSON self-correction. **Never remove this.**
 
