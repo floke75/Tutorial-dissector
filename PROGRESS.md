@@ -57,8 +57,8 @@ This application solves the "Long Context vs. High Resolution" trade-off. It doe
     *   Stateful Conversation is **ONLY** supported in `client.interactions.create`.
     *   *Do not attempt to pass `videoMetadata` to the Interactions API.*
 3.  **Casing Discipline:**
-    *   `generateContent` config uses **camelCase** (e.g., `thinkingConfig`, `mediaResolution`).
-    *   `interactions` config uses **snake_case** (e.g., `thinking_level`, `media_resolution`).
+    *   `generateContent` config uses **camelCase** (e.g., `responseMimeType`).
+    *   `interactions` config uses **snake_case**.
 4.  **Retry Logic:** The `analyzeChunkPhaseA` and `accumulateChunkPhaseB` functions in `services/geminiService.ts` implement specific retry loops to handle JSON syntax errors and network instability. **Do not remove.**
 
 ### C. CODEBASE ANATOMY
