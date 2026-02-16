@@ -67,14 +67,16 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => 
   };
 
   const downloadCSV = () => {
-    const headers = ['Timestamp', 'Action Type', 'Actor', 'Element', 'Detail/Text', 'Topics/Result', 'Confidence'];
+    const headers = ['Timestamp', 'Action Type', 'Actor', 'Element', 'Detail/Text', 'Topics/Result', 'Insight', 'Relates To', 'Confidence'];
     const rows = actions.map(a => [
       a.timestamp,
       a.action_type,
       a.actor,
       `"${(a.target?.element || '').replace(/"/g, '""')}"`,
       `"${(a.text || a.detail || '').replace(/"/g, '""')}"`, // Use text for narration
-      `"${(a.topics?.join(';') || a.result || '').replace(/"/g, '""')}"`,
+      `"${(a.topics?.join('; ') || a.result || '').replace(/"/g, '""')}"`,
+      `"${(a.insight_type || '').replace(/"/g, '""')}"`,
+      `"${(a.relates_to || '').replace(/"/g, '""')}"`,
       a.confidence
     ]);
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -83,15 +85,15 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => 
 
   const downloadMarkdown = () => {
     let md = `# Tutorial Analysis Log\n\n`;
-    md += `| Timestamp | Type | Detail | Element | Result/Topics |\n`;
-    md += `|-----------|------|--------|---------|---------------|\n`;
+    md += `| Timestamp | Type | Insight | Relates To | Detail/Text | Element | Result/Topics |\n`;
+    md += `|-----------|------|---------|------------|-------------|---------|---------------|\n`;
     actions.forEach(a => {
         if (a.action_type === 'chunk_boundary') {
             md += `\n**--- ${a.detail} ---**\n\n`;
         } else if (a.action_type === 'narration') {
-            md += `| ${a.timestamp} | **NARRATION** | *"${a.text}"* | - | ${a.topics?.join(', ')} |\n`;
+            md += `| ${a.timestamp} | **NARRATION** | ${a.insight_type || '-'} | ${a.relates_to || '-'} | *"${a.text}"* | - | ${a.topics?.join(', ')} |\n`;
         } else {
-            md += `| ${a.timestamp} | ${a.action_type} | ${a.detail} | ${a.target?.element || '-'} | ${a.result || '-'} |\n`;
+            md += `| ${a.timestamp} | ${a.action_type} | - | - | ${a.detail} | ${a.target?.element || '-'} | ${a.result || '-'} |\n`;
         }
     });
     downloadFile(md, "tutorial_log.md", "text/markdown");
