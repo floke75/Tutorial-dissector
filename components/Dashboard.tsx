@@ -31,6 +31,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
   const getStatusColor = (status: string) => {
     switch(status) {
       case 'completed': return 'text-green-400 border-green-400/30 bg-green-900/20';
+      case 'running_visual':
+      case 'running_narration':
       case 'running': return 'text-blue-400 border-blue-400/30 bg-blue-900/20 animate-pulse';
       case 'paused': return 'text-yellow-400 border-yellow-400/30 bg-yellow-900/20';
       case 'error': return 'text-red-400 border-red-400/30 bg-red-900/20';
@@ -77,7 +79,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
           >
             <div className="flex justify-between items-start mb-4">
               <span className={`px-2 py-0.5 text-xs font-mono font-bold uppercase rounded border ${getStatusColor(project.status)}`}>
-                {project.status}
+                {project.status.replace('running_', '').replace('_', ' ')}
               </span>
               <button 
                 onClick={(e) => handleDelete(e, project.id)}

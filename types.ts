@@ -21,12 +21,14 @@ export type ActionType =
   | 'ui_response' 
   | 'transition' 
   | 'narration_cue'
-  | 'chunk_boundary'; 
+  | 'chunk_boundary'
+  | 'narration';
 
 export type ActionConfidence = 'high' | 'medium' | 'low';
 export type ActorType = 'user' | 'system' | 'narrator';
 export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
-export type ProcessingStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
+export type ProcessingStatus = 'idle' | 'running_visual' | 'running_narration' | 'paused' | 'completed' | 'error';
+export type InsightType = 'explanation' | 'rationale' | 'tip' | 'warning' | 'workflow_framing' | 'comparison';
 
 export interface ActionItem {
   timestamp: string;
@@ -39,6 +41,12 @@ export interface ActionItem {
   confidence: ActionConfidence;
   // Internal tracking
   chunkIndex?: number;
+  
+  // Pass 2 (Narration) specific optional fields
+  text?: string;
+  topics?: string[];
+  insight_type?: InsightType;
+  relates_to?: string | null;
 }
 
 export interface Chunk {
@@ -53,16 +61,17 @@ export interface Chunk {
   status: ChunkStatus;
   errorMsg?: string;
   
-  // Analysis Artifacts (Mapped from Allium Spec)
-  phaseARawCount?: number;   // Count of actions detected in stateless phase
-  phaseBAddedCount?: number; // Count of new actions merged in stateful phase
-  interactionId?: string;    // The Gemini Session ID for this chunk's processing
-  actionCount?: number;      // Total finalized actions for this chunk
+  // Analysis Artifacts
+  phaseARawCount?: number;
+  phaseBAddedCount?: number;
+  interactionId?: string;
+  actionCount?: number;
 }
 
 export interface ProcessingState {
   status: ProcessingStatus;
   currentChunkIndex: number;
+  narrationStartTime: number; // Track progress of narration pass (in seconds)
   totalActions: number;
   totalTokens: number;
   startTime: number | null;
@@ -121,6 +130,6 @@ export interface Project extends ProjectSummary {
   // Runtime State
   procState: ProcessingState;
   
-  // Context State (from Spec: active_application, etc.)
+  // Context State
   latestUIState: UIState | null;
 }

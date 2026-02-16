@@ -34,6 +34,7 @@ export const createProject = (): string => {
     procState: {
       status: 'idle',
       currentChunkIndex: 0,
+      narrationStartTime: 0,
       totalActions: 0,
       totalTokens: 0,
       startTime: null,
@@ -88,10 +89,7 @@ export const saveProject = (data: Project) => {
       name: data.name || 'Untitled Analysis',
       updatedAt: now,
       videoUrl: data.videoUrl,
-      status: data.procState.status === 'running' ? 'running' : 
-              (data.chunks.length > 0 && data.chunks.every(c => c.status === 'completed')) ? 'completed' : 
-              data.procState.status === 'paused' ? 'paused' : 
-              data.chunks.some(c => c.status === 'error') ? 'error' : 'idle',
+      status: data.procState.status,
       actionCount: data.actions.length
     };
     
