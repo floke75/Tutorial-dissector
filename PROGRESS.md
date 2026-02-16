@@ -1,31 +1,33 @@
+
 # PROGRESS & SYSTEM DOCUMENTATION: Tutorial Dissector
 
-**VERSION:** 1.1.0 (Beta)
+**VERSION:** 1.2.0 (Narration Update)
 **LAST UPDATED:** Current Session
 
 ## 1. PROJECT STATUS: FEATURE COMPLETE
 
-The application successfully implements the complex **Hybrid Clipping + Stateful Memory** architecture required to dissect videos.
+The application successfully implements the complex **Two-Pass Hybrid Architecture**.
 
 ### ✅ Completed Features
-*   **Core Pipeline:**
+*   **Pass 1: Visual Extraction**
     *   **Phase A (Perception):** `gemini-3-pro-preview` with `videoMetadata` offsets for high-res visual analysis.
-    *   **Phase B (Cognition):** `interactions` API with `previous_interaction_id` for stateful narrative synthesis.
+    *   **Phase B (Cognition):** `interactions` API with `previous_interaction_id` for stateful deduplication and UI state tracking.
+*   **Pass 2: Narration Synthesis**
+    *   **Audio Analysis:** Processes audio in larger (15-min) chunks for context.
+    *   **Context Anchoring:** Injects a filtered list of Visual Actions into the prompt to ground the narration.
+    *   **Intent Synthesis:** Produces a polished "Technical Writer" log, not a verbatim transcript.
 *   **Robustness:**
-    *   **Retry Logic:** Exponential backoff (2s/4s/8s) for API failures.
-    *   **Self-Correction:** Automatic prompt injection to fix malformed JSON responses from the LLM.
+    *   **Retry Logic:** Exponential backoff (2s/4s/8s).
+    *   **JSON Repair:** Automatic prompt injection to fix malformed responses.
+    *   **Loop Separation:** Strict separation of Visual and Narration loops in `AnalysisView`.
 *   **User Interface:**
-    *   **Configuration:** Video URL, Duration, Chunk Size, Overlap.
-    *   **Visualization:** "Chunk Plan" ribbon, Real-time "Results Timeline".
-    *   **Context Monitor:** Live view of the AI's internal state (Active App, Dialogs, Tools).
-*   **Data:**
-    *   **Exports:** JSON, CSV, Markdown.
-    *   **Persistence:** LocalStorage session saving/resuming.
+    *   **Real-time Timeline:** Distinct rendering for Narration (Pink) vs Visual (Blue/Gray) events.
+    *   **Insight Badges:** Visual indicators for "Tips", "Warnings", "Rationale".
+    *   **Stats:** Live token usage and progress tracking for both passes.
 
 ### 🚧 Known Limitations / Future Work
-*   **Video Duration:** Currently requires manual input (MM:SS). Client-side auto-detection is blocked by YouTube CORS policies.
-*   **YouTube Restrictions:** Private or Age-Restricted videos will fail at the API level (Google GenAI SDK limitation).
-*   **Cost Management:** High-resolution video analysis is token-intensive (~87k tokens per 5-min chunk).
+*   **Video Duration:** Currently requires manual input (MM:SS).
+*   **Cost:** Two-pass analysis increases token consumption (Visual ~87k/chunk + Narration ~300k/chunk).
 
 ---
 
@@ -33,61 +35,56 @@ The application successfully implements the complex **Hybrid Clipping + Stateful
 
 **TARGET AUDIENCE:** LLM Coding Agents / Automated Refactoring Tools
 **CORE MODEL:** `gemini-3-pro-preview`
-**SDK:** `@google/genai` (v1.33+)
 
-### A. ARCHITECTURAL INTENT
+### A. ARCHITECTURAL INTENT: THE TWO-PASS LOOP
 
-This application solves the "Long Context vs. High Resolution" trade-off. It does not ingest the entire video at once.
+The application processes video in two distinct sequential passes to solve the "Context vs. Resolution" trade-off.
 
-**The Two-Phase Pipeline:**
-1.  **Phase A (Stateless Perception):** 
-    *   Uses `generateContent` with `videoMetadata`.
-    *   *Intent:* Isolate high-fidelity visual analysis. The model looks at *only* 5 minutes of pixels to catch small UI details. It has no memory.
-2.  **Phase B (Stateful Synthesis):** 
-    *   Uses `interactions` (Chat) API.
-    *   *Intent:* Maintain narrative continuity. Receives raw Phase A data, stitches it into a coherent timeline, resolves duplicates from overlap zones, and tracks global application state.
+**Pass 1: Visual (The "What")**
+*   **Goal:** High-resolution extraction of screen coordinates, clicks, and UI changes.
+*   **Constraint:** Requires short chunks (3-5 min) to maintain visual fidelity.
+*   **Mechanism:** `generateContent` (Visual) -> `interactions` (Merge).
+
+**Pass 2: Narration (The "Why")**
+*   **Goal:** Capture high-level intent, rationale, and tips.
+*   **Constraint:** Requires long context to understand flow.
+*   **Mechanism:** `generateContent` (Audio).
+*   **Critical Logic: The Context Buffer**
+    *   When analyzing audio from `T_start` to `T_end`, we do **not** simply slice the visual log at `T_start`.
+    *   We inject visual actions from `T_start - 15s` to `T_end + 15s`.
+    *   *Why?* Narrators often describe an action ("I'm going to click...") seconds before doing it. This buffer allows the LLM to link the speech to the future/past event (`relates_to` field).
 
 ### B. INVARIANTS & CRITICAL CONSTRAINTS
 
 **VIOLATING THESE WILL BREAK THE APPLICATION:**
 
-1.  **Model IDs:** MUST use `-preview` suffix (e.g., `gemini-3-pro-preview`).
-2.  **API Surface Separation:**
-    *   Video Clipping is **ONLY** supported in `ai.models.generateContent`.
-    *   Stateful Conversation is **ONLY** supported in `client.interactions.create`.
-    *   *Do not attempt to pass `videoMetadata` to the Interactions API.*
-3.  **Casing Discipline:**
-    *   `generateContent` config uses **camelCase** (e.g., `responseMimeType`).
-    *   `interactions` config uses **snake_case**.
-4.  **Retry Logic:** The `analyzeChunkPhaseA` and `accumulateChunkPhaseB` functions in `services/geminiService.ts` implement specific retry loops to handle JSON syntax errors and network instability. **Do not remove.**
+1.  **API Surface Separation:**
+    *   Video Clipping (`videoMetadata`) is **ONLY** valid in `generateContent`.
+    *   Stateful Conversation (`previous_interaction_id`) is **ONLY** valid in `interactions`.
+2.  **Prompt Strategy:**
+    *   **Narration Prompt:** Must explicitly instruct the model **NOT** to transcribe verbatim. The output must be synthesized instructional text.
+    *   **Timestamps:** Narration timestamps must reflect the *audio start*, independent of the visual event it describes.
+3.  **Config Casing:**
+    *   `generateContent`: **camelCase**.
+    *   `interactions`: **snake_case**.
 
 ### C. CODEBASE ANATOMY
 
-*   **`services/geminiService.ts`**: The Engine. Handles API calls, retries, and prompt injection.
-*   **`App.tsx`**: The Orchestrator. Manages the recursive processing loop using `useRef` to prevent stale closures. Handles session persistence.
-*   **`constants.ts`**: The Persona. Contains the extensive system prompts (`PHASE_A` and `PHASE_B`) that define the output schema.
-*   **`utils/timeUtils.ts`**: The Logic. Calculates overlapping time windows (`computeChunkWindows`).
+*   **`components/AnalysisView.tsx`**: Contains the two `useEffect` loops.
+    *   Loop 1: Iterate chunks for Visual Analysis.
+    *   Loop 2: Iterate time for Narration Analysis.
+*   **`services/geminiService.ts`**:
+    *   `analyzeChunkPhaseA`: Visual extraction.
+    *   `accumulateChunkPhaseB`: Merge logic.
+    *   `analyzeNarrationSegment`: Audio analysis (Pass 2).
+*   **`constants.ts`**: Holds the 3 System Prompts. `PASS_2_SYSTEM_PROMPT` defines the Narration persona.
 
-### D. DATA FLOW SIMULATION
+### D. DATA FLOW SIMULATION (NARRATION PASS)
 
-**Scenario:** Processing Chunk 2 (05:00 - 10:00).
+**Scenario:** Analyzing Audio 05:00 - 15:00.
 
-1.  **Plan:** `computeChunkWindows` creates Chunk 2.
-    *   Primary: 05:00 - 10:00.
-    *   Clip (sent to AI): 04:00 - 11:00 (assuming 60s overlap).
-2.  **Phase A Execution:**
-    *   `geminiService` calls `generateContent` with `startOffset: 240s`, `endOffset: 660s`.
-    *   Model returns raw list of actions.
-3.  **Phase B Execution:**
-    *   `geminiService` calls `interactions.create`.
-    *   Input: Raw actions + `previous_interaction_id` (from Chunk 1).
-    *   Output: Cleaned events + Updated UI State.
-4.  **State Update:** `App.tsx` appends to `actions`, saves to `localStorage`, and advances `currentChunkIndex`.
-
----
-
-## 3. EXTENSIBILITY
-
-*   **Adding Action Types:** Update `ActionType` in `types.ts` AND `PHASE_A_SYSTEM_PROMPT` in `constants.ts`.
-*   **Improving Accuracy:** Modify `constants.ts`.
-*   **New Export Formats:** Modify `ResultsTimeline.tsx`.
+1.  **Input:** Full list of `actions` generated in Pass 1.
+2.  **Filtering:** `AnalysisView` filters `actions` to range `04:45` to `15:15` (The 15s buffer).
+3.  **API Call:** `geminiService` sends this filtered JSON + the Video File to Gemini.
+4.  **Prompt:** "You are a Technical Writer. Here is what happened visually [JSON]. Listen to the audio and explain *why*."
+5.  **Output:** New `ActionItem`s of type `narration` with `relates_to` pointers.

@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { InputPanel } from './InputPanel';
 import { ChunkVisualizer } from './ChunkVisualizer';
 import { ResultsTimeline } from './ResultsTimeline';
-import { computeChunkWindows, parseMMSS } from '../utils/timeUtils';
-import { analyzeChunkPhaseA, accumulateChunkPhaseB } from '../services/geminiService';
+import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
+import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService';
 import { getProject, saveProject } from '../services/storage';
 import { Chunk, ProcessingState, ActionItem, PhaseBResponse, Project } from '../types';
 
@@ -12,6 +12,9 @@ interface AnalysisViewProps {
   projectId: string;
   onBack: () => void;
 }
+
+// 15 minutes = 900 seconds. Large enough for context, safe for tokens.
+const NARRATION_CHUNK_SIZE_SEC = 900; 
 
 export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack }) => {
   // Config State
@@ -28,6 +31,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
+    narrationStartTime: 0,
     totalActions: 0,
     totalTokens: 0,
     startTime: null,
@@ -39,8 +43,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // Timing stats for UI
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [estimatedRemaining, setEstimatedRemaining] = useState(0);
-
+  
   // Refs for loop control to avoid closure staleness
   const stateRef = useRef(procState);
   stateRef.current = procState;
@@ -86,7 +89,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       actions,
       procState,
       latestUIState,
-      status: procState.status, // Fixed: use exact status instead of deriving 'idle'
+      status: procState.status, 
       actionCount: actions.length
     };
     saveProject(saveData);
@@ -96,7 +99,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   useEffect(() => {
     if (durationInput && parseMMSS(durationInput) > 0 && procState.status === 'idle') {
       const duration = parseMMSS(durationInput);
-      // Only recalculate if chunks are empty or we are in idle setup mode (and not reloading an existing run)
+      // Only recalculate if chunks are empty or we are in idle setup mode
       if (chunks.length === 0 || (procState.currentChunkIndex === 0 && chunks.every(c => c.status === 'pending'))) {
          setChunks(computeChunkWindows(duration, chunkSize, overlap));
       }
@@ -105,19 +108,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // Timer Effect
   useEffect(() => {
-    if (procState.status === 'running') {
+    const isRunning = procState.status === 'running_visual' || procState.status === 'running_narration';
+    if (isRunning) {
       timerRef.current = setInterval(() => {
         if (stateRef.current.startTime) {
           const elapsed = Date.now() - stateRef.current.startTime;
           setElapsedTime(elapsed);
-          
-          // Estimate remaining
-          const completed = stateRef.current.currentChunkIndex;
-          if (completed > 0) {
-            const avgTime = elapsed / completed;
-            const remaining = chunksRef.current.length - completed;
-            setEstimatedRemaining(avgTime * remaining);
-          }
         }
       }, 1000);
     } else {
@@ -127,7 +123,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   }, [procState.status]);
 
   const handleStart = () => {
-    // Input validation
     const duration = parseMMSS(durationInput);
     if (duration <= 0) {
       alert("Please enter a valid duration (MM:SS)");
@@ -138,57 +133,64 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       return;
     }
 
-    // If starting fresh
     if (procState.status === 'idle' || procState.status === 'completed') {
        const newChunks = computeChunkWindows(duration, chunkSize, overlap);
        setChunks(newChunks);
        chunksRef.current = newChunks; 
        setActions([]);
        setProcState({
-        status: 'running',
+        status: 'running_visual',
         currentChunkIndex: 0,
+        narrationStartTime: 0,
         totalActions: 0,
         totalTokens: 0,
         startTime: Date.now(),
         lastInteractionId: null
       });
     } else if (procState.status === 'paused') {
-      // Resuming
+      const resumeStatus = chunks.some(c => c.status !== 'completed') ? 'running_visual' : 'running_narration';
       setProcState(prev => ({
         ...prev,
-        status: 'running',
-        startTime: prev.startTime || Date.now() // Keep original start if exists, else now
+        status: resumeStatus,
+        startTime: prev.startTime || Date.now() 
       }));
     }
   };
 
-  // Main Processing Loop (State Machine Implementation matching Allium Rules)
+  const sortActions = (a: ActionItem, b: ActionItem) => {
+     const timeA = parseMMSS(a.timestamp);
+     const timeB = parseMMSS(b.timestamp);
+     return timeA - timeB;
+  };
+
+  // --------------------------------------------------------------------------------
+  // LOOP 1: VISUAL ANALYSIS
+  // --------------------------------------------------------------------------------
   useEffect(() => {
     let active = true;
 
-    const processNext = async () => {
+    const processNextVisual = async () => {
       const { status, currentChunkIndex, lastInteractionId } = stateRef.current;
       const currentChunks = chunksRef.current.length > 0 ? chunksRef.current : chunks;
 
-      if (status !== 'running' || !active) return;
+      if (status !== 'running_visual' || !active) return;
       
-      console.log(`Processing Chunk ${currentChunkIndex + 1} / ${currentChunks.length}`);
+      console.log(`[Visual] Processing Chunk ${currentChunkIndex + 1} / ${currentChunks.length}`);
 
-      if (currentChunks.length === 0) {
-        setProcState(s => ({ ...s, status: 'idle' }));
-        return;
-      }
-
+      // Check if visual phase is done
       if (currentChunkIndex >= currentChunks.length) {
-        setProcState(s => ({ ...s, status: 'completed' }));
+        console.log("Visual Phase Complete. Switching to Narration Phase.");
+        setProcState(s => ({ 
+            ...s, 
+            status: 'running_narration', 
+            narrationStartTime: 0 
+        }));
         return;
       }
 
       const chunk = currentChunks[currentChunkIndex];
 
       try {
-        // [Allium Rule: AnalyzeChunkPhaseA]
-        // State Transition: pending -> analyzing_phase_a
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_a' } : c));
 
         const phaseAActions = await analyzeChunkPhaseA(
@@ -202,16 +204,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
         if (!active) return;
 
-        // [Allium Rule: CompletePhaseA]
-        // State Transition: analyzing_phase_a -> analyzing_phase_b
-        // Capture Phase A artifacts
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { 
           ...c, 
           status: 'analyzing_phase_b',
           phaseARawCount: phaseAActions.length 
         } : c));
 
-        // Execute Phase B (Accumulation)
         const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
         const { interactionId, result } = await accumulateChunkPhaseB(
           videoUrl,
@@ -223,51 +221,112 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         );
 
         if (!active) return;
-
-        // [Allium Rule: CompletePhaseB]
-        // State Transition: analyzing_phase_b -> completed
-        // Capture interaction ID and final counts
-        const newActionsRaw = result.validated_segment_events ?? phaseAActions;
-        // Inject chunkIndex as per Allium spec
-        const newActions = newActionsRaw.map(a => ({ ...a, chunkIndex: chunk.index }));
-        const addedCount = result.new_actions_added ?? newActions.length;
-
+        
+        const mergedVisualActions = result.validated_segment_events ?? phaseAActions;
+        const addedVisualCount = result.new_actions_added ?? mergedVisualActions.length;
         setLatestUIState(result.current_ui_state);
-        setActions(prev => [...prev, ...newActions]);
 
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { 
           ...c, 
           status: 'completed', 
+          phaseBAddedCount: addedVisualCount,
           interactionId: interactionId,
-          phaseBAddedCount: addedCount,
-          actionCount: newActions.length 
+          actionCount: mergedVisualActions.length 
         } : c));
 
-        // Update Project State (Rule: CompletePhaseB - update global pointer)
+        const taggedActions = mergedVisualActions.map(a => ({ ...a, chunkIndex: chunk.index }));
+        setActions(prev => [...prev, ...taggedActions].sort(sortActions));
+
         setProcState(prev => ({
           ...prev,
           currentChunkIndex: prev.currentChunkIndex + 1,
           lastInteractionId: interactionId,
-          totalActions: prev.totalActions + newActions.length,
-          totalTokens: prev.totalTokens + 87000 
+          totalActions: prev.totalActions + mergedVisualActions.length,
+          totalTokens: prev.totalTokens + 87000
         }));
 
       } catch (err) {
-        console.error("Processing Error:", err);
+        console.error("Visual Processing Error:", err);
         const errorMsg = err instanceof Error ? err.message : String(err);
-        
-        // [Allium Rule: FailChunk]
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'error', errorMsg } : c));
         setProcState(prev => ({ ...prev, status: 'paused' })); 
       }
     };
 
-    if (procState.status === 'running') {
-      processNext();
+    if (procState.status === 'running_visual') {
+      processNextVisual();
     }
 
     return () => { active = false; };
   }, [procState.status, procState.currentChunkIndex]);
+
+
+  // --------------------------------------------------------------------------------
+  // LOOP 2: NARRATION ANALYSIS (With Context Anchoring)
+  // --------------------------------------------------------------------------------
+  useEffect(() => {
+    let active = true;
+
+    const processNextNarration = async () => {
+      const { status, narrationStartTime } = stateRef.current;
+      const totalDuration = parseMMSS(durationInput);
+
+      if (status !== 'running_narration' || !active) return;
+
+      if (narrationStartTime >= totalDuration) {
+        setProcState(s => ({ ...s, status: 'completed' }));
+        return;
+      }
+
+      const endSec = Math.min(narrationStartTime + NARRATION_CHUNK_SIZE_SEC, totalDuration);
+      
+      console.log(`[Narration] Processing ${formatMMSS(narrationStartTime)} - ${formatMMSS(endSec)}`);
+
+      try {
+        // Filter relevant visual actions for context
+        // We use a WIDER buffer (+/- 15s) here so the model can see visual events 
+        // that the narration refers to even if they happen significantly before or after the speech.
+        const relevantActions = actionsRef.current.filter(a => {
+           const t = parseMMSS(a.timestamp);
+           return t >= (narrationStartTime - 15) && t < (endSec + 15) && a.action_type !== 'narration';
+        });
+
+        const narrationActions = await analyzeNarrationSegment(
+           videoUrl,
+           narrationStartTime,
+           endSec,
+           relevantActions
+        );
+
+        if (!active) return;
+
+        if (narrationActions.length > 0) {
+            setActions(prev => [...prev, ...narrationActions].sort(sortActions));
+            setProcState(prev => ({
+              ...prev,
+              totalActions: prev.totalActions + narrationActions.length,
+              totalTokens: prev.totalTokens + 300000 // Approximate tokens for large chunk
+            }));
+        }
+
+        setProcState(prev => ({
+           ...prev,
+           narrationStartTime: endSec
+        }));
+
+      } catch (err) {
+         console.error("Narration Error:", err);
+         setProcState(prev => ({ ...prev, status: 'paused' }));
+      }
+    };
+
+    if (procState.status === 'running_narration') {
+      processNextNarration();
+    }
+
+    return () => { active = false; };
+  }, [procState.status, procState.narrationStartTime]);
+
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -275,6 +334,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     const h = Math.floor(m / 60);
     return `${h > 0 ? h + ':' : ''}${m % 60}:${(s % 60).toString().padStart(2, '0')}`;
   };
+
+  const isVisualRunning = procState.status === 'running_visual';
+  const isNarrationRunning = procState.status === 'running_narration';
 
   return (
     <div className="flex flex-col h-full gap-6 overflow-hidden">
@@ -293,7 +355,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             overlap={overlap}
             setOverlap={setOverlap}
             onStart={handleStart}
-            disabled={procState.status === 'running'}
+            disabled={isVisualRunning || isNarrationRunning}
             onBack={onBack}
             projectName={projectName}
             setProjectName={setProjectName}
@@ -305,18 +367,32 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-500">Status</span>
-                    <span className={`font-mono font-bold ${procState.status === 'running' ? 'text-green-400 animate-pulse' : 'text-gray-300'}`}>
-                      {procState.status.toUpperCase()}
+                    <span className={`font-mono font-bold ${
+                        isVisualRunning ? 'text-blue-400 animate-pulse' :
+                        isNarrationRunning ? 'text-pink-400 animate-pulse' :
+                        procState.status === 'completed' ? 'text-green-400' :
+                        'text-gray-300'
+                    }`}>
+                      {procState.status === 'running_visual' ? 'VISUAL ANALYSIS' :
+                       procState.status === 'running_narration' ? 'AUDIO NARRATION' :
+                       procState.status.toUpperCase()}
                     </span>
                   </div>
+
+                  {isNarrationRunning && (
+                    <div className="flex justify-between items-center text-pink-300/80">
+                      <span className="text-xs">Audio Progress</span>
+                      <span className="font-mono text-xs">
+                         {formatMMSS(procState.narrationStartTime)} / {durationInput}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between">
                     <span className="text-gray-500">Elapsed</span>
                     <span className="font-mono text-gray-200">{formatTime(elapsedTime)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Est. Remaining</span>
-                    <span className="font-mono text-gray-200">{formatTime(estimatedRemaining)}</span>
-                  </div>
+                  
                   <div className="flex justify-between">
                     <span className="text-gray-500">Actions Found</span>
                     <span className="font-mono text-blue-300">{procState.totalActions}</span>
@@ -336,26 +412,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   <p><strong className="text-gray-500">App:</strong> {latestUIState.application}</p>
                   <p><strong className="text-gray-500">File:</strong> {latestUIState.active_file || 'None'}</p>
                   <p><strong className="text-gray-500">Tool:</strong> {latestUIState.active_tool || 'None'}</p>
-                  <div>
-                    <strong className="text-gray-500">Panels:</strong>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {latestUIState.visible_panels.map((p, i) => (
-                        <span key={i} className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">{p}</span>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </div>
           )}
         </div>
 
-        {/* Timeline Area (Flex column to fill height) */}
+        {/* Timeline Area */}
         <div className="lg:col-span-2 flex flex-col h-full min-h-0">
           <ResultsTimeline actions={actions} />
         </div>
       </div>
 
-      {/* Bottom Area: Chunk Visualizer (Fixed height/shrink-0) */}
+      {/* Bottom Area */}
       <div className="shrink-0">
          <ChunkVisualizer chunks={chunks} />
       </div>

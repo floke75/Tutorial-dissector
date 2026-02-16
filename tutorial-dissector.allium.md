@@ -7,23 +7,25 @@
 config {
     default_chunk_size: Duration = 5.minutes
     default_overlap: Duration = 60.seconds
-    max_chunk_duration: Duration = 7.minutes
-    min_chunk_duration: Duration = 3.minutes
+    narration_chunk_size: Duration = 15.minutes
+    narration_context_buffer: Duration = 15.seconds
 }
 
 ------------------------------------------------------------
 -- Enumerations
 ------------------------------------------------------------
 
-enum ProcessingStatus { idle | running | paused | completed | error }
+enum ProcessingStatus { idle | running_visual | running_narration | paused | completed | error }
 enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system | narrator }
 enum ActionType { 
     click | double_click | right_click | drag | scroll | 
     type | keyboard_shortcut | hover | select | menu_navigate | 
-    system_event | ui_response | transition | narration_cue | chunk_boundary 
+    system_event | ui_response | transition | narration_cue | chunk_boundary |
+    narration
 }
+enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
 
 ------------------------------------------------------------
 -- Value Types
@@ -72,6 +74,7 @@ entity Project {
 
     -- State tracking
     current_chunk_index: Integer
+    narration_progress: Duration
     total_tokens_used: Integer
     
     -- Latest detected UI Context (from Phase B)
@@ -100,7 +103,7 @@ entity Chunk {
 
 entity ActionItem {
     project: Project
-    chunk_index: Integer         -- Originating chunk
+    chunk_index: Integer?         -- Originating chunk (if visual)
     
     timestamp: Duration
     action_type: ActionType
@@ -109,6 +112,12 @@ entity ActionItem {
     detail: String
     result: String?
     confidence: ActionConfidence
+
+    -- Narration Specific
+    text: String?
+    topics: List<String>?
+    insight_type: InsightType?
+    relates_to: String?           -- Logical link to visual timestamp
 }
 
 ------------------------------------------------------------
@@ -121,24 +130,25 @@ rule StartAnalysis {
     requires: project.status in { idle, paused, completed }
     requires: project.video.url != ""
     
-    ensures: project.status = running
+    ensures: project.status = running_visual
     ensures: project.updated_at = now
 }
 
 rule PauseAnalysis {
     when: UserPausesAnalysis(project)
     
-    requires: project.status = running
+    requires: project.status in { running_visual, running_narration }
     
     ensures: project.status = paused
     ensures: project.updated_at = now
 }
 
+-- Visual Loop
 rule AnalyzeChunkPhaseA {
     when: SystemStartsPhaseA(chunk)
     
     requires: chunk.status = pending
-    requires: chunk.project.status = running
+    requires: chunk.project.status = running_visual
     
     ensures: chunk.status = analyzing_phase_a
 }
@@ -160,7 +170,6 @@ rule CompletePhaseB {
     ensures: chunk.status = completed
     ensures: chunk.interaction_id = next_interaction_id
     ensures: chunk.action_count = merged_actions.count
-    ensures: chunk.phase_b_added_count = merged_actions.count -- Simplification for spec, code tracks added vs raw
     
     -- Update Project State
     ensures: chunk.project.current_chunk_index = chunk.index + 1
@@ -183,21 +192,51 @@ rule CompletePhaseB {
             )
 }
 
+-- Transition to Narration
+rule StartNarrationPhase {
+    when: AllVisualChunksCompleted(project)
+
+    requires: project.status = running_visual
+    requires: project.chunks.all(c => c.status = completed)
+
+    ensures: project.status = running_narration
+    ensures: project.narration_progress = 0.seconds
+}
+
+-- Narration Loop
+rule AnalyzeNarrationSegment {
+    when: ProcessNextNarrationSegment(project, start_time, end_time)
+
+    requires: project.status = running_narration
+
+    -- Loose Anchoring Logic (Abstracted)
+    let context_window_start = start_time - config.narration_context_buffer
+    let context_window_end = end_time + config.narration_context_buffer
+    
+    let visual_context = project.actions where 
+        timestamp >= context_window_start and timestamp <= context_window_end
+
+    ensures:
+        -- Create narration items
+        project.narration_progress = end_time
+}
+
+rule CompleteProject {
+    when: NarrationFinished(project)
+    
+    requires: project.status = running_narration
+    requires: project.narration_progress >= project.video.duration
+    
+    ensures: project.status = completed
+    ensures: project.updated_at = now
+}
+
 rule FailChunk {
     when: AnalysisFailed(chunk, error)
     
     ensures: chunk.status = error
     ensures: chunk.error_msg = error
     ensures: chunk.project.status = paused
-}
-
-rule CompleteProject {
-    when: AllChunksProcessed(project)
-    
-    requires: project.chunks.all(c => c.status = completed)
-    
-    ensures: project.status = completed
-    ensures: project.updated_at = now
 }
 
 ------------------------------------------------------------
@@ -215,6 +254,7 @@ surface AnalysisDashboard {
         project.chunks
         project.actions
         project.current_chunk_index
+        project.narration_progress
         project.latest_ui_state
         
     provides:
