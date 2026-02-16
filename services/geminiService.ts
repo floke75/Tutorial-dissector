@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from '@google/genai';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT } from '../constants';
 import { ActionItem, PhaseBResponse } from '../types';
@@ -31,10 +30,10 @@ export async function analyzeChunkPhaseA(
   const ai = getClient();
   
   const basePrompt = PHASE_A_SYSTEM_PROMPT
-    .replace('{PRIMARY_START}', formatMMSS(primaryStartSec))
-    .replace('{PRIMARY_END}', formatMMSS(primaryEndSec))
-    .replace('{OVERLAP_START}', formatMMSS(startSec))
-    .replace('{OVERLAP_END}', formatMMSS(endSec));
+    .replace('{primary_start}', formatMMSS(primaryStartSec))
+    .replace('{primary_end}', formatMMSS(primaryEndSec))
+    .replace('{overlap_start}', formatMMSS(startSec))
+    .replace('{overlap_end}', formatMMSS(endSec));
 
   let lastError: any;
 
@@ -48,7 +47,7 @@ export async function analyzeChunkPhaseA(
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: [{
           role: 'user',
           parts: [
@@ -114,9 +113,9 @@ export async function accumulateChunkPhaseB(
   const client = getClient();
 
   const systemInstruction = PHASE_B_SYSTEM_PROMPT
-    .replace('{VIDEO_TITLE}', 'User Video')
-    .replace('{VIDEO_URL}', videoUrl)
-    .replace('{TOTAL_DURATION}', durationStr);
+    .replace('{video_title}', 'User Video')
+    .replace('{video_url}', videoUrl)
+    .replace('{total_duration}', durationStr);
 
   let lastError: any;
 
@@ -129,7 +128,7 @@ export async function accumulateChunkPhaseB(
       }
 
       const interaction = await interactionsClient.create({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         system_instruction: systemInstruction,
         input: JSON.stringify({
           chunk_number: chunkNumber,
@@ -192,9 +191,9 @@ export async function analyzeNarrationSegment(
   }));
   
   const prompt = PASS_2_SYSTEM_PROMPT
-    .replace('{START_TIME}', formatMMSS(startSec))
-    .replace('{END_TIME}', formatMMSS(endSec))
-    .replace('{VISUAL_ACTIONS}', JSON.stringify(simplifiedActions, null, 2));
+    .replace('{start_time}', formatMMSS(startSec))
+    .replace('{end_time}', formatMMSS(endSec))
+    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2));
 
   let lastError: any;
 
@@ -208,7 +207,7 @@ export async function analyzeNarrationSegment(
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: [{
           role: 'user',
           parts: [

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { ProjectSummary } from '../types';
 import { getProjects, createProject, deleteProject } from '../services/storage';
@@ -46,7 +45,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
         <div>
           <h1 className="text-4xl font-bold text-blue-400 mb-2">Tutorial Dissector</h1>
           <p className="text-gray-400 max-w-2xl">
-            Manage your Gemini 3 Pro video analysis projects. Resume previous sessions or start new extractions.
+            Manage your Gemini 3 Flash video analysis projects. Resume previous sessions or start new extractions.
           </p>
         </div>
         <button 
