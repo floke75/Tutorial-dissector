@@ -103,24 +103,31 @@ RULES FOR "TIMESTAMP" & ANCHORING:
 INPUT CONTEXT (Visual Actions occurring nearby):
 {VISUAL_ACTIONS}
 
-OUTPUT FIELDS:
-- "timestamp": MM:SS (When the audio statement begins)
-- "action_type": "narration"
-- "actor": "narrator"
-- "text": The synthesized, cleaned-up instructional text.
-- "insight_type": "explanation" | "rationale" | "tip" | "warning" | "workflow_framing" | "comparison"
-- "topics": Array of keywords (e.g., ["auto-layout", "components"])
-- "relates_to": MM:SS of the specific visual action being explained (or null).
+OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown, no commentary.
+Each element:
+{
+  "timestamp": "MM:SS",
+  "action_type": "narration",
+  "actor": "narrator",
+  "text": "The synthesized, cleaned-up instructional text.",
+  "insight_type": "explanation|rationale|tip|warning|workflow_framing|comparison",
+  "topics": ["keyword1", "keyword2"],
+  "relates_to": "MM:SS or null"
+}
 
 EXAMPLE:
 Audio: "So now, um, it's really crucial that we select the frame parent, otherwise the constraints will break."
 Visual Action at 04:25: "Click on 'Frame 1'"
 Output:
-{
-  "timestamp": "04:21",  // Audio started here
-  "action_type": "narration",
-  "text": "Select the parent frame to ensure constraints are preserved.",
-  "insight_type": "warning",
-  "relates_to": "04:25" // Logical link to the click
-}
+[
+  {
+    "timestamp": "04:21",
+    "action_type": "narration",
+    "actor": "narrator",
+    "text": "Select the parent frame to ensure constraints are preserved.",
+    "insight_type": "warning",
+    "relates_to": "04:25",
+    "topics": ["constraints", "selection"]
+  }
+]
 `;
