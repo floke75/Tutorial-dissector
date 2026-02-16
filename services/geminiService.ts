@@ -240,17 +240,18 @@ export async function analyzeNarrationSegment(
       const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
       
       try {
-        let result = JSON.parse(cleanText) as ActionItem[];
+        let parsed: unknown = JSON.parse(cleanText);
         
         // Handle potential non-array response by wrapping it
-        if (!Array.isArray(result)) {
-           if (typeof result === 'object' && result !== null) {
-              // @ts-ignore
-              result = [result];
+        if (!Array.isArray(parsed)) {
+           if (typeof parsed === 'object' && parsed !== null) {
+              parsed = [parsed];
            } else {
               return [];
            }
         }
+        
+        const result = parsed as ActionItem[];
         
         return result.map(r => ({
            ...r,
