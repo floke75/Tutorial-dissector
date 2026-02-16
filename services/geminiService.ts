@@ -240,12 +240,24 @@ export async function analyzeNarrationSegment(
       const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
       
       try {
-        const result = JSON.parse(cleanText) as ActionItem[];
-        if (!Array.isArray(result)) return [];
+        let result = JSON.parse(cleanText) as ActionItem[];
+        
+        // Handle potential non-array response by wrapping it
+        if (!Array.isArray(result)) {
+           if (typeof result === 'object' && result !== null) {
+              // @ts-ignore
+              result = [result];
+           } else {
+              return [];
+           }
+        }
         
         return result.map(r => ({
            ...r,
            action_type: 'narration', 
+           // Ensure compat with ActionItem interface
+           detail: r.text || '', 
+           confidence: r.confidence || 'high',
            target: r.target || { element: 'narration', location: '', panel: '', visual: '' },
            actor: 'narrator'
         }));
@@ -261,7 +273,7 @@ export async function analyzeNarrationSegment(
 
       const errStr = error.toString();
       if (errStr.includes('400') || errStr.includes('403') || errStr.includes('404')) {
-         return []; 
+         throw error; // Changed from return [] to allow UI to handle error
       }
 
       if (attempt < 3) {
@@ -271,5 +283,5 @@ export async function analyzeNarrationSegment(
     }
   }
 
-  return [];
+  throw lastError;
 }

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { ProjectSummary } from '../types';
 import { getProjects, createProject, deleteProject } from '../services/storage';
@@ -32,8 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
     switch(status) {
       case 'completed': return 'text-green-400 border-green-400/30 bg-green-900/20';
       case 'running_visual':
-      case 'running_narration':
-      case 'running': return 'text-blue-400 border-blue-400/30 bg-blue-900/20 animate-pulse';
+      case 'running_narration': return 'text-blue-400 border-blue-400/30 bg-blue-900/20 animate-pulse';
       case 'paused': return 'text-yellow-400 border-yellow-400/30 bg-yellow-900/20';
       case 'error': return 'text-red-400 border-red-400/30 bg-red-900/20';
       default: return 'text-gray-400 border-gray-600 bg-gray-800';
