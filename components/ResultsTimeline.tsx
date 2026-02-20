@@ -1,244 +1,410 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ActionItem } from '../types';
+import { ActionItem, NarrativeStep } from '../types';
+import { parseMMSS } from '../utils/timeUtils';
 
 interface ResultsTimelineProps {
   actions: ActionItem[];
+  narrativeSteps: NarrativeStep[];
 }
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions }) => {
-  const [filterType, setFilterType] = useState<string>('all');
+type TimelineNode = 
+  | { type: 'narrative'; step: NarrativeStep; children: ActionItem[] }
+  | { type: 'orphan_action'; action: ActionItem }
+  | { type: 'boundary'; detail: string; timestamp: string };
+
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narrativeSteps }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const filteredActions = useMemo(() => {
-    return actions.filter(a => {
-      const matchesType = filterType === 'all' || a.action_type === filterType;
-      const matchesSearch = 
-        (a.detail || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-        (a.target?.element || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (a.text || '').toLowerCase().includes(searchTerm.toLowerCase()); // Search narration text
-      return matchesType && matchesSearch;
-    });
-  }, [actions, filterType, searchTerm]);
+  // Build the Relational Tree
+  const timelineNodes = useMemo(() => {
+    const actionMap = new Map<string, ActionItem>();
+    actions.forEach(a => { if (a.id) actionMap.set(a.id, a); });
 
-  // Auto-scroll to bottom when new actions are added
+    const linkedActionIds = new Set<string>();
+    const nodes: TimelineNode[] = [];
+
+    narrativeSteps.forEach(step => {
+      const children: ActionItem[] = [];
+      step.linked_visual_action_ids?.forEach(id => {
+        const action = actionMap.get(id);
+        if (action) {
+          children.push(action);
+          linkedActionIds.add(id);
+        }
+      });
+      children.sort((a, b) => parseMMSS(a.timestamp) - parseMMSS(b.timestamp));
+      nodes.push({ type: 'narrative', step, children });
+    });
+
+    actions.forEach(action => {
+      if (action.action_type === 'chunk_boundary') {
+        nodes.push({ type: 'boundary', detail: action.detail, timestamp: action.timestamp });
+      } else if (!linkedActionIds.has(action.id)) {
+        nodes.push({ type: 'orphan_action', action });
+      }
+    });
+
+    nodes.sort((a, b) => {
+      const timeA = parseMMSS(a.type === 'narrative' ? a.step.timestamp : a.type === 'orphan_action' ? a.action.timestamp : a.timestamp);
+      const timeB = parseMMSS(b.type === 'narrative' ? b.step.timestamp : b.type === 'orphan_action' ? b.action.timestamp : b.timestamp);
+      return timeA - timeB;
+    });
+
+    return nodes;
+  }, [actions, narrativeSteps]);
+
+  const filteredNodes = useMemo(() => {
+    if (!searchTerm) return timelineNodes;
+    const lowerTerm = searchTerm.toLowerCase();
+
+    return timelineNodes.filter(node => {
+      if (node.type === 'boundary') return false;
+      if (node.type === 'orphan_action') {
+        return node.action.detail.toLowerCase().includes(lowerTerm) || node.action.target?.element?.toLowerCase().includes(lowerTerm);
+      }
+      if (node.type === 'narrative') {
+        const matchesStep = node.step.intent.toLowerCase().includes(lowerTerm) || node.step.explanation.toLowerCase().includes(lowerTerm);
+        const matchesChild = node.children.some(c => c.detail.toLowerCase().includes(lowerTerm));
+        return matchesStep || matchesChild;
+      }
+      return false;
+    });
+  }, [timelineNodes, searchTerm]);
+
+  // Auto-scroll
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [actions.length]);
+  }, [actions.length, narrativeSteps.length]);
 
   const getTypeColor = (type: string) => {
     switch(type) {
       case 'click': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'type': return 'bg-green-500/20 text-green-300 border-green-500/30';
+      case 'type': return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
       case 'keyboard_shortcut': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
       case 'ui_response': return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      case 'narration': return 'bg-pink-500/20 text-pink-300 border-pink-500/30'; // Style for Narration
-      case 'chunk_boundary': return 'bg-gray-700 text-gray-300 w-full text-center py-1 my-2 border-y border-gray-600';
       default: return 'bg-gray-700/30 text-gray-400 border-gray-600';
     }
   };
 
   const getInsightColor = (insight?: string) => {
     switch(insight) {
-      case 'warning': return 'text-red-400';
-      case 'tip': return 'text-green-400';
-      case 'comparison': return 'text-yellow-400';
-      default: return 'text-gray-400';
+      case 'warning': return 'text-red-400 bg-red-900/20 border-red-500/30';
+      case 'tip': return 'text-emerald-400 bg-emerald-900/20 border-emerald-500/30';
+      case 'rationale': return 'text-purple-400 bg-purple-900/20 border-purple-500/30';
+      default: return 'text-indigo-300 bg-indigo-900/20 border-indigo-500/30';
     }
   };
 
-  const downloadFile = (content: string, filename: string, mimeType: string) => {
-    const blob = new Blob([content], { type: mimeType });
+  const downloadJSON = () => {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      metadata: {
+         total_steps: narrativeSteps.length,
+         total_actions: actions.length
+      },
+      narrative_steps: narrativeSteps,
+      visual_actions: actions
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", url);
-    downloadAnchorNode.setAttribute("download", filename);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "tutorial_workflow_graph.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const downloadJSON = () => {
-    downloadFile(JSON.stringify(actions, null, 2), "tutorial_log.json", "application/json");
-  };
+  const downloadPlaywright = () => {
+    let script = `import { test, expect } from '@playwright/test';\n\n`;
+    script += `test('Autogenerated Tutorial Workflow', async ({ page }) => {\n`;
+    script += `  // Viewport assumed to be 1000x1000 to match normalized coordinate extraction.\n`;
+    script += `  await page.setViewportSize({ width: 1000, height: 1000 });\n\n`;
 
-  const downloadCSV = () => {
-    const headers = ['Timestamp', 'Action Type', 'Actor', 'Element', 'Detail/Text', 'Topics/Result', 'Insight', 'Relates To', 'Confidence'];
-    const rows = actions.map(a => [
-      a.timestamp,
-      a.action_type,
-      a.actor,
-      `"${(a.target?.element || '').replace(/"/g, '""')}"`,
-      `"${(a.text || a.detail || '').replace(/"/g, '""')}"`, // Use text for narration
-      `"${(a.topics?.join('; ') || a.result || '').replace(/"/g, '""')}"`,
-      `"${(a.insight_type || '').replace(/"/g, '""')}"`,
-      `"${(a.relates_to || '').replace(/"/g, '""')}"`,
-      a.confidence
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadFile(csvContent, "tutorial_log.csv", "text/csv");
-  };
+    const actionMap = new Map<string, ActionItem>();
+    actions.forEach(a => { if (a.id) actionMap.set(a.id, a); });
 
-  const downloadMarkdown = () => {
-    let md = `# Tutorial Analysis Log\n\n`;
-    md += `| Timestamp | Type | Insight | Relates To | Detail/Text | Element | Result/Topics |\n`;
-    md += `|-----------|------|---------|------------|-------------|---------|---------------|\n`;
-    actions.forEach(a => {
-        if (a.action_type === 'chunk_boundary') {
-            md += `\n**--- ${a.detail} ---**\n\n`;
-        } else if (a.action_type === 'narration') {
-            md += `| ${a.timestamp} | **NARRATION** | ${a.insight_type || '-'} | ${a.relates_to || '-'} | *"${a.text}"* | - | ${a.topics?.join(', ')} |\n`;
-        } else {
-            md += `| ${a.timestamp} | ${a.action_type} | - | - | ${a.detail} | ${a.target?.element || '-'} | ${a.result || '-'} |\n`;
-        }
+    narrativeSteps.forEach((step, idx) => {
+      // Escape single quotes for JS string
+      const intentName = step.intent.replace(/'/g, "\\'");
+      script += `  await test.step('${idx + 1}. ${intentName}', async () => {\n`;
+      if (step.precondition) script += `    // Precondition: ${step.precondition}\n`;
+      
+      const linkedActions = (step.linked_visual_action_ids || [])
+          .map(id => actionMap.get(id))
+          // CRITICAL: Filter out error recovery steps. Bots shouldn't make mistakes!
+          .filter((a): a is ActionItem => !!a && !a.is_error_recovery);
+
+      linkedActions.forEach(action => {
+          script += `    // ${action.detail}\n`;
+          
+          if (action.action_type === 'click' && action.target?.spatial_bounding_box) {
+              const [ymin, xmin, ymax, xmax] = action.target.spatial_bounding_box;
+              const cy = (ymin + ymax) / 2;
+              const cx = (xmin + xmax) / 2;
+              // Coordinates are 0-1000 normalized, so we can use them directly on a 1000x1000 viewport
+              script += `    await page.mouse.click(${Math.round(cx)}, ${Math.round(cy)}); // Target: ${action.target.element}\n`;
+          } else if (action.action_type === 'type' && action.input_data?.text_typed) {
+              const text = action.input_data.text_typed.replace(/'/g, "\\'");
+              script += `    await page.keyboard.type('${text}');\n`;
+          } else if (action.action_type === 'keyboard_shortcut' && action.input_data?.keys_pressed) {
+              const combo = action.input_data.keys_pressed.join('+');
+              script += `    await page.keyboard.press('${combo}');\n`;
+          } else {
+              script += `    // Action: ${action.action_type} on ${action.target?.element || 'unknown'}\n`;
+          }
+      });
+
+      if (step.postcondition) script += `    // Postcondition: ${step.postcondition}\n`;
+      script += `  });\n\n`;
     });
-    downloadFile(md, "tutorial_log.md", "text/markdown");
+
+    script += `});\n`;
+
+    const blob = new Blob([script], { type: "text/typescript" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "tutorial_workflow.spec.ts";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Renderer for a single low-level ActionItem
+  const renderAction = (action: ActionItem, isNested: boolean) => {
+    const isError = action.is_error_recovery;
+    const baseStyle = isNested ? 'ml-4 border-l-2 border-l-gray-600' : 'hover:bg-gray-800/60 hover:border-gray-700';
+    const bgStyle = isError ? 'bg-orange-900/10 border-orange-900/30 hover:border-orange-800/50' : 'bg-gray-800/40 border-gray-800';
+    const textStyle = isError ? 'text-orange-200/70' : 'text-gray-300';
+    
+    return (
+      <div key={action.id || action.timestamp + action.action_type} className={`flex gap-4 p-3 rounded-lg border transition group relative ${baseStyle} ${bgStyle}`}>
+        
+        {/* Error Recovery Indicator Line */}
+        {isError && (
+           <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-600/50 rounded-l-lg"></div>
+        )}
+
+        <div className={`w-12 shrink-0 font-mono text-xs pt-1 ${isError ? 'text-orange-500/50' : 'text-gray-500'}`}>
+          {action.timestamp}
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${isError ? 'bg-orange-900/30 text-orange-400 border-orange-700/50' : getTypeColor(action.action_type)}`}>
+              {action.action_type.replace('_', ' ')}
+            </span>
+            <span className={`text-xs font-mono ${isError ? 'text-orange-300/60 line-through' : 'text-gray-400'}`}>
+              {action.target?.element}
+            </span>
+            
+            {/* Spatial Bounding Box Badge */}
+            {action.target?.spatial_bounding_box && action.target.spatial_bounding_box.length === 4 && !isError && (
+              <span className="flex items-center gap-1 text-[9px] font-mono text-blue-400/70 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/50 cursor-help" title="[ymin, xmin, ymax, xmax] normalized 0-1000">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                [{action.target.spatial_bounding_box.join(', ')}]
+              </span>
+            )}
+
+            {isError && (
+              <span className="text-[9px] font-bold uppercase text-orange-500 flex items-center gap-1 ml-auto border border-orange-500/30 px-1.5 py-0.5 rounded">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                Correction (Skipped in Automation)
+              </span>
+            )}
+          </div>
+          
+          <p className={`text-sm leading-relaxed mb-2 ${textStyle}`}>
+            {action.detail}
+          </p>
+
+          {/* Strict Input Modeling (Keys & Text) */}
+          {action.input_data && (action.input_data.keys_pressed || action.input_data.text_typed) && !isError && (
+            <div className="flex flex-wrap items-center gap-3 mt-2 mb-2 p-2 bg-gray-900/50 rounded-md border border-gray-750">
+               {action.input_data.keys_pressed && action.input_data.keys_pressed.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold mr-1">Keys:</span>
+                    {action.input_data.keys_pressed.map((k, i) => (
+                      <React.Fragment key={i}>
+                        <kbd className="px-1.5 py-0.5 text-xs font-mono font-bold text-gray-200 bg-gray-800 border border-gray-600 rounded shadow-sm shadow-black/50">{k}</kbd>
+                        {i < action.input_data!.keys_pressed!.length - 1 && <span className="text-gray-600">+</span>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+               )}
+               {action.input_data.text_typed && (
+                 <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold">Typed:</span>
+                    <span className="font-mono text-sm text-emerald-300 bg-emerald-900/20 px-2 py-0.5 rounded border border-emerald-900/50">
+                      "{action.input_data.text_typed}"
+                    </span>
+                 </div>
+               )}
+            </div>
+          )}
+
+          {/* Rich UI Components with state mutations */}
+          {action.interacted_components && action.interacted_components.length > 0 && !isError && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {action.interacted_components.map((comp, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-900/50 text-gray-300 text-xs rounded-md border border-gray-700">
+                  <span className="opacity-50 uppercase text-[9px] font-bold tracking-wider">{comp.type}</span>
+                  <span className="font-semibold text-blue-200">{comp.label}</span>
+                  {(comp.state_before || comp.state_after || comp.action_value) && (
+                     <span className="flex items-center gap-1 ml-1 pl-1.5 border-l border-gray-600">
+                       {comp.state_before && <span className="text-gray-500 line-through text-[10px]">{comp.state_before}</span>}
+                       {comp.state_after && <span className="text-emerald-400 text-[10px] font-mono">→ {comp.state_after}</span>}
+                       {comp.action_value && <span className="text-yellow-200 text-[10px] font-mono">="{comp.action_value}"</span>}
+                     </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {action.ui_context && !isError && (
+             <div className="hidden group-hover:flex flex-wrap gap-3 mt-3 pt-2 border-t border-gray-700/50 text-[10px] text-gray-500 font-mono">
+               <span>Panel: {action.ui_context.active_panel}</span>
+               <span>Tool: {action.ui_context.active_tool}</span>
+               {action.ui_context.open_dialogs?.length > 0 && <span>Dialogs: {action.ui_context.open_dialogs.join(', ')}</span>}
+             </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="bg-gray-850 h-full flex flex-col rounded-xl border border-gray-750 shadow-lg overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-gray-750 flex flex-col md:flex-row justify-between items-center bg-gray-900/50 gap-3">
-        <h2 className="text-lg font-semibold text-white">Extracted Events ({actions.length})</h2>
+        <h2 className="text-lg font-semibold text-white">Hierarchical Execution Graph</h2>
         <div className="flex gap-2">
-           <button onClick={downloadJSON} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-white transition font-mono">
-             JSON
+           <button onClick={downloadPlaywright} className="text-xs bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded text-white transition font-mono flex items-center gap-2 shadow-lg shadow-emerald-900/20">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+             Export Playwright
            </button>
-           <button onClick={downloadCSV} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-white transition font-mono">
-             CSV
-           </button>
-           <button onClick={downloadMarkdown} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-white transition font-mono">
-             MD
+           <button onClick={downloadJSON} className="text-xs bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 rounded text-white transition font-mono flex items-center gap-2 shadow-lg shadow-indigo-900/20">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+             Export JSON
            </button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="p-4 border-b border-gray-750 flex gap-4 bg-gray-900/30">
-        <select 
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-sm text-white rounded px-3 py-1 focus:outline-none focus:border-blue-500"
-        >
-          <option value="all">All Types</option>
-          <option value="click">Click</option>
-          <option value="type">Type</option>
-          <option value="ui_response">UI Response</option>
-          <option value="narration">Narration (Audio)</option>
-        </select>
         <input 
           type="text" 
-          placeholder="Search details..." 
+          placeholder="Search intents, pre-conditions, actions, or elements..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-sm text-white rounded px-3 py-1 flex-1 focus:outline-none focus:border-blue-500"
+          className="bg-gray-800 border border-gray-700 text-sm text-white rounded px-3 py-1.5 flex-1 focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-gray-500"
         />
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {filteredActions.length === 0 && (
-          <div className="text-center text-gray-500 mt-10">No events found. Start analysis or adjust filters.</div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        {filteredNodes.length === 0 && (
+          <div className="text-center text-gray-500 mt-10">No events found in workflow graph.</div>
         )}
         
-        {filteredActions.map((action, idx) => {
-          if (action.action_type === 'chunk_boundary') {
+        {filteredNodes.map((node, idx) => {
+          if (node.type === 'boundary') {
             return (
-              <div key={idx} className="text-xs font-mono text-center text-gray-500 py-2 border-t border-b border-gray-800 bg-gray-900/50">
-                --- {action.detail} ---
+              <div key={`boundary-${idx}`} className="text-xs font-mono text-center text-gray-600 py-3 border-t border-b border-gray-800 bg-gray-900/20">
+                --- {node.detail} ---
               </div>
             );
           }
 
-          // Special Rendering for Narration
-          if (action.action_type === 'narration') {
+          if (node.type === 'orphan_action') {
+            return renderAction(node.action, false);
+          }
+
+          if (node.type === 'narrative') {
+            const { step, children } = node;
             return (
-               <div key={idx} className="flex gap-4 p-3 rounded-lg bg-pink-900/10 border border-pink-900/30 hover:bg-pink-900/20 transition group ml-4 relative">
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-pink-500/50 rounded-l-lg"></div>
-                  
-                   {/* Timestamp */}
-                  <div className="w-16 shrink-0 font-mono text-pink-400/80 font-bold text-sm pt-1">
-                    {action.timestamp}
+               <div key={step.id} className="rounded-xl bg-gradient-to-b from-indigo-900/10 to-gray-800/20 border border-indigo-900/40 overflow-hidden shadow-lg mb-8">
+                  {/* Narrative Header */}
+                  <div className="p-5 border-b border-indigo-900/30 relative">
+                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>
+                     
+                     <div className="flex gap-4">
+                        <div className="w-12 shrink-0 font-mono text-indigo-400 font-bold text-sm pt-0.5">
+                          {step.timestamp}
+                        </div>
+                        <div className="flex-1">
+                           <div className="flex items-center gap-2 mb-3">
+                             <h3 className="text-xl font-bold text-indigo-100">{step.intent}</h3>
+                             {step.insight_type && (
+                               <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${getInsightColor(step.insight_type)}`}>
+                                 {step.insight_type}
+                               </span>
+                             )}
+                           </div>
+                           
+                           {/* BDD Pre/Post Conditions */}
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                             {step.precondition && (
+                               <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-750">
+                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div> Precondition (Given)
+                                 </div>
+                                 <p className="text-sm text-gray-300">{step.precondition}</p>
+                               </div>
+                             )}
+                             {step.postcondition && (
+                               <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-750">
+                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Postcondition (Then)
+                                 </div>
+                                 <p className="text-sm text-gray-300">{step.postcondition}</p>
+                               </div>
+                             )}
+                           </div>
+
+                           <p className="text-gray-400 italic font-serif leading-relaxed mb-3 text-sm border-l-2 border-indigo-900/50 pl-3">
+                             "{step.explanation}"
+                           </p>
+                           
+                           {step.topics && step.topics.length > 0 && (
+                             <div className="flex flex-wrap gap-1.5 mt-2">
+                               {step.topics.map((t, i) => (
+                                 <span key={i} className="px-1.5 py-0.5 bg-gray-900/50 text-indigo-300/70 text-[10px] rounded border border-indigo-900/50">
+                                   #{t}
+                                 </span>
+                               ))}
+                             </div>
+                           )}
+                        </div>
+                     </div>
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                       <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border bg-pink-500/20 text-pink-300 border-pink-500/30`}>
-                        NARRATION
-                      </span>
-                      {action.insight_type && (
-                         <span className={`text-[10px] uppercase font-bold px-1 ${getInsightColor(action.insight_type)}`}>
-                            {action.insight_type}
-                         </span>
-                      )}
-                      {action.relates_to && (
-                        <span className="text-[10px] text-gray-500 flex items-center gap-1">
-                           ↳ refers to {action.relates_to}
-                        </span>
-                      )}
+                  {/* Nested Visual Actions */}
+                  {children.length > 0 && (
+                    <div className="p-4 bg-gray-900/40 space-y-2">
+                      <div className="text-[10px] font-bold text-indigo-300/50 uppercase tracking-widest mb-3 ml-4 flex items-center gap-2">
+                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                         Execution Steps (When)
+                      </div>
+                      {children.map(action => renderAction(action, true))}
                     </div>
-                    
-                    <p className="text-gray-200 text-sm leading-relaxed italic font-serif">
-                      "{action.text}"
-                    </p>
-
-                    {action.topics && action.topics.length > 0 && (
-                       <div className="flex flex-wrap gap-1 mt-2">
-                          {action.topics.map((t, i) => (
-                             <span key={i} className="px-1.5 py-0.5 bg-gray-800 text-gray-400 text-[10px] rounded border border-gray-700">
-                                #{t}
-                             </span>
-                          ))}
-                       </div>
-                    )}
-                  </div>
+                  )}
                </div>
             );
           }
 
-          // Standard Action Item
-          return (
-            <div key={idx} className="flex gap-4 p-3 rounded-lg bg-gray-800/40 hover:bg-gray-800/60 border border-gray-800 hover:border-gray-700 transition group">
-              {/* Timestamp */}
-              <div className="w-16 shrink-0 font-mono text-blue-400 font-bold text-sm pt-1">
-                {action.timestamp}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${getTypeColor(action.action_type)}`}>
-                    {action.action_type.replace('_', ' ')}
-                  </span>
-                  <span className="text-xs text-gray-400 font-mono">{action.target?.element}</span>
-                </div>
-                
-                <p className="text-gray-200 text-sm leading-relaxed">
-                  {action.detail}
-                </p>
-
-                {action.result && (
-                   <p className="text-gray-500 text-xs mt-1 pl-2 border-l-2 border-gray-700">
-                     → {action.result}
-                   </p>
-                )}
-                
-                {/* Hover Details */}
-                <div className="hidden group-hover:flex mt-2 gap-4 text-[10px] text-gray-600">
-                    {action.actor !== 'user' && <span>Actor: {action.actor}</span>}
-                    {action.target?.location && <span>Loc: {action.target.location}</span>}
-                    <span>Confidence: {action.confidence}</span>
-                </div>
-              </div>
-            </div>
-          );
+          return null;
         })}
         {/* Scroll anchor */}
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="h-4" />
       </div>
     </div>
   );

@@ -8,127 +8,118 @@ ANALYSIS WINDOW:
 - Context post-roll: {primary_end} to {overlap_end} (use for context, do NOT log as new actions)
 
 RULES:
-1. Log EVERY discrete user action: clicks, drags, scrolls, text input, keyboard shortcuts, menu navigations, hovers that trigger tooltips, selections, right-clicks, double-clicks.
-2. Log EVERY UI response: dialogs appearing/closing, panels expanding/collapsing, progress bars, loading states, error messages, notifications, animations completing, content rendering.
-3. Timestamps must be in MM:SS format relative to the FULL video (not the clip).
-4. Describe spatial positions precisely: "upper-left corner", "second toolbar row, third icon from left", "center of canvas area", "bottom status bar, right side".
-5. Describe element sizes relatively: "dialog covering approximately 1/3 of the screen", "narrow sidebar ~20% screen width", "small tooltip near cursor".
-6. Describe visual attributes: colors, icons, text labels, active/inactive states, highlight colors, cursor shape changes.
-7. For text input: quote the EXACT text typed, note if autocomplete suggestions appear.
-8. For keyboard shortcuts: specify exact keys (e.g., "Ctrl+Shift+P").
-9. Flag moments of ambiguity: if something is partially occluded, happens too fast, or is unclear, note it explicitly with [uncertain].
-10. If the screen shows code, read the EXACT code visible and note any syntax highlighting changes.
+1. Log EVERY discrete user action: clicks, drags, scrolls, text input, keyboard shortcuts, menu navigations, hovers that trigger tooltips, selections.
+2. Log EVERY UI response: dialogs appearing/closing, panels expanding/collapsing, progress bars, loading states, error messages.
+3. SPATIAL GROUNDING: For EVERY target element, you MUST provide its normalized 2D bounding box as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. (e.g., [150, 200, 180, 400]).
+4. STRICT INPUT MODELING: If the user types text, put the exact string in "input_data.text_typed". If they use a keyboard shortcut, put the exact array of keys in "input_data.keys_pressed" (e.g., ["Ctrl", "Shift", "P"]).
+5. ERROR RECOVERY: If the user makes a mistake (clicks the wrong button, typos and deletes, opens the wrong menu) and corrects it, flag "is_error_recovery" as true for those specific mistake/correction actions.
+6. Tag UI components interacted with, capturing their state_before and state_after.
 
-OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown, no commentary.
-Each element:
-{
-  "timestamp": "MM:SS",
-  "action_type": "click|double_click|right_click|drag|scroll|type|keyboard_shortcut|hover|select|menu_navigate|system_event|ui_response|transition|narration_cue",
-  "actor": "user|system|narrator",
-  "target": {
-    "element": "descriptive name of the UI element",
-    "location": "spatial position description",
-    "panel": "which panel/region of the application",
-    "visual": "color, icon, size, state description"
-  },
-  "detail": "full natural-language description of exactly what happens",
-  "result": "what changes on screen as a consequence (null if no visible change yet)",
-  "context_note": "any relevant continuity note referencing prior or upcoming state (null if none)",
-  "confidence": "high|medium|low"
-}
+OUTPUT FORMAT: Respond ONLY with a JSON array of objects. No markdown, no commentary outside the JSON.
+[
+  {
+    "timestamp": "MM:SS",
+    "action_type": "click|double_click|right_click|drag|scroll|type|keyboard_shortcut|hover|select|menu_navigate|system_event|ui_response|transition",
+    "actor": "user|system",
+    "target": {
+      "element": "descriptive name",
+      "location": "spatial position",
+      "panel": "which panel",
+      "visual": "visual state",
+      "spatial_bounding_box": [150, 200, 180, 400]
+    },
+    "interacted_components": [
+      { "type": "checkbox", "label": "Autosave", "state_before": "unchecked", "state_after": "checked" }
+    ],
+    "input_data": {
+      "keys_pressed": ["Ctrl", "C"],
+      "text_typed": ""
+    },
+    "is_error_recovery": false,
+    "detail": "full natural-language description",
+    "result": "what changes on screen as a consequence",
+    "context_note": "any continuity note",
+    "confidence": "high|medium|low"
+  }
+]
 `;
 
 export const PHASE_B_SYSTEM_PROMPT = `
-You are the session memory and quality controller for a video tutorial analysis pipeline. You maintain the authoritative, merged action log across all analyzed chunks of a software tutorial video.
+You are the session memory and quality controller for a video tutorial analysis pipeline. You maintain the authoritative, merged action log across all analyzed chunks.
 
 VIDEO BEING ANALYZED: {video_title} ({video_url})
 TOTAL DURATION: {total_duration}
 
 ON EACH TURN you receive:
-1. A chunk of newly extracted actions (JSON array) from the latest video segment
+1. A chunk of newly extracted actions (JSON array)
 2. The chunk's primary time window and overlap margins
 
 YOUR RESPONSIBILITIES:
-1. MERGE the new actions into the running log. Deduplicate any actions from overlap zones that were already logged in a previous chunk.
-2. VALIDATE continuity: timestamps must be strictly ascending. UI state references must be consistent (e.g., if chunk 2 says "the dialog from 02:45 is still open", verify chunk 1 logged that dialog opening).
-3. RESOLVE conflicts: if overlap zones produce slightly different descriptions of the same event, keep the version from whichever chunk had it in its PRIMARY window (not overlap).
-4. ANNOTATE section boundaries: insert a separator event of type "chunk_boundary" at each transition showing which chunk covered which time range.
-5. TRACK running state: maintain awareness of what windows/panels/dialogs are currently open, what file is being edited, what tool is selected, etc. This helps future chunks understand context.
+1. MERGE new actions into the running log. Deduplicate overlap actions. Maintain spatial_bounding_box, input_data, and is_error_recovery flags.
+2. ASSIGN IDs: Assign a unique string "id" to every finalized action in "validated_segment_events" (e.g., "evt_001"). These IDs must be strictly sequential.
+3. EMBED UI CONTEXT: For every action, capture the instantaneous "ui_context" occurring at that exact millisecond (active panel, active tool, open dialogs).
+4. ANNOTATE boundaries: insert an event of type "chunk_boundary" at each transition.
 
 RESPOND with a JSON object:
 {
   "chunk_processed": { "number": N, "primary_window": "MM:SS–MM:SS" },
-  "new_actions_added": <count>,
-  "duplicates_removed": <count>,
-  "conflicts_resolved": [<descriptions if any>],
+  "new_actions_added": 5,
+  "duplicates_removed": 1,
+  "conflicts_resolved": ["Resolved timestamp overlap between evt_X and new action"],
   "current_ui_state": {
-    "application": "name of the software",
-    "active_file": "filename or null",
-    "visible_panels": ["list of open panels"],
-    "active_tool": "currently selected tool or null",
-    "open_dialogs": ["list of open dialogs or empty"],
-    "other_state": "any other relevant persistent state"
+    "application": "software name",
+    "active_file": "filename",
+    "visible_panels": ["panels"],
+    "active_tool": "tool",
+    "open_dialogs": ["dialogs"],
+    "other_state": "other"
   },
-  "cumulative_action_count": <total actions so far>,
+  "cumulative_action_count": 42,
   "validated_segment_events": [
-     // LIST HERE the finalized, merged action objects for this segment ONLY. 
-     // Include any "chunk_boundary" events if applicable.
-     // These will be displayed to the user.
+     {
+       "id": "evt_042",
+       ... <standard action properties including spatial_bounding_box and input_data>,
+       "ui_context": {
+         "active_panel": "Layers",
+         "active_tool": "Move Tool",
+         "open_dialogs": []
+       }
+     }
   ],
-  "merged_log_excerpt": <last 10 actions from the merged log, for verification>
+  "merged_log_excerpt": [ <last few actions> ]
 }
 `;
 
 export const PASS_2_SYSTEM_PROMPT = `
 You are creating the "Narrative Track" for a software tutorial video.
-A "Visual Track" (user actions) has already been generated (provided below for context).
+A detailed "Visual Track" of low-level user actions has already been generated.
 
 YOUR TASK:
-Listen to the audio track and synthesize a clean, intent-driven written log of what is being taught.
+Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks to these high-level human intents.
 You are processing the segment from {start_time} to {end_time}.
 
-RULES FOR "TEXT" (THE NARRATIVE LOG):
-1. **DO NOT TRANSCRIBE VERBATIM.** This is a tutorial log, not a court transcript.
-2. **CLEAN & SYNTHESIZE:** Convert spoken filler ("Um, so, I'm gonna go ahead and click...") into clear instruction ("Select the configuration option").
-3. **CAPTURE INTENT:** Focus on the *why* and the *what*. Explain the concept being demonstrated.
-4. **STYLE:** Professional, instructional technical writing.
-5. **COMPREHENSIVE COVERAGE:** Aim for comprehensive narration coverage — when in doubt, include rather than skip. Capture every distinct step, explanation, or tip provided by the narrator.
-
-RULES FOR "TIMESTAMP" & ANCHORING:
-1. **INDEPENDENT TIMING:** The "timestamp" field must reflect when the *explanation starts* in the audio. This may differ from when the visual action happens (e.g., an explanation often precedes the click).
-2. **LOOSE ANCHORING:** Use the provided {visual_actions} to understand context.
-   - If the narration explains a specific visual event, set "relates_to" to that event's timestamp (e.g., "04:12").
-   - If the visual event hasn't happened yet or happened slightly earlier, that is fine. The "relates_to" field connects them logically, not temporally.
-   - If the narration covers a general concept or a sequence of actions, set "relates_to" to the time range (e.g., "04:12-04:20") or leave null.
+RULES FOR "NARRATIVE STEPS":
+1. **GROUPING:** Group a sequence of visual actions into a single logical "Step" (e.g., "Set up project configuration").
+2. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement).
+3. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes.
+4. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
+5. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
 
 INPUT CONTEXT (Visual Actions occurring nearby):
 {visual_actions}
 
-OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown, no commentary.
-Each element:
-{
-  "timestamp": "MM:SS",
-  "action_type": "narration",
-  "actor": "narrator",
-  "text": "The synthesized, cleaned-up instructional text.",
-  "insight_type": "explanation|rationale|tip|warning|workflow_framing|comparison",
-  "topics": ["keyword1", "keyword2"],
-  "relates_to": "MM:SS or null"
-}
-
-EXAMPLE:
-Audio: "So now, um, it's really crucial that we select the frame parent, otherwise the constraints will break."
-Visual Action at 04:25: "Click on 'Frame 1'"
-Output:
+OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown.
 [
   {
+    "id": "step_001",
     "timestamp": "04:21",
-    "action_type": "narration",
-    "actor": "narrator",
-    "text": "Select the parent frame to ensure constraints are preserved.",
-    "insight_type": "warning",
-    "relates_to": "04:25",
-    "topics": ["constraints", "selection"]
+    "intent": "Configure Autosave Settings",
+    "precondition": "Settings modal is closed and user is on the main canvas.",
+    "explanation": "Select the parent frame and enable autosave to ensure constraints are preserved during edits.",
+    "postcondition": "Autosave toggle is visually checked and Settings modal remains open.",
+    "insight_type": "rationale",
+    "topics": ["constraints", "configuration"],
+    "linked_visual_action_ids": ["evt_056", "evt_057", "evt_058"]
   }
 ]
 `;

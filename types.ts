@@ -1,9 +1,11 @@
 
+
 export interface ActionTarget {
   element: string;
   location: string;
   panel: string;
   visual: string;
+  spatial_bounding_box?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] normalized 0-1000
 }
 
 export type ActionType = 
@@ -20,17 +22,37 @@ export type ActionType =
   | 'system_event' 
   | 'ui_response' 
   | 'transition' 
-  | 'narration_cue'
-  | 'chunk_boundary'
-  | 'narration';
+  | 'chunk_boundary';
 
 export type ActionConfidence = 'high' | 'medium' | 'low';
-export type ActorType = 'user' | 'system' | 'narrator';
+export type ActorType = 'user' | 'system';
 export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
 export type ProcessingStatus = 'idle' | 'running_visual' | 'running_narration' | 'paused' | 'completed' | 'error';
 export type InsightType = 'explanation' | 'rationale' | 'tip' | 'warning' | 'workflow_framing' | 'comparison';
 
+export type UIComponentType = 'button' | 'menu_item' | 'tab' | 'dropdown' | 'checkbox' | 'radio' | 'input_field' | 'toggle' | 'link' | 'modal' | 'panel' | 'other';
+
+export interface UIComponent {
+  type: UIComponentType | string;
+  label: string;
+  state_before?: string; // e.g., "unchecked", "hidden", "disabled"
+  state_after?: string;  // e.g., "checked", "visible", "enabled"
+  action_value?: string; // Value selected from a dropdown or toggle
+}
+
+export interface UIStateSnapshot {
+  active_panel: string;
+  active_tool: string;
+  open_dialogs: string[];
+}
+
+export interface InputData {
+  keys_pressed?: string[]; // e.g., ["Ctrl", "Shift", "P"]
+  text_typed?: string;     // The exact string typed into an input
+}
+
 export interface ActionItem {
+  id: string; // Unique identifier (e.g., evt_001)
   timestamp: string;
   action_type: ActionType;
   actor: ActorType;
@@ -39,14 +61,27 @@ export interface ActionItem {
   result: string | null;
   context_note: string | null;
   confidence: ActionConfidence;
+  
+  interacted_components?: UIComponent[];
+  ui_context?: UIStateSnapshot; 
+  input_data?: InputData;
+  
+  is_error_recovery?: boolean; // True if this action is the user correcting a mistake
+  
   // Internal tracking
   chunkIndex?: number;
-  
-  // Pass 2 (Narration) specific optional fields
-  text?: string;
-  topics?: string[];
-  insight_type?: InsightType;
-  relates_to?: string | null;
+}
+
+export interface NarrativeStep {
+  id: string; 
+  timestamp: string;
+  intent: string; 
+  precondition: string; // What must be true before this step (Given)
+  explanation: string; 
+  postcondition: string; // How to verify the step succeeded (Then)
+  insight_type: InsightType;
+  topics: string[];
+  linked_visual_action_ids: string[]; 
 }
 
 export interface Chunk {
@@ -68,18 +103,26 @@ export interface Chunk {
   actionCount?: number;
 }
 
+export type LogLevel = 'info' | 'warn' | 'error' | 'success';
+
+export interface LogMessage {
+  id: string;
+  timestamp: number;
+  level: LogLevel;
+  message: string;
+  data?: any;
+}
+
 export interface ProcessingState {
   status: ProcessingStatus;
   currentChunkIndex: number;
-  narrationStartTime: number; // Track progress of narration pass (in seconds)
+  narrationStartTime: number; 
   totalActions: number;
   totalTokens: number;
   startTime: number | null;
-  lastInteractionId: string | null;
-}
-
-export interface PhaseAResponse {
-  actions: ActionItem[];
+  lastInteractionId: string | null; 
+  chatHistory?: any[]; 
+  logs?: LogMessage[]; // Added logs array for Dev Console
 }
 
 export interface UIState {
@@ -102,6 +145,7 @@ export interface PhaseBResponse {
   current_ui_state: UIState;
   cumulative_action_count: number;
   validated_segment_events: ActionItem[]; 
+  merged_log_excerpt?: ActionItem[];
 }
 
 export interface VideoMetadata {
@@ -126,6 +170,7 @@ export interface Project extends ProjectSummary {
   
   chunks: Chunk[];
   actions: ActionItem[];
+  narrativeSteps: NarrativeStep[];
   
   // Runtime State
   procState: ProcessingState;

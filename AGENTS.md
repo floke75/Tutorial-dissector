@@ -1,72 +1,52 @@
 
-# AGENTS.md - Project Context & Onboarding
+# AGENTS.md - Technical Onboarding & Core Directives
 
-> **Directives for LLM Agents:** Read this file first. It contains the strict architectural invariants, API constraints, and state management rules required to modify this codebase without breaking core functionality.
+> **WARNING TO ALL LLM AGENTS:** Read this document entirely before modifying the codebase. This application uses complex, long-running asynchronous React state loops and highly strict structured JSON outputs from the Gemini API.
 
-## 1. Project Overview
-**Name:** Tutorial Dissector
-**Goal:** Extract ultra-detailed, timestamped user action logs from software tutorial videos (YouTube).
-**Core Mechanism:** 
-1.  **Pass 1 (Visual):** Splits video into overlapping chunks for high-res visual analysis, stitched via stateful memory.
-2.  **Pass 2 (Narration):** Scans audio in larger chunks, using the visual log as context to synthesize a narrative track.
+## 1. System Architecture & Directory Map
 
-## 2. Tech Stack & Dependencies
-*   **Runtime:** Browser (React + Vite/ESM)
-*   **Styling:** Tailwind CSS (CDN injected)
-*   **AI SDK:** `@google/genai` (>= v1.33.0)
-*   **State Persistence:** `localStorage` (Session keys)
+The application is a client-side React SPA that uses `localStorage` for persistence and talks directly to the `@google/genai` SDK.
 
-## 3. Architecture: "The Two-Pass Loop"
+*   **`types.ts`**: The source of truth for the **Verifiable Execution Graph**. Contains definitions for `ActionItem` (mechanics) and `NarrativeStep` (intent). If you add a feature, update the types here first.
+*   **`constants.ts`**: Contains the raw system prompts for Phase A, Phase B, and Pass 2. Prompt engineering happens here.
+*   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Gemini SDK `Type.OBJECT` schemas.**
+*   **`services/storage.ts`**: Wraps `localStorage`. Handles project creation, saving, and indexing.
+*   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).
+*   **`components/AnalysisView.tsx`**: The core orchestrator. Contains the two massive async `useEffect` loops (Visual and Narration).
+*   **`components/ResultsTimeline.tsx`**: The renderer and compiler. It maps the relational tree and contains the `downloadPlaywright()` automation compiler.
 
-The system addresses the trade-off between *visual resolution* and *context window limits*.
+## 2. The Verifiable Execution Graph (Data Model)
 
-### Pass 1: Visual Extraction
-*   **Phase A: Perception (Stateless)**
-    *   **Method:** `ai.models.generateContent` with `videoMetadata`.
-    *   **Goal:** Extract raw clicks, types, and UI changes.
-*   **Phase B: Synthesis (Stateful)**
-    *   **Method:** `client.interactions.create` with `previous_interaction_id`.
-    *   **Goal:** Deduplicate events and maintain UI state (e.g., "Dialog X is open").
+This app doesn't output flat text; it builds a highly normalized relational database:
 
-### Pass 2: Narration Synthesis
-*   **Phase C: Context-Aware Audio**
-    *   **Method:** `ai.models.generateContent` (Audio focus).
-    *   **Goal:** Synthesize intent ("Why are we doing this?") and link it to visual events.
-    *   **Critical Strategy:** **Loose Anchoring**.
-        *   The prompt receives visual actions from a **widened window (+/- 15s)**.
-        *   The model links speech to visual events via a logical `relates_to` field, not by forcing timestamps to match.
+1.  **`ActionItem` (Mechanics):** Represents exact user interactions (clicks, types).
+    *   *Crucial properties:* `target.spatial_bounding_box` (normalized 0-1000 `[y1, x1, y2, x2]`), `input_data.keys_pressed` (e.g. `["Ctrl", "C"]`), and `is_error_recovery` (boolean flagging human mistakes).
+2.  **`NarrativeStep` (Intent):** Represents high-level BDD steps.
+    *   *Crucial properties:* `precondition` (Given), `postcondition` (Then), and `linked_visual_action_ids` (Foreign Keys pointing to `ActionItem.id`).
 
-## 4. STRICT API INVARIANTS (Do Not Violate)
+## 3. Strict Implementation Rules (DO NOT VIOLATE)
 
-1.  **Clipping Boundary:** `videoMetadata` is **ONLY** valid in `generateContent`.
-2.  **Context Boundary:** `previous_interaction_id` is **ONLY** valid in `interactions`.
-3.  **Prompt Engineering:**
-    *   Pass 2 Prompt MUST explicitly forbid verbatim transcription.
-    *   Pass 2 Prompt MUST instruct independent timing for speech vs action.
-4.  **Config Casing:**
-    *   `generateContent`: **camelCase**.
-    *   `interactions`: **snake_case**.
-5.  **Model Version:** Must use `-preview` models.
+### Rule A: State Management & Stale Closures
+Because video analysis takes minutes, `AnalysisView.tsx` uses asynchronous `useEffect` loops.
+*   **NEVER** rely directly on `procState` inside the `setInterval` or `processNextVisual`/`processNextNarration` async functions.
+*   **ALWAYS** use `stateRef.current`, `chunksRef.current`, and `actionsRef.current`. If you add new state that the async loop needs to read, you MUST back it with a `useRef` to prevent stale closure bugs.
 
-## 5. State Management Strategy
-*   **React `useRef`:** Used for the processing loops to avoid stale closure issues during long-running async operations.
-*   **Separation of Concerns:** `procState.status` transitions from `running_visual` -> `running_narration`. These are distinct loops in `AnalysisView`.
+### Rule B: Gemini SDK Usage
+*   We use the `@google/genai` SDK (`>= 1.41.0`).
+*   **Video Offsets:** When passing video to Gemini, use the `videoMetadata` payload to clip the video natively without FFMPEG:
+    ```typescript
+    fileData: { fileUri: videoUrl, mimeType: 'video/*' },
+    videoMetadata: { startOffset: `${startSec}s`, endOffset: `${endSec}s` }
+    ```
+*   **Schema Resilience:** Bounding boxes must use `Type.NUMBER` (not `INTEGER`) because Gemini occasionally returns float values (e.g., `150.5`).
 
-## 6. Prompt Engineering (`constants.ts`)
-*   **Phase A:** "Computer Vision Expert". Strict JSON.
-*   **Phase B:** "Historian/Editor". Consistency checker.
-*   **Pass 2:** "Technical Writer". Synthesizer.
+### Rule C: Automation Compilation (Playwright)
+*   **Viewport Normalization:** The spatial extraction prompts force Gemini to map the screen to a `1000x1000` grid. Therefore, `ResultsTimeline.tsx` hardcodes `page.setViewportSize({ width: 1000, height: 1000 })` so Cartesian coordinates map 1:1.
+*   **Error Exclusion:** The compiler script MUST include `.filter(a => !a.is_error_recovery)`. The bot must not execute human mistakes.
 
-## 7. Common Tasks & Snippets
-
-### Modifying Narration Logic
-*   Edit `PASS_2_SYSTEM_PROMPT` in `constants.ts`.
-*   Adjust buffer size in `AnalysisView.tsx` (`relevantActions` filter).
-
-### Debugging JSON Errors
-*   Check `services/geminiService.ts` -> `analyzeChunkPhaseA`.
-*   The code automatically injects "CRITICAL: Valid JSON only" on retry if parsing fails.
-
-## 8. Known Limitations
-*   **Duration Input:** Must be manual (CORS blocks YouTube data API).
-*   **Token Cost:** High resolution video analysis is expensive (~87k tokens/5min).
+## 4. How to Modify the Extraction Pipeline
+If a user asks you to extract a new type of data (e.g., "Extract cursor shapes"):
+1.  Update `types.ts` (`ActionItem` or `UIContext`).
+2.  Update the Schema objects in `services/geminiService.ts` to enforce the new type.
+3.  Update the specific Prompt in `constants.ts` to instruct the model on *how* to extract it.
+4.  Update `components/ResultsTimeline.tsx` to render it.
