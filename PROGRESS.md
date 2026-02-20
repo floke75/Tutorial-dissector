@@ -1,90 +1,45 @@
 
 # PROGRESS & SYSTEM DOCUMENTATION: Tutorial Dissector
 
-**VERSION:** 1.2.0 (Narration Update)
+**VERSION:** 2.0.0 (God-Tier Execution Graph Integration)
 **LAST UPDATED:** Current Session
 
 ## 1. PROJECT STATUS: FEATURE COMPLETE
+The core architecture for the **Verifiable Execution Graph** is fully implemented and operational. The app successfully transitions unstructured video into structured JSON and runnable Playwright code.
 
-The application successfully implements the complex **Two-Pass Hybrid Architecture**.
-
-### ✅ Completed Features
-*   **Pass 1: Visual Extraction**
-    *   **Phase A (Perception):** `gemini-3-pro-preview` with `videoMetadata` offsets for high-res visual analysis.
-    *   **Phase B (Cognition):** `interactions` API with `previous_interaction_id` for stateful deduplication and UI state tracking.
-*   **Pass 2: Narration Synthesis**
-    *   **Audio Analysis:** Processes audio in larger (15-min) chunks for context.
-    *   **Context Anchoring:** Injects a filtered list of Visual Actions into the prompt to ground the narration.
-    *   **Intent Synthesis:** Produces a polished "Technical Writer" log, not a verbatim transcript.
-*   **Robustness:**
-    *   **Retry Logic:** Exponential backoff (2s/4s/8s).
-    *   **JSON Repair:** Automatic prompt injection to fix malformed responses.
-    *   **Loop Separation:** Strict separation of Visual and Narration loops in `AnalysisView`.
-*   **User Interface:**
-    *   **Real-time Timeline:** Distinct rendering for Narration (Pink) vs Visual (Blue/Gray) events.
-    *   **Insight Badges:** Visual indicators for "Tips", "Warnings", "Rationale".
-    *   **Stats:** Live token usage and progress tracking for both passes.
-
-### 🚧 Known Limitations / Future Work
-*   **Video Duration:** Currently requires manual input (MM:SS).
-*   **Cost:** Two-pass analysis increases token consumption (Visual ~87k/chunk + Narration ~300k/chunk).
+### 🟢 Completed Features Matrix
+| Feature | Status | Technical Details |
+| :--- | :---: | :--- |
+| **Video Chunking** | ✅ | Implemented in `timeUtils.ts` with `clipStart/clipEnd` overlap windows. |
+| **Stateful Phase B Memory** | ✅ | Multi-turn chat context successfully deduplicates actions across chunk boundaries. |
+| **Spatial Grounding** | ✅ | Gemini successfully extracts `[ymin, xmin, ymax, xmax]` normalized to 1000px. |
+| **Strict Input Modeling** | ✅ | Keystrokes (`['Ctrl', 'P']`) and typed strings extracted to distinct fields. |
+| **BDD Intent Mapping** | ✅ | Pass 2 links `NarrativeStep` (Given/Then) to `ActionItem` (Mechanics) via foreign keys. |
+| **Automation Compiler** | ✅ | `downloadPlaywright()` traverses the graph, mapping bounding boxes to Cartesian `(x, y)` centers. |
+| **Error Path Filtering** | ✅ | Compiler strictly filters out actions flagged as `is_error_recovery`. |
+| **Session Persistence** | ✅ | State autosaved to `localStorage` via `services/storage.ts`. |
 
 ---
 
-## 2. SYSTEM DOCUMENTATION (FOR LLM AGENTS)
+## 2. TECHNICAL DEBT & KNOWN LIMITATIONS (For Future Agents)
 
-**TARGET AUDIENCE:** LLM Coding Agents / Automated Refactoring Tools
-**CORE MODEL:** `gemini-3-pro-preview`
+If you are a coding agent tasked with upgrading this application, pay attention to these known issues:
 
-### A. ARCHITECTURAL INTENT: THE TWO-PASS LOOP
+### ⚠️ A. YouTube CORS / Direct File Limitations
+*   **Issue:** Currently, `@google/genai`'s `fileData.fileUri` expects a raw video file URL or a supported Google Cloud Storage URI. Passing standard `youtube.com/watch?v=` links directly into `fileUri` often fails unless the backend proxies it to a raw `.mp4` stream.
+*   **Workaround Implemented:** The UI assumes the user provides a direct raw URL or relies on Gemini's internal capability to resolve specific YouTube links. The user must manually input the video `duration` because we cannot extract metadata via standard browser CORS policies.
+*   **Future Fix:** Implement a lightweight Node.js/Python backend proxy using `yt-dlp` to fetch the true video length and provide a direct `.mp4` stream to the frontend.
 
-The application processes video in two distinct sequential passes to solve the "Context vs. Resolution" trade-off.
+### ⚠️ B. Float Handling in Spatial Coordinates
+*   **Issue:** Gemini occasionally ignores instructions to return pure integers for the `spatial_bounding_box` and returns floats (e.g., `15.5`). 
+*   **Workaround Implemented:** The schema in `geminiService.ts` was updated from `Type.INTEGER` to `Type.NUMBER` to prevent strict JSON schema validation from crashing the request.
+*   **Future Fix:** The Playwright compiler currently uses `Math.round()` to fix this. Keep this in mind if building new exporters (like Selenium or Puppeteer).
 
-**Pass 1: Visual (The "What")**
-*   **Goal:** High-resolution extraction of screen coordinates, clicks, and UI changes.
-*   **Constraint:** Requires short chunks (3-5 min) to maintain visual fidelity.
-*   **Mechanism:** `generateContent` (Visual) -> `interactions` (Merge).
+### ⚠️ C. Token Cost & Context Window Limits
+*   **Issue:** The "Chat History" array in Phase B grows continuously. For a 30-minute video, the accumulated JSON context injected into the Phase B prompt becomes massive, potentially hitting output/input token limits.
+*   **Workaround Implemented:** None yet.
+*   **Future Fix:** Implement a "sliding window" for the Phase B chat history (e.g., only pass the last 3 turns) instead of the entire array.
 
-**Pass 2: Narration (The "Why")**
-*   **Goal:** Capture high-level intent, rationale, and tips.
-*   **Constraint:** Requires long context to understand flow.
-*   **Mechanism:** `generateContent` (Audio).
-*   **Critical Logic: The Context Buffer**
-    *   When analyzing audio from `T_start` to `T_end`, we do **not** simply slice the visual log at `T_start`.
-    *   We inject visual actions from `T_start - 15s` to `T_end + 15s`.
-    *   *Why?* Narrators often describe an action ("I'm going to click...") seconds before doing it. This buffer allows the LLM to link the speech to the future/past event (`relates_to` field).
-
-### B. INVARIANTS & CRITICAL CONSTRAINTS
-
-**VIOLATING THESE WILL BREAK THE APPLICATION:**
-
-1.  **API Surface Separation:**
-    *   Video Clipping (`videoMetadata`) is **ONLY** valid in `generateContent`.
-    *   Stateful Conversation (`previous_interaction_id`) is **ONLY** valid in `interactions`.
-2.  **Prompt Strategy:**
-    *   **Narration Prompt:** Must explicitly instruct the model **NOT** to transcribe verbatim. The output must be synthesized instructional text.
-    *   **Timestamps:** Narration timestamps must reflect the *audio start*, independent of the visual event it describes.
-3.  **Config Casing:**
-    *   `generateContent`: **camelCase**.
-    *   `interactions`: **snake_case**.
-
-### C. CODEBASE ANATOMY
-
-*   **`components/AnalysisView.tsx`**: Contains the two `useEffect` loops.
-    *   Loop 1: Iterate chunks for Visual Analysis.
-    *   Loop 2: Iterate time for Narration Analysis.
-*   **`services/geminiService.ts`**:
-    *   `analyzeChunkPhaseA`: Visual extraction.
-    *   `accumulateChunkPhaseB`: Merge logic.
-    *   `analyzeNarrationSegment`: Audio analysis (Pass 2).
-*   **`constants.ts`**: Holds the 3 System Prompts. `PASS_2_SYSTEM_PROMPT` defines the Narration persona.
-
-### D. DATA FLOW SIMULATION (NARRATION PASS)
-
-**Scenario:** Analyzing Audio 05:00 - 15:00.
-
-1.  **Input:** Full list of `actions` generated in Pass 1.
-2.  **Filtering:** `AnalysisView` filters `actions` to range `04:45` to `15:15` (The 15s buffer).
-3.  **API Call:** `geminiService` sends this filtered JSON + the Video File to Gemini.
-4.  **Prompt:** "You are a Technical Writer. Here is what happened visually [JSON]. Listen to the audio and explain *why*."
-5.  **Output:** New `ActionItem`s of type `narration` with `relates_to` pointers.
+### ⚠️ D. Local Storage Quotas
+*   **Issue:** Browsers limit `localStorage` to ~5MB. Storing massive arrays of detailed ActionItems and chat history strings will eventually crash the storage service (`QuotaExceededError`).
+*   **Future Fix:** Migrate `storage.ts` to use `IndexedDB` (via a wrapper like `idb-keyval`) to allow for gigabytes of local project storage.

@@ -1,6 +1,8 @@
+import { Chunk } from '../types';
 
 export const parseMMSS = (input: string): number => {
-  const parts = input.split(':').map(Number);
+  if (!input) return 0;
+  const parts = input.trim().split(':').map(Number);
   if (parts.length === 2) {
     return parts[0] * 60 + parts[1];
   }
@@ -20,8 +22,8 @@ export const computeChunkWindows = (
   durationSec: number, 
   chunkSizeSec: number, 
   overlapSec: number
-): import('../types').Chunk[] => {
-  const chunks: import('../types').Chunk[] = [];
+): Chunk[] => {
+  const chunks: Chunk[] = [];
   let index = 0;
   
   // We advance by chunkSizeSec each time

@@ -31,6 +31,7 @@ export const createProject = (): string => {
     overlap: 60,
     chunks: [],
     actions: [],
+    narrativeSteps: [],
     procState: {
       status: 'idle',
       currentChunkIndex: 0,
@@ -38,7 +39,9 @@ export const createProject = (): string => {
       totalActions: 0,
       totalTokens: 0,
       startTime: null,
-      lastInteractionId: null
+      lastInteractionId: null,
+      chatHistory: [],
+      logs: []
     },
     latestUIState: null
   };
@@ -70,7 +73,16 @@ export const createProject = (): string => {
 export const getProject = (id: string): Project | null => {
   try {
     const data = localStorage.getItem(PROJ_PREFIX + id);
-    return data ? JSON.parse(data) : null;
+    const parsed = data ? JSON.parse(data) : null;
+    // Backwards compatibility for older saves without narrativeSteps
+    if (parsed && !parsed.narrativeSteps) {
+        parsed.narrativeSteps = [];
+    }
+    // Backwards compatibility for logs
+    if (parsed && !parsed.procState.logs) {
+        parsed.procState.logs = [];
+    }
+    return parsed;
   } catch { return null; }
 };
 

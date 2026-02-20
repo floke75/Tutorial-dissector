@@ -1,62 +1,49 @@
 
-Build a web application called **"Tutorial Dissector"** that extracts ultra-detailed, timestamped user action logs from software tutorial videos on YouTube. It uses Gemini 3 Pro's video understanding to produce a rigidly structured event-by-event description of everything that happens on screen, followed by a synthesized narrative track.
+# PLAN: Tutorial Dissector Architecture
 
-### Tech stack
+**"Tutorial Dissector"** is a client-side web application that extracts an ultra-detailed, timestamped **Verifiable Execution Graph** from software tutorial videos. It uses Gemini 3.1 Pro Preview's native video and spatial understanding to produce a strictly typed relational tree of BDD intents and deterministic mechanical actions, capable of being compiled directly into Playwright automation scripts.
 
-- **Frontend:** Single-page HTML/CSS/JS app (vanilla or lightweight framework, your choice)
-- **Backend:** Node.js with ==@google/genai== SDK (version ≥ 1.33.0)
-- **APIs:** Gemini ==ai.models.generateContent()== for video chunk analysis, Gemini Interactions API (==client.interactions.create()==) for stateful session memory.
+## 1. Tech Stack & Infrastructure
+- **Frontend:** React 19 + Tailwind CSS (via CDN/ESM).
+- **State Persistence:** Browser `localStorage`. Projects are indexed in `td_projects_index` and individual project data is stored under `td_project_<id>`.
+- **AI Backend:** `@google/genai` SDK using `gemini-3.1-pro-preview` for deep video understanding and structured JSON output.
 
-### Architecture (Two-Pass Analysis)
+## 2. Two-Pass Execution Graph Analysis (Data Flow)
 
-The system operates in two distinct sequential loops to maximize context usage and token efficiency.
+The system operates in two distinct, sequential loops managed within `AnalysisView.tsx`.
 
-#### Pass 1: Visual Extraction (Hybrid Clipping + Stateful Memory)
-This pass focuses purely on *what happens on screen*.
+### Pass 1: Visual & Spatial Extraction (The Mechanical Track)
+This pass focuses purely on *deterministic spatial events and state mutations*. It operates on 5-minute chunks of video.
 
-*   **Phase A — Chunk Analysis (Perception):**
-    For each time window (e.g., 5 mins), call ==ai.models.generateContent()== with ==videoMetadata== offsets. The model analyzes ONLY that segment and returns structured JSON of user actions.
-*   **Phase B — Session Accumulation (Cognition):**
-    Feed Phase A results into a stateful Interactions API chain. It deduplicates actions from overlap zones, validates timestamps, and tracks persistent UI state (e.g., "Dialog X is open").
+*   **Phase A (Stateless Perception):** 
+    *   **Input:** Video URL + `clipStart` / `clipEnd` offsets.
+    *   **Action:** Gemini is prompted to extract raw clicks, drags, and keystrokes.
+    *   **Output:** Array of unlinked `ActionItem` objects with normalized `[ymin, xmin, ymax, xmax]` bounding boxes and exact `input_data`.
+*   **Phase B (Stateful Cognition):**
+    *   **Input:** The output of Phase A + Chat History of all previous Phase B chunks.
+    *   **Action:** Gemini is prompted to deduplicate actions within the overlap window, assign unique `evt_001` IDs, flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
 
-#### Pass 2: Narration Synthesis (Context-Aware Audio Analysis)
-This pass runs *after* visual analysis is complete. It focuses on *why it is happening*.
+### Pass 2: Hierarchical BDD Mapping (The Intent Track)
+This pass runs *after* all visual chunks are complete.
 
-*   **Logic:**
-    *   Iterate through the video in large audio chunks (e.g., 15 mins).
-    *   For each chunk, retrieve the **Visual Action Log** generated in Pass 1.
-    *   **Context Buffering:** Filter the visual log to include actions occurring **+/- 15 seconds** around the audio chunk. This allows the model to "anchor" narration to visual events that may happen slightly before or after the speech (e.g., "I'm going to click X" -> *3 seconds later* -> Click X).
-*   **Prompting Strategy:**
-    *   **Persona:** Technical Writer / Instructional Designer.
-    *   **Goal:** Synthesize intent, clean up spoken filler, and produce a polished written log.
-    *   **Anchoring:** Use a `relates_to` field to logically link spoken insights to specific visual timestamps, rather than strictly forcing them to match.
+*   **Logic:** Iterates through the video in larger 15-minute chunks.
+*   **Input:** Video audio + The finalized array of `ActionItems` (filtered to the current timeframe to save context).
+*   **Action:** Gemini maps spoken audio to the mechanical actions.
+*   **Output:** Generates `NarrativeStep` objects containing BDD `precondition` / `postcondition` strings, and a `linked_visual_action_ids` array that acts as a Foreign Key to the `ActionItems`.
 
-### Chunking strategy
+## 3. Mathematical Chunking Strategy
+To ensure continuity, the video is chunked with an overlapping sliding window (`utils/timeUtils.ts`).
 
-- **Visual Pass:** 5-minute chunks with 60s overlap.
-- **Narration Pass:** 15-minute chunks (audio is cheaper/faster) with a dynamic "Visual Context Window" injected into the prompt.
+*   **Chunk Size:** Default 300s (5 mins).
+*   **Overlap:** Default 60s.
+*   **Logic:** For a chunk spanning 05:00 to 10:00 (`primaryStart` to `primaryEnd`):
+    *   The model is actually fed video from 04:00 to 11:00 (`clipStart` to `clipEnd`).
+    *   It uses the pre-roll/post-roll for context, but is strictly instructed (via prompt) to ONLY log new actions occurring within the primary window.
 
-### System Prompts
-
-*   **Phase A (Visual):** "Computer Vision Expert". Strict JSON. Low-level detail (clicks, types, hovers).
-*   **Phase B (Merge):** "Session Historian". Consistency checks. Deduplication.
-*   **Pass 2 (Narration):** "Technical Writer". Intent capture.
-    *   *Constraint:* Do not transcribe verbatim. Synthesize instructions.
-    *   *Constraint:* Timestamps reflect *audio start*, not visual action.
-
-### UI Requirements
-
-**Main screen:**
-- YouTube URL & Duration inputs.
-- Configurable sliders for Chunk Size/Overlap.
-- **Two-Stage Status:** Clearly indicate "Visual Analysis" vs "Audio Narration" phases.
-
-**Visualization:**
-- **Chunk Ribbon:** Visual status of chunks (Pending -> Scanning -> Merging -> Complete).
-- **Results Timeline:**
-    - Live updating list.
-    - **Narration Items:** Distinct styling (e.g., pink/purple) with "Insight Type" badges (Tip, Warning, Rationale).
-    - **Visual Items:** Blue/Gray styling for raw actions.
-
-**Export:**
-- JSON/CSV/Markdown options including the new Narrative fields.
+## 4. UI Component Hierarchy
+1.  **`App`**: Top-level router. Switches between Dashboard and active Project.
+2.  **`Dashboard`**: Reads `localStorage` index. Handles creation/deletion of projects.
+3.  **`AnalysisView`**: The heavy lifter. Orchestrates the `useEffect` async processing loops, maintains `useRef` backups for state, and manages the timer.
+    *   **`InputPanel`**: Sidebar controls for offsets, video URL, and starting the analysis.
+    *   **`ChunkVisualizer`**: Bottom ticker showing the real-time status of Phase A/B chunk processing.
+    *   **`ResultsTimeline`**: The main view. Takes the flat `actions` and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters.

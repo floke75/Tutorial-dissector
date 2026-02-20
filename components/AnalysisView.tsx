@@ -3,17 +3,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { InputPanel } from './InputPanel';
 import { ChunkVisualizer } from './ChunkVisualizer';
 import { ResultsTimeline } from './ResultsTimeline';
+import { DevConsole } from './DevConsole';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService';
 import { getProject, saveProject } from '../services/storage';
-import { Chunk, ProcessingState, ActionItem, PhaseBResponse, Project } from '../types';
+import { Chunk, ProcessingState, ActionItem, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
 
 interface AnalysisViewProps {
   projectId: string;
   onBack: () => void;
 }
 
-// 15 minutes = 900 seconds. Large enough for context, safe for tokens.
 const NARRATION_CHUNK_SIZE_SEC = 900; 
 
 export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack }) => {
@@ -21,13 +21,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [projectName, setProjectName] = useState('Untitled Project');
   const [videoUrl, setVideoUrl] = useState('');
   const [durationInput, setDurationInput] = useState('');
-  const [chunkSize, setChunkSize] = useState(300); // 5 mins
+  const [chunkSize, setChunkSize] = useState(300); 
   const [overlap, setOverlap] = useState(60);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Runtime State
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
@@ -35,7 +36,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     totalActions: 0,
     totalTokens: 0,
     startTime: null,
-    lastInteractionId: null
+    lastInteractionId: null,
+    chatHistory: [],
+    logs: []
   });
 
   // UI State
@@ -44,7 +47,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Timing stats for UI
   const [elapsedTime, setElapsedTime] = useState(0);
   
-  // Refs for loop control to avoid closure staleness
   const stateRef = useRef(procState);
   stateRef.current = procState;
   
@@ -56,7 +58,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load Project Data
   useEffect(() => {
     const data = getProject(projectId);
     if (data) {
@@ -67,13 +68,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       setOverlap(data.overlap);
       setChunks(data.chunks);
       setActions(data.actions);
+      setNarrativeSteps(data.narrativeSteps || []);
       setProcState(data.procState);
       setLatestUIState(data.latestUIState);
     }
     setIsLoaded(true);
   }, [projectId]);
 
-  // Auto-save logic
   useEffect(() => {
     if (!isLoaded) return;
     
@@ -87,26 +88,24 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       overlap,
       chunks,
       actions,
+      narrativeSteps,
       procState,
       latestUIState,
       status: procState.status, 
       actionCount: actions.length
     };
     saveProject(saveData);
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, chunks, actions, procState, latestUIState, projectId, isLoaded]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
-  // Plan Calculation
   useEffect(() => {
     if (durationInput && parseMMSS(durationInput) > 0 && procState.status === 'idle') {
       const duration = parseMMSS(durationInput);
-      // Only recalculate if chunks are empty or we are in idle setup mode
       if (chunks.length === 0 || (procState.currentChunkIndex === 0 && chunks.every(c => c.status === 'pending'))) {
          setChunks(computeChunkWindows(duration, chunkSize, overlap));
       }
     }
   }, [durationInput, chunkSize, overlap, procState.status]);
 
-  // Timer Effect
   useEffect(() => {
     const isRunning = procState.status === 'running_visual' || procState.status === 'running_narration';
     if (isRunning) {
@@ -122,6 +121,20 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [procState.status]);
 
+  // System Logger
+  const handleLog = (level: LogLevel, message: string, data?: any) => {
+    setProcState(prev => {
+      const newLog = {
+        id: Math.random().toString(36).substring(2, 9),
+        timestamp: Date.now(),
+        level,
+        message,
+        data
+      };
+      return { ...prev, logs: [...(prev.logs || []), newLog] };
+    });
+  };
+
   const handleStart = () => {
     const duration = parseMMSS(durationInput);
     if (duration <= 0) {
@@ -134,20 +147,25 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
 
     if (procState.status === 'idle' || procState.status === 'completed') {
+       handleLog('info', 'Initializing new analysis pipeline...', { duration, chunkSize, overlap });
        const newChunks = computeChunkWindows(duration, chunkSize, overlap);
        setChunks(newChunks);
        chunksRef.current = newChunks; 
        setActions([]);
-       setProcState({
+       setNarrativeSteps([]);
+       setProcState(prev => ({
         status: 'running_visual',
         currentChunkIndex: 0,
         narrationStartTime: 0,
         totalActions: 0,
         totalTokens: 0,
         startTime: Date.now(),
-        lastInteractionId: null
-      });
+        lastInteractionId: null,
+        chatHistory: [],
+        logs: prev.logs // retain logs on restart
+      }));
     } else if (procState.status === 'paused') {
+      handleLog('info', 'Resuming analysis pipeline...');
       const resumeStatus = chunks.some(c => c.status !== 'completed') ? 'running_visual' : 'running_narration';
       setProcState(prev => ({
         ...prev,
@@ -170,16 +188,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     let active = true;
 
     const processNextVisual = async () => {
-      const { status, currentChunkIndex, lastInteractionId } = stateRef.current;
+      const { status, currentChunkIndex, chatHistory } = stateRef.current;
       const currentChunks = chunksRef.current.length > 0 ? chunksRef.current : chunks;
 
       if (status !== 'running_visual' || !active) return;
       
-      console.log(`[Visual] Processing Chunk ${currentChunkIndex + 1} / ${currentChunks.length}`);
-
-      // Check if visual phase is done
       if (currentChunkIndex >= currentChunks.length) {
-        console.log("Visual Phase Complete. Switching to Narration Phase.");
+        handleLog('success', 'Visual Phase Complete. Transitioning to Narration track.');
         setProcState(s => ({ 
             ...s, 
             status: 'running_narration', 
@@ -189,6 +204,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       }
 
       const chunk = currentChunks[currentChunkIndex];
+      handleLog('info', `[Orchestrator] Starting Visual Pipeline for Chunk ${currentChunkIndex + 1}/${currentChunks.length}`);
 
       try {
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_a' } : c));
@@ -199,7 +215,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           chunk.clipEnd,
           chunk.primaryStart,
           chunk.primaryEnd,
-          overlap
+          overlap,
+          handleLog
         );
 
         if (!active) return;
@@ -211,13 +228,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         } : c));
 
         const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
-        const { interactionId, result } = await accumulateChunkPhaseB(
+        const { newHistory, result } = await accumulateChunkPhaseB(
           videoUrl,
           durationInput,
           phaseAActions,
           currentChunkIndex + 1,
           primaryWindowStr,
-          lastInteractionId
+          chatHistory || [],
+          handleLog
         );
 
         if (!active) return;
@@ -230,7 +248,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           ...c, 
           status: 'completed', 
           phaseBAddedCount: addedVisualCount,
-          interactionId: interactionId,
           actionCount: mergedVisualActions.length 
         } : c));
 
@@ -240,14 +257,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setProcState(prev => ({
           ...prev,
           currentChunkIndex: prev.currentChunkIndex + 1,
-          lastInteractionId: interactionId,
+          chatHistory: newHistory,
           totalActions: prev.totalActions + mergedVisualActions.length,
           totalTokens: prev.totalTokens + 87000
         }));
 
       } catch (err) {
-        console.error("Visual Processing Error:", err);
         const errorMsg = err instanceof Error ? err.message : String(err);
+        handleLog('error', `[Orchestrator] Visual Loop Paused due to fatal error.`, { error: errorMsg });
         setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'error', errorMsg } : c));
         setProcState(prev => ({ ...prev, status: 'paused' })); 
       }
@@ -274,38 +291,35 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       if (status !== 'running_narration' || !active) return;
 
       if (narrationStartTime >= totalDuration) {
+        handleLog('success', 'Narration Phase Complete. Execution Graph is fully built.');
         setProcState(s => ({ ...s, status: 'completed' }));
         return;
       }
 
       const endSec = Math.min(narrationStartTime + NARRATION_CHUNK_SIZE_SEC, totalDuration);
-      
-      console.log(`[Narration] Processing ${formatMMSS(narrationStartTime)} - ${formatMMSS(endSec)}`);
+      handleLog('info', `[Orchestrator] Starting Narration Pipeline for ${formatMMSS(narrationStartTime)} to ${formatMMSS(endSec)}`);
 
       try {
-        // Filter relevant visual actions for context
-        // We use a WIDER buffer (+/- 15s) here so the model can see visual events 
-        // that the narration refers to even if they happen significantly before or after the speech.
         const relevantActions = actionsRef.current.filter(a => {
            const t = parseMMSS(a.timestamp);
-           return t >= (narrationStartTime - 15) && t < (endSec + 15) && a.action_type !== 'narration';
+           return t >= (narrationStartTime - 15) && t < (endSec + 15) && a.action_type !== 'chunk_boundary';
         });
 
-        const narrationActions = await analyzeNarrationSegment(
+        const newSteps = await analyzeNarrationSegment(
            videoUrl,
            narrationStartTime,
            endSec,
-           relevantActions
+           relevantActions,
+           handleLog
         );
 
         if (!active) return;
 
-        if (narrationActions.length > 0) {
-            setActions(prev => [...prev, ...narrationActions].sort(sortActions));
+        if (newSteps.length > 0) {
+            setNarrativeSteps(prev => [...prev, ...newSteps].sort((a,b) => parseMMSS(a.timestamp) - parseMMSS(b.timestamp)));
             setProcState(prev => ({
               ...prev,
-              totalActions: prev.totalActions + narrationActions.length,
-              totalTokens: prev.totalTokens + 300000 // Approximate tokens for large chunk
+              totalTokens: prev.totalTokens + 300000 
             }));
         }
 
@@ -315,7 +329,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         }));
 
       } catch (err) {
-         console.error("Narration Error:", err);
+         handleLog('error', `[Orchestrator] Narration Loop Paused due to fatal error.`, { error: String(err) });
          setProcState(prev => ({ ...prev, status: 'paused' }));
       }
     };
@@ -326,7 +340,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
     return () => { active = false; };
   }, [procState.status, procState.narrationStartTime]);
-
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -339,9 +352,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const isNarrationRunning = procState.status === 'running_narration';
 
   return (
-    <div className="flex flex-col h-full gap-6 overflow-hidden">
+    <div className="flex flex-col h-full gap-6 overflow-hidden relative">
       {/* Upper Area: Sidebar + Timeline */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-6 pb-12">
         
         {/* Sidebar (Scrollable) */}
         <div className="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
@@ -419,14 +432,20 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
         {/* Timeline Area */}
         <div className="lg:col-span-2 flex flex-col h-full min-h-0">
-          <ResultsTimeline actions={actions} />
+          <ResultsTimeline actions={actions} narrativeSteps={narrativeSteps} />
         </div>
       </div>
 
       {/* Bottom Area */}
-      <div className="shrink-0">
+      <div className="shrink-0 mb-10">
          <ChunkVisualizer chunks={chunks} />
       </div>
+
+      {/* Dev Console */}
+      <DevConsole 
+         logs={procState.logs || []} 
+         onClear={() => setProcState(prev => ({ ...prev, logs: [] }))} 
+      />
     </div>
   );
 };
