@@ -12,9 +12,6 @@ interface InputPanelProps {
   setOverlap: (n: number) => void;
   onStart: () => void;
   disabled: boolean;
-  onBack: () => void;
-  projectName: string;
-  setProjectName: (s: string) => void;
 }
 
 export const InputPanel: React.FC<InputPanelProps> = ({
@@ -27,111 +24,85 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   overlap,
   setOverlap,
   onStart,
-  disabled,
-  onBack,
-  projectName,
-  setProjectName
+  disabled
 }) => {
   return (
-    <div className="bg-gray-850 p-6 rounded-xl border border-gray-750 shadow-lg">
-      <div className="flex justify-between items-center mb-6">
-        <button 
-          onClick={onBack}
-          className="text-sm text-gray-400 hover:text-white flex items-center gap-1 transition"
-        >
-          ← Dashboard
-        </button>
-        <span className="text-xs text-gray-600 bg-gray-900 px-2 py-1 rounded border border-gray-800">
-          Autosave Enabled
-        </span>
-      </div>
+    <div className="bg-white/70 dark:bg-gray-850/70 backdrop-blur-md p-5 rounded-2xl border border-gray-200/50 dark:border-gray-800/50 shadow-md dark:shadow-black/20">
+      <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-5 uppercase tracking-wider">Analysis Settings</h3>
       
-      <div className="mb-6">
-        <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1">Project Name</label>
-        <input 
-          type="text" 
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-          placeholder="Untitled Project"
-          className="w-full bg-transparent border-b border-gray-700 text-xl font-bold text-white focus:border-blue-500 focus:outline-none py-1"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="space-y-5">
         {/* Video Input */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">YouTube URL</label>
-            <input 
-              type="text" 
-              value={videoUrl}
-              onChange={(e) => setVideoUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-              className="w-full bg-gray-950 border border-gray-700 rounded p-2 text-white focus:border-blue-500 focus:outline-none"
-              disabled={disabled}
-            />
-          </div>
-          <div>
-             <label className="block text-sm text-gray-400 mb-1">Duration (MM:SS)</label>
-            <input 
-              type="text" 
-              value={durationInput}
-              onChange={(e) => setDurationInput(e.target.value)}
-              placeholder="10:00"
-              className="w-full bg-gray-950 border border-gray-700 rounded p-2 text-white focus:border-blue-500 focus:outline-none"
-              disabled={disabled}
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">YouTube URL</label>
+          <input 
+            type="text" 
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            placeholder="https://www.youtube.com/watch?v=..."
+            className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-2.5 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
+            disabled={disabled}
+          />
+        </div>
+        <div>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Duration (MM:SS)</label>
+          <input 
+            type="text" 
+            value={durationInput}
+            onChange={(e) => setDurationInput(e.target.value)}
+            placeholder="10:00"
+            className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-2.5 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-mono"
+            disabled={disabled}
+          />
         </div>
 
         {/* Sliders */}
-        <div className="space-y-6">
+        <div className="pt-3 border-t border-gray-100 dark:border-gray-800 space-y-5">
           <div>
-            <div className="flex justify-between text-sm mb-1">
-              <label className="text-gray-400">Chunk Size</label>
-              <span className="text-blue-300">{chunkSize / 60} minutes</span>
+            <div className="flex justify-between text-sm mb-1.5">
+              <label className="font-medium text-gray-700 dark:text-gray-300">Chunk Size</label>
+              <span className="text-blue-600 dark:text-blue-400 font-mono">{chunkSize / 60} min</span>
             </div>
             <input 
               type="range" 
-              min="180" 
+              min="60" 
               max="420" 
               step="60"
               value={chunkSize}
               onChange={(e) => setChunkSize(Number(e.target.value))}
-              className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full accent-blue-600 dark:accent-blue-500 h-2 bg-gray-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer"
               disabled={disabled}
             />
-            <p className="text-xs text-gray-500 mt-1">Between 3 to 7 minutes</p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1.5">Between 1 to 7 minutes</p>
           </div>
 
           <div>
-             <div className="flex justify-between text-sm mb-1">
-              <label className="text-gray-400">Overlap</label>
-              <span className="text-blue-300">{overlap} seconds</span>
+             <div className="flex justify-between text-sm mb-1.5">
+              <label className="font-medium text-gray-700 dark:text-gray-300">Overlap</label>
+              <span className="text-blue-600 dark:text-blue-400 font-mono">{overlap} sec</span>
             </div>
             <input 
               type="range" 
-              min="30" 
+              min="10" 
               max="90" 
               step="10"
               value={overlap}
               onChange={(e) => setOverlap(Number(e.target.value))}
-              className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full accent-blue-600 dark:accent-blue-500 h-2 bg-gray-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer"
               disabled={disabled}
             />
-            <p className="text-xs text-gray-500 mt-1">Context window for continuity</p>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1.5">Context window for continuity</p>
           </div>
         </div>
       </div>
 
-      <div className="mt-8">
+      <div className="mt-6">
         <button 
           onClick={onStart}
           disabled={disabled || !videoUrl || !durationInput}
-          className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
+          className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
             disabled || !videoUrl || !durationInput
-              ? 'bg-gray-700 cursor-not-allowed' 
-              : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/50'
+              ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed' 
+              : 'bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-white text-white dark:text-gray-900 shadow-md hover:shadow-lg active:scale-[0.98]'
           }`}
         >
           {disabled ? 'Processing...' : 'Start Analysis'}

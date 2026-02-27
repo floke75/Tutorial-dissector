@@ -3,6 +3,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem, NarrativeStep } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
 
+import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
+
 interface ResultsTimelineProps {
   actions: ActionItem[];
   narrativeSteps: NarrativeStep[];
@@ -82,20 +84,20 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
 
   const getTypeColor = (type: string) => {
     switch(type) {
-      case 'click': return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'type': return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      case 'keyboard_shortcut': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
-      case 'ui_response': return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      default: return 'bg-gray-700/30 text-gray-400 border-gray-600';
+      case 'click': return 'bg-blue-50 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-500/30';
+      case 'type': return 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30';
+      case 'keyboard_shortcut': return 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-500/30';
+      case 'ui_response': return 'bg-purple-50 dark:bg-purple-500/20 text-purple-600 dark:text-purple-300 border-purple-200 dark:border-purple-500/30';
+      default: return 'bg-gray-100 dark:bg-gray-700/30 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600';
     }
   };
 
   const getInsightColor = (insight?: string) => {
     switch(insight) {
-      case 'warning': return 'text-red-400 bg-red-900/20 border-red-500/30';
-      case 'tip': return 'text-emerald-400 bg-emerald-900/20 border-emerald-500/30';
-      case 'rationale': return 'text-purple-400 bg-purple-900/20 border-purple-500/30';
-      default: return 'text-indigo-300 bg-indigo-900/20 border-indigo-500/30';
+      case 'warning': return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-500/30';
+      case 'tip': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-500/30';
+      case 'rationale': return 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-500/30';
+      default: return 'text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-500/30';
     }
   };
 
@@ -180,69 +182,69 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
   // Renderer for a single low-level ActionItem
   const renderAction = (action: ActionItem, isNested: boolean) => {
     const isError = action.is_error_recovery;
-    const baseStyle = isNested ? 'ml-4 border-l-2 border-l-gray-600' : 'hover:bg-gray-800/60 hover:border-gray-700';
-    const bgStyle = isError ? 'bg-orange-900/10 border-orange-900/30 hover:border-orange-800/50' : 'bg-gray-800/40 border-gray-800';
-    const textStyle = isError ? 'text-orange-200/70' : 'text-gray-300';
+    const baseStyle = isNested ? 'ml-4 border-l-2 border-l-gray-300 dark:border-l-gray-600' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60 hover:border-gray-300 dark:hover:border-gray-700';
+    const bgStyle = isError ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30 hover:border-orange-300 dark:hover:border-orange-800/50' : 'bg-white dark:bg-gray-800/40 border-gray-200 dark:border-gray-800';
+    const textStyle = isError ? 'text-orange-800/70 dark:text-orange-200/70' : 'text-gray-700 dark:text-gray-300';
     
     return (
-      <div key={action.id || action.timestamp + action.action_type} className={`flex gap-4 p-3 rounded-lg border transition group relative ${baseStyle} ${bgStyle}`}>
+      <div key={action.id || action.timestamp + action.action_type} className={`flex gap-4 p-3.5 rounded-xl border transition-all group relative shadow-sm ${baseStyle} ${bgStyle}`}>
         
         {/* Error Recovery Indicator Line */}
         {isError && (
-           <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-600/50 rounded-l-lg"></div>
+           <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-500 dark:bg-orange-600/50 rounded-l-xl"></div>
         )}
 
-        <div className={`w-12 shrink-0 font-mono text-xs pt-1 ${isError ? 'text-orange-500/50' : 'text-gray-500'}`}>
+        <div className={`w-12 shrink-0 font-mono text-xs pt-1 font-medium ${isError ? 'text-orange-500/70 dark:text-orange-500/50' : 'text-gray-500 dark:text-gray-500'}`}>
           {action.timestamp}
         </div>
         
         <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${isError ? 'bg-orange-900/30 text-orange-400 border-orange-700/50' : getTypeColor(action.action_type)}`}>
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${isError ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700/50' : getTypeColor(action.action_type)}`}>
               {action.action_type.replace('_', ' ')}
             </span>
-            <span className={`text-xs font-mono ${isError ? 'text-orange-300/60 line-through' : 'text-gray-400'}`}>
+            <span className={`text-xs font-mono font-medium ${isError ? 'text-orange-400/80 dark:text-orange-300/60 line-through' : 'text-gray-600 dark:text-gray-400'}`}>
               {action.target?.element}
             </span>
             
             {/* Spatial Bounding Box Badge */}
             {action.target?.spatial_bounding_box && action.target.spatial_bounding_box.length === 4 && !isError && (
-              <span className="flex items-center gap-1 text-[9px] font-mono text-blue-400/70 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/50 cursor-help" title="[ymin, xmin, ymax, xmax] normalized 0-1000">
-                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+              <span className="flex items-center gap-1 text-[10px] font-mono text-blue-600 dark:text-blue-400/70 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded-md border border-blue-200 dark:border-blue-900/50 cursor-help" title="[ymin, xmin, ymax, xmax] normalized 0-1000">
+                <Target size={12} />
                 [{action.target.spatial_bounding_box.join(', ')}]
               </span>
             )}
 
             {isError && (
-              <span className="text-[9px] font-bold uppercase text-orange-500 flex items-center gap-1 ml-auto border border-orange-500/30 px-1.5 py-0.5 rounded">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+              <span className="text-[10px] font-bold uppercase text-orange-600 dark:text-orange-500 flex items-center gap-1 ml-auto border border-orange-200 dark:border-orange-500/30 bg-orange-50 dark:bg-transparent px-2 py-0.5 rounded-md">
+                <AlertTriangle size={12} />
                 Correction (Skipped in Automation)
               </span>
             )}
           </div>
           
-          <p className={`text-sm leading-relaxed mb-2 ${textStyle}`}>
+          <p className={`text-sm leading-relaxed mb-2.5 ${textStyle}`}>
             {action.detail}
           </p>
 
           {/* Strict Input Modeling (Keys & Text) */}
           {action.input_data && (action.input_data.keys_pressed || action.input_data.text_typed) && !isError && (
-            <div className="flex flex-wrap items-center gap-3 mt-2 mb-2 p-2 bg-gray-900/50 rounded-md border border-gray-750">
+            <div className="flex flex-wrap items-center gap-3 mt-2 mb-2 p-2.5 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-750">
                {action.input_data.keys_pressed && action.input_data.keys_pressed.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold mr-1">Keys:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-500 uppercase font-bold mr-1">Keys:</span>
                     {action.input_data.keys_pressed.map((k, i) => (
                       <React.Fragment key={i}>
-                        <kbd className="px-1.5 py-0.5 text-xs font-mono font-bold text-gray-200 bg-gray-800 border border-gray-600 rounded shadow-sm shadow-black/50">{k}</kbd>
-                        {i < action.input_data!.keys_pressed!.length - 1 && <span className="text-gray-600">+</span>}
+                        <kbd className="px-2 py-0.5 text-xs font-mono font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded shadow-sm">{k}</kbd>
+                        {i < action.input_data!.keys_pressed!.length - 1 && <span className="text-gray-400 dark:text-gray-600 font-medium">+</span>}
                       </React.Fragment>
                     ))}
                   </div>
                )}
                {action.input_data.text_typed && (
                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold">Typed:</span>
-                    <span className="font-mono text-sm text-emerald-300 bg-emerald-900/20 px-2 py-0.5 rounded border border-emerald-900/50">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-500 uppercase font-bold">Typed:</span>
+                    <span className="font-mono text-sm font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-900/50">
                       "{action.input_data.text_typed}"
                     </span>
                  </div>
@@ -252,16 +254,16 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
 
           {/* Rich UI Components with state mutations */}
           {action.interacted_components && action.interacted_components.length > 0 && !isError && (
-            <div className="flex flex-wrap gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-2.5">
               {action.interacted_components.map((comp, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-900/50 text-gray-300 text-xs rounded-md border border-gray-700">
-                  <span className="opacity-50 uppercase text-[9px] font-bold tracking-wider">{comp.type}</span>
-                  <span className="font-semibold text-blue-200">{comp.label}</span>
+                <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 dark:bg-gray-900/50 text-gray-700 dark:text-gray-300 text-xs rounded-md border border-gray-200 dark:border-gray-700">
+                  <span className="opacity-60 dark:opacity-50 uppercase text-[9px] font-bold tracking-wider">{comp.type}</span>
+                  <span className="font-semibold text-blue-700 dark:text-blue-200">{comp.label}</span>
                   {(comp.state_before || comp.state_after || comp.action_value) && (
-                     <span className="flex items-center gap-1 ml-1 pl-1.5 border-l border-gray-600">
-                       {comp.state_before && <span className="text-gray-500 line-through text-[10px]">{comp.state_before}</span>}
-                       {comp.state_after && <span className="text-emerald-400 text-[10px] font-mono">→ {comp.state_after}</span>}
-                       {comp.action_value && <span className="text-yellow-200 text-[10px] font-mono">="{comp.action_value}"</span>}
+                     <span className="flex items-center gap-1.5 ml-1 pl-2 border-l border-gray-300 dark:border-gray-600">
+                       {comp.state_before && <span className="text-gray-500 dark:text-gray-500 line-through text-[10px]">{comp.state_before}</span>}
+                       {comp.state_after && <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-mono font-medium">→ {comp.state_after}</span>}
+                       {comp.action_value && <span className="text-amber-600 dark:text-yellow-200 text-[10px] font-mono font-medium">="{comp.action_value}"</span>}
                      </span>
                   )}
                 </span>
@@ -270,7 +272,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
           )}
 
           {action.ui_context && !isError && (
-             <div className="hidden group-hover:flex flex-wrap gap-3 mt-3 pt-2 border-t border-gray-700/50 text-[10px] text-gray-500 font-mono">
+             <div className="hidden group-hover:flex flex-wrap gap-4 mt-3 pt-2.5 border-t border-gray-200 dark:border-gray-700/50 text-[10px] text-gray-500 dark:text-gray-500 font-mono font-medium">
                <span>Panel: {action.ui_context.active_panel}</span>
                <span>Tool: {action.ui_context.active_tool}</span>
                {action.ui_context.open_dialogs?.length > 0 && <span>Dialogs: {action.ui_context.open_dialogs.join(', ')}</span>}
@@ -282,43 +284,46 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
   };
 
   return (
-    <div className="bg-gray-850 h-full flex flex-col rounded-xl border border-gray-750 shadow-lg overflow-hidden">
+    <div className="bg-white/50 dark:bg-gray-850/50 bg-gradient-to-br from-indigo-500/10 via-transparent to-sky-400/10 dark:from-indigo-500/10 dark:via-transparent dark:to-sky-400/10 backdrop-blur-md h-full flex flex-col rounded-2xl border border-gray-200/50 dark:border-gray-750/50 shadow-xl dark:shadow-black/40 overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-gray-750 flex flex-col md:flex-row justify-between items-center bg-gray-900/50 gap-3">
-        <h2 className="text-lg font-semibold text-white">Hierarchical Execution Graph</h2>
-        <div className="flex gap-2">
-           <button onClick={downloadPlaywright} className="text-xs bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded text-white transition font-mono flex items-center gap-2 shadow-lg shadow-emerald-900/20">
-             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+      <div className="p-5 border-b border-gray-200/50 dark:border-gray-750/50 flex flex-col md:flex-row justify-between items-center bg-gray-50/50 dark:bg-gray-900/30 gap-4">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Hierarchical Execution Graph</h2>
+        <div className="flex gap-3">
+           <button onClick={downloadPlaywright} className="text-xs bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-4 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+             <Code2 size={15} />
              Export Playwright
            </button>
-           <button onClick={downloadJSON} className="text-xs bg-indigo-600 hover:bg-indigo-500 px-4 py-1.5 rounded text-white transition font-mono flex items-center gap-2 shadow-lg shadow-indigo-900/20">
-             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+           <button onClick={downloadJSON} className="text-xs bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-4 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+             <Download size={15} />
              Export JSON
            </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="p-4 border-b border-gray-750 flex gap-4 bg-gray-900/30">
-        <input 
-          type="text" 
-          placeholder="Search intents, pre-conditions, actions, or elements..." 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-sm text-white rounded px-3 py-1.5 flex-1 focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-gray-500"
-        />
+      <div className="p-4 border-b border-gray-200/50 dark:border-gray-750/50 flex gap-4 bg-white/50 dark:bg-gray-900/20">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input 
+            type="text" 
+            placeholder="Search intents, pre-conditions, actions, or elements..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-white rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500"
+          />
+        </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar bg-transparent">
         {filteredNodes.length === 0 && (
-          <div className="text-center text-gray-500 mt-10">No events found in workflow graph.</div>
+          <div className="text-center text-gray-500 dark:text-gray-500 mt-12 font-medium">No events found in workflow graph.</div>
         )}
         
         {filteredNodes.map((node, idx) => {
           if (node.type === 'boundary') {
             return (
-              <div key={`boundary-${idx}`} className="text-xs font-mono text-center text-gray-600 py-3 border-t border-b border-gray-800 bg-gray-900/20">
+              <div key={`boundary-${idx}`} className="text-xs font-mono font-medium text-center text-gray-500 dark:text-gray-600 py-4 border-t border-b border-gray-200 dark:border-gray-800 bg-gray-100/50 dark:bg-gray-900/20 rounded-lg">
                 --- {node.detail} ---
               </div>
             );
@@ -331,53 +336,53 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
           if (node.type === 'narrative') {
             const { step, children } = node;
             return (
-               <div key={step.id} className="rounded-xl bg-gradient-to-b from-indigo-900/10 to-gray-800/20 border border-indigo-900/40 overflow-hidden shadow-lg mb-8">
+               <div key={step.id} className="rounded-2xl bg-white/80 dark:bg-gradient-to-b dark:from-indigo-900/10 dark:to-gray-800/20 border border-gray-200/50 dark:border-indigo-900/40 overflow-hidden shadow-sm dark:shadow-lg mb-8 backdrop-blur-sm">
                   {/* Narrative Header */}
-                  <div className="p-5 border-b border-indigo-900/30 relative">
-                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>
+                  <div className="p-6 border-b border-gray-100/50 dark:border-indigo-900/30 relative bg-indigo-50/20 dark:bg-transparent">
+                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 rounded-l-2xl"></div>
                      
-                     <div className="flex gap-4">
-                        <div className="w-12 shrink-0 font-mono text-indigo-400 font-bold text-sm pt-0.5">
+                     <div className="flex gap-5">
+                        <div className="w-12 shrink-0 font-mono text-indigo-600 dark:text-indigo-400 font-bold text-sm pt-1">
                           {step.timestamp}
                         </div>
                         <div className="flex-1">
-                           <div className="flex items-center gap-2 mb-3">
-                             <h3 className="text-xl font-bold text-indigo-100">{step.intent}</h3>
+                           <div className="flex items-center gap-3 mb-4">
+                             <h3 className="text-xl font-bold text-gray-900 dark:text-indigo-100 tracking-tight">{step.intent}</h3>
                              {step.insight_type && (
-                               <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${getInsightColor(step.insight_type)}`}>
+                               <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${getInsightColor(step.insight_type)}`}>
                                  {step.insight_type}
                                </span>
                              )}
                            </div>
                            
                            {/* BDD Pre/Post Conditions */}
-                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
                              {step.precondition && (
-                               <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-750">
-                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div> Precondition (Given)
+                               <div className="bg-white dark:bg-gray-900/50 rounded-xl p-4 border border-gray-200 dark:border-gray-750 shadow-sm dark:shadow-none">
+                                 <div className="text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                   <div className="w-2 h-2 rounded-full bg-blue-500"></div> Precondition (Given)
                                  </div>
-                                 <p className="text-sm text-gray-300">{step.precondition}</p>
+                                 <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">{step.precondition}</p>
                                </div>
                              )}
                              {step.postcondition && (
-                               <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-750">
-                                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Postcondition (Then)
+                               <div className="bg-white dark:bg-gray-900/50 rounded-xl p-4 border border-gray-200 dark:border-gray-750 shadow-sm dark:shadow-none">
+                                 <div className="text-[10px] font-bold text-gray-500 dark:text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Postcondition (Then)
                                  </div>
-                                 <p className="text-sm text-gray-300">{step.postcondition}</p>
+                                 <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">{step.postcondition}</p>
                                </div>
                              )}
                            </div>
 
-                           <p className="text-gray-400 italic font-serif leading-relaxed mb-3 text-sm border-l-2 border-indigo-900/50 pl-3">
+                           <p className="text-gray-600 dark:text-gray-400 italic font-serif leading-relaxed mb-4 text-sm border-l-2 border-indigo-200 dark:border-indigo-900/50 pl-4 py-1">
                              "{step.explanation}"
                            </p>
                            
                            {step.topics && step.topics.length > 0 && (
-                             <div className="flex flex-wrap gap-1.5 mt-2">
+                             <div className="flex flex-wrap gap-2 mt-3">
                                {step.topics.map((t, i) => (
-                                 <span key={i} className="px-1.5 py-0.5 bg-gray-900/50 text-indigo-300/70 text-[10px] rounded border border-indigo-900/50">
+                                 <span key={i} className="px-2 py-1 bg-indigo-50 dark:bg-gray-900/50 text-indigo-700 dark:text-indigo-300/70 text-[10px] font-medium rounded-md border border-indigo-100 dark:border-indigo-900/50">
                                    #{t}
                                  </span>
                                ))}
@@ -389,9 +394,9 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
 
                   {/* Nested Visual Actions */}
                   {children.length > 0 && (
-                    <div className="p-4 bg-gray-900/40 space-y-2">
-                      <div className="text-[10px] font-bold text-indigo-300/50 uppercase tracking-widest mb-3 ml-4 flex items-center gap-2">
-                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                    <div className="p-5 bg-gray-50/80 dark:bg-gray-900/40 space-y-3">
+                      <div className="text-[10px] font-bold text-indigo-400 dark:text-indigo-300/50 uppercase tracking-widest mb-4 ml-4 flex items-center gap-2">
+                         <Code2 size={14} />
                          Execution Steps (When)
                       </div>
                       {children.map(action => renderAction(action, true))}
