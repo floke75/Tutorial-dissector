@@ -29,6 +29,7 @@ export const createProject = (): string => {
     durationInput: '',
     chunkSize: 300,
     overlap: 60,
+    customContext: '',
     chunks: [],
     actions: [],
     narrativeSteps: [],

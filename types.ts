@@ -167,6 +167,7 @@ export interface Project extends ProjectSummary {
   durationInput: string;
   chunkSize: number;
   overlap: number;
+  customContext: string;
   
   chunks: Chunk[];
   actions: ActionItem[];

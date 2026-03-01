@@ -10,6 +10,8 @@ interface InputPanelProps {
   setChunkSize: (n: number) => void;
   overlap: number;
   setOverlap: (n: number) => void;
+  customContext: string;
+  setCustomContext: (s: string) => void;
   onStart: () => void;
   disabled: boolean;
 }
@@ -23,6 +25,8 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   setChunkSize,
   overlap,
   setOverlap,
+  customContext,
+  setCustomContext,
   onStart,
   disabled
 }) => {
@@ -92,6 +96,19 @@ export const InputPanel: React.FC<InputPanelProps> = ({
             />
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1.5">Context window for continuity</p>
           </div>
+        </div>
+
+        {/* Custom Context */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Custom App Context</label>
+          <textarea 
+            value={customContext}
+            onChange={(e) => setCustomContext(e.target.value)}
+            placeholder="Paste documentation or context here..."
+            className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 resize-y min-h-[100px]"
+            disabled={disabled}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1.5">Provides holistic understanding to the LLM</p>
         </div>
       </div>
 

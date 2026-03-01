@@ -159,6 +159,7 @@ export async function analyzeChunkPhaseA(
   primaryStartSec: number,
   primaryEndSec: number,
   overlapSec: number,
+  customContext: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<ActionItem[]> {
   const ai = getClient();
@@ -175,6 +176,10 @@ export async function analyzeChunkPhaseA(
     try {
       let currentPrompt = `Analyze this video segment. ${basePrompt}`;
       currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
+
+      if (customContext) {
+        currentPrompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+      }
 
       onLog?.('info', `Phase A (Attempt ${attempt}): Sending GenerateContent request to Gemini 3.1 Pro Preview`, { 
         videoUrl, 
@@ -274,6 +279,7 @@ export async function accumulateChunkPhaseB(
   chunkNumber: number,
   primaryWindow: string,
   chatHistory: any[] = [],
+  customContext: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<{ newHistory: any[], result: PhaseBResponse }> {
   const ai = getClient();
@@ -282,6 +288,11 @@ export async function accumulateChunkPhaseB(
     .replace('{video_title}', 'User Video')
     .replace('{video_url}', videoUrl)
     .replace('{total_duration}', durationStr);
+
+  let finalSystemInstruction = systemInstruction;
+  if (customContext) {
+    finalSystemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+  }
 
   const message = JSON.stringify({
     chunk_number: chunkNumber,
@@ -315,7 +326,7 @@ export async function accumulateChunkPhaseB(
         model: 'gemini-3.1-pro-preview',
         contents: contents,
         config: {
-          systemInstruction: systemInstruction,
+          systemInstruction: finalSystemInstruction,
           responseMimeType: 'application/json',
           responseSchema: phaseBResponseSchema,
           // =========================================================================================
@@ -386,6 +397,7 @@ export async function analyzeNarrationSegment(
   startSec: number,
   endSec: number,
   relevantVisualActions: ActionItem[],
+  customContext: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<NarrativeStep[]> {
   const ai = getClient();
@@ -411,6 +423,10 @@ export async function analyzeNarrationSegment(
     try {
       let currentPrompt = prompt;
       currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
+
+      if (customContext) {
+        currentPrompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+      }
 
       onLog?.('info', `Narration Phase (Attempt ${attempt}): Analyzing audio segment`, {
          window: `${startSec}s - ${endSec}s`,

@@ -25,6 +25,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [durationInput, setDurationInput] = useState('');
   const [chunkSize, setChunkSize] = useState(300); 
   const [overlap, setOverlap] = useState(60);
+  const [customContext, setCustomContext] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Runtime State
@@ -68,6 +69,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       setDurationInput(data.durationInput);
       setChunkSize(data.chunkSize);
       setOverlap(data.overlap);
+      setCustomContext(data.customContext || '');
       setChunks(data.chunks);
       setActions(data.actions);
       setNarrativeSteps(data.narrativeSteps || []);
@@ -88,6 +90,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       durationInput,
       chunkSize,
       overlap,
+      customContext,
       chunks,
       actions,
       narrativeSteps,
@@ -97,7 +100,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       actionCount: actions.length
     };
     saveProject(saveData);
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
   useEffect(() => {
     if (durationInput && parseMMSS(durationInput) > 0 && procState.status === 'idle') {
@@ -218,6 +221,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           chunk.primaryStart,
           chunk.primaryEnd,
           overlap,
+          customContext,
           handleLog
         );
 
@@ -237,6 +241,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           currentChunkIndex + 1,
           primaryWindowStr,
           chatHistory || [],
+          customContext,
           handleLog
         );
 
@@ -312,6 +317,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
            narrationStartTime,
            endSec,
            relevantActions,
+           customContext,
            handleLog
         );
 
@@ -412,6 +418,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               setChunkSize={setChunkSize}
               overlap={overlap}
               setOverlap={setOverlap}
+              customContext={customContext}
+              setCustomContext={setCustomContext}
               onStart={handleStart}
               disabled={isVisualRunning || isNarrationRunning}
             />
