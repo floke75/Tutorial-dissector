@@ -10,21 +10,22 @@ import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService';
 import { getProject, saveProject } from '../services/storage';
 import { Chunk, ProcessingState, ActionItem, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
+import ReactPlayer from 'react-player';
 
 interface AnalysisViewProps {
   projectId: string;
   onBack: () => void;
 }
 
-const NARRATION_CHUNK_SIZE_SEC = 900; 
+const NARRATION_CHUNK_SIZE_SEC = 300; 
 
 export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack }) => {
   // Config State
   const [projectName, setProjectName] = useState('Untitled Project');
   const [videoUrl, setVideoUrl] = useState('');
   const [durationInput, setDurationInput] = useState('');
-  const [chunkSize, setChunkSize] = useState(300); 
-  const [overlap, setOverlap] = useState(60);
+  const [chunkSize, setChunkSize] = useState(60); 
+  const [overlap, setOverlap] = useState(30);
   const [customContext, setCustomContext] = useState('');
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -46,6 +47,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // UI State
   const [latestUIState, setLatestUIState] = useState<PhaseBResponse['current_ui_state'] | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const playerRef = useRef<ReactPlayer>(null);
 
   // Timing stats for UI
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -359,14 +365,59 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const isVisualRunning = procState.status === 'running_visual';
   const isNarrationRunning = procState.status === 'running_narration';
 
-  const [showSidebar, setShowSidebar] = useState(true);
-
   // Auto-hide sidebar when completed
   useEffect(() => {
     if (procState.status === 'completed') {
       setShowSidebar(false);
     }
   }, [procState.status]);
+
+  useEffect(() => {
+    if (showSidebar) {
+      setIsPlayerReady(false);
+    }
+  }, [showSidebar]);
+
+  useEffect(() => {
+    setIsPlayerReady(false);
+  }, [videoUrl]);
+
+  const handleSeek = (timeSec: number) => {
+    console.log("handleSeek called with timeSec:", timeSec, "isPlayerReady:", isPlayerReady);
+    if (playerRef.current) {
+      try {
+        playerRef.current.seekTo(timeSec, 'seconds');
+        setIsPlaying(true);
+      } catch (e) {
+        console.error("Seek error:", e);
+      }
+    }
+  };
+
+  const getPlayableVideoUrl = (url: string) => {
+    if (!url) return '';
+    if (url.includes('generativelanguage.googleapis.com')) {
+      const apiKey = process.env.API_KEY;
+      if (apiKey) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}alt=media&key=${apiKey}`;
+      }
+    }
+    // Normalize youtu.be links to standard youtube.com watch links for better iframe compatibility
+    if (url.includes('youtu.be/')) {
+      const videoId = url.split('youtu.be/')[1].split('?')[0];
+      return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+    // Normalize youtube.com/shorts/ links
+    if (url.includes('youtube.com/shorts/')) {
+      const videoId = url.split('youtube.com/shorts/')[1].split('?')[0];
+      return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+    return url;
+  };
+
+  const playableUrl = getPlayableVideoUrl(videoUrl);
+  const isGeminiFile = videoUrl.includes('generativelanguage.googleapis.com');
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative bg-transparent">
@@ -407,7 +458,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 flex">
         {/* Sidebar */}
-        {showSidebar && (
+        {showSidebar ? (
           <div className="w-80 lg:w-96 shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-white/40 dark:bg-gray-900/40 backdrop-blur-sm overflow-y-auto custom-scrollbar p-6 space-y-6 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-black/20 z-10">
             <InputPanel
               videoUrl={videoUrl}
@@ -479,12 +530,54 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               </div>
             )}
           </div>
+        ) : (
+          <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-black flex flex-col z-10 relative">
+            <div className="flex-1 w-full relative flex items-center justify-center">
+              {videoUrl ? (
+                <ReactPlayer
+                  ref={playerRef}
+                  url={playableUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ position: 'absolute', top: 0, left: 0 }}
+                  controls
+                  playing={isPlaying}
+                  onReady={() => {
+                    console.log("[ReactPlayer] Player is ready. URL:", playableUrl);
+                    setIsPlayerReady(true);
+                  }}
+                  onStart={() => {
+                    console.log("[ReactPlayer] Playback started");
+                    setIsPlaying(true);
+                  }}
+                  onPlay={() => {
+                    console.log("[ReactPlayer] Playing");
+                    setIsPlaying(true);
+                  }}
+                  onPause={() => {
+                    console.log("[ReactPlayer] Paused");
+                    setIsPlaying(false);
+                  }}
+                  onError={(e) => console.error("[ReactPlayer] Error occurred:", e)}
+                  config={isGeminiFile ? { file: { forceVideo: true } } : {}}
+                  onProgress={(state) => setCurrentTime(state.playedSeconds)}
+                />
+              ) : (
+                <div className="text-gray-500 text-sm">No video URL provided</div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Timeline & Visualizer Area */}
         <div className="flex-1 min-w-0 flex flex-col p-6 gap-6 overflow-hidden">
           <div className="flex-1 min-h-0">
-            <ResultsTimeline actions={actions} narrativeSteps={narrativeSteps} />
+            <ResultsTimeline 
+              actions={actions} 
+              narrativeSteps={narrativeSteps} 
+              currentTime={currentTime}
+              onSeek={handleSeek}
+            />
           </div>
           
           {procState.status !== 'idle' && procState.status !== 'completed' && (

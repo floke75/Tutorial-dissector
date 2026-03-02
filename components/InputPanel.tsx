@@ -37,12 +37,12 @@ export const InputPanel: React.FC<InputPanelProps> = ({
       <div className="space-y-5">
         {/* Video Input */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">YouTube URL</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Video URL (YouTube or Gemini File URI)</label>
           <input 
             type="text" 
             value={videoUrl}
             onChange={(e) => setVideoUrl(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
+            placeholder="https://www.youtube.com/watch?v=... or https://generativelanguage..."
             className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-2.5 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
             disabled={disabled}
           />

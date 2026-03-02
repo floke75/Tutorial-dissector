@@ -8,6 +8,8 @@ import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 interface ResultsTimelineProps {
   actions: ActionItem[];
   narrativeSteps: NarrativeStep[];
+  currentTime?: number;
+  onSeek?: (time: number) => void;
 }
 
 type TimelineNode = 
@@ -15,9 +17,11 @@ type TimelineNode =
   | { type: 'orphan_action'; action: ActionItem }
   | { type: 'boundary'; detail: string; timestamp: string };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narrativeSteps }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narrativeSteps, currentTime = 0, onSeek }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeNodeRef = useRef<HTMLDivElement>(null);
 
   // Build the Relational Tree
   const timelineNodes = useMemo(() => {
@@ -75,12 +79,42 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     });
   }, [timelineNodes, searchTerm]);
 
-  // Auto-scroll
+  const activeNodeIndex = useMemo(() => {
+    if (currentTime === 0) return -1;
+    let activeIdx = -1;
+    for (let i = 0; i < filteredNodes.length; i++) {
+      const node = filteredNodes[i];
+      if (node.type === 'boundary') continue;
+      
+      let time = 0;
+      if (node.type === 'narrative') {
+        time = parseMMSS(node.step.timestamp);
+      } else if (node.type === 'orphan_action') {
+        time = parseMMSS(node.action.timestamp);
+      }
+
+      if (time <= currentTime) {
+        activeIdx = i;
+      } else {
+        break;
+      }
+    }
+    return activeIdx;
+  }, [filteredNodes, currentTime]);
+
+  // Auto-scroll to bottom on new items
   useEffect(() => {
-    if (bottomRef.current) {
+    if (bottomRef.current && currentTime === 0) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [actions.length, narrativeSteps.length]);
+  }, [actions.length, narrativeSteps.length, currentTime]);
+
+  // Auto-scroll to active node during playback
+  useEffect(() => {
+    if (activeNodeRef.current && currentTime > 0) {
+      activeNodeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeNodeIndex]);
 
   const getTypeColor = (type: string) => {
     switch(type) {
@@ -180,14 +214,22 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
   };
 
   // Renderer for a single low-level ActionItem
-  const renderAction = (action: ActionItem, isNested: boolean) => {
+  const renderAction = (action: ActionItem, isNested: boolean, isActive: boolean = false, ref?: React.Ref<HTMLDivElement>) => {
     const isError = action.is_error_recovery;
     const baseStyle = isNested ? 'ml-4 border-l-2 border-l-gray-300 dark:border-l-gray-600' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60 hover:border-gray-300 dark:hover:border-gray-700';
-    const bgStyle = isError ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30 hover:border-orange-300 dark:hover:border-orange-800/50' : 'bg-white dark:bg-gray-800/40 border-gray-200 dark:border-gray-800';
+    const bgStyle = isActive ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-500/50 shadow-md ring-1 ring-indigo-500/50' : isError ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30 hover:border-orange-300 dark:hover:border-orange-800/50' : 'bg-white dark:bg-gray-800/40 border-gray-200 dark:border-gray-800';
     const textStyle = isError ? 'text-orange-800/70 dark:text-orange-200/70' : 'text-gray-700 dark:text-gray-300';
     
     return (
-      <div key={action.id || action.timestamp + action.action_type} className={`flex gap-4 p-3.5 rounded-xl border transition-all group relative shadow-sm ${baseStyle} ${bgStyle}`}>
+      <div 
+        key={action.id || action.timestamp + action.action_type} 
+        ref={ref}
+        className={`flex gap-4 p-3.5 rounded-xl border transition-all group relative cursor-pointer ${baseStyle} ${bgStyle}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSeek && onSeek(parseMMSS(action.timestamp));
+        }}
+      >
         
         {/* Error Recovery Indicator Line */}
         {isError && (
@@ -330,16 +372,34 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
           }
 
           if (node.type === 'orphan_action') {
-            return renderAction(node.action, false);
+            const isActive = idx === activeNodeIndex;
+            return renderAction(node.action, false, isActive, isActive ? activeNodeRef : undefined);
           }
 
           if (node.type === 'narrative') {
             const { step, children } = node;
+            const isActive = idx === activeNodeIndex;
             return (
-               <div key={step.id} className="rounded-2xl bg-white/80 dark:bg-gradient-to-b dark:from-indigo-900/10 dark:to-gray-800/20 border border-gray-200/50 dark:border-indigo-900/40 overflow-hidden shadow-sm dark:shadow-lg mb-8 backdrop-blur-sm">
+               <div 
+                 key={step.id} 
+                 ref={isActive ? activeNodeRef : null}
+                 className={`rounded-2xl border overflow-hidden shadow-sm dark:shadow-lg mb-8 backdrop-blur-sm transition-all ${
+                   isActive 
+                     ? 'bg-indigo-50/80 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-500/50 ring-1 ring-indigo-500/50' 
+                     : 'bg-white/80 dark:bg-gradient-to-b dark:from-indigo-900/10 dark:to-gray-800/20 border-gray-200/50 dark:border-indigo-900/40'
+                 }`}
+               >
                   {/* Narrative Header */}
-                  <div className="p-6 border-b border-gray-100/50 dark:border-indigo-900/30 relative bg-indigo-50/20 dark:bg-transparent">
-                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 rounded-l-2xl"></div>
+                  <div 
+                    className={`p-6 border-b border-gray-100/50 dark:border-indigo-900/30 relative cursor-pointer hover:bg-indigo-50/50 dark:hover:bg-indigo-900/30 transition-colors ${
+                      isActive ? 'bg-indigo-100/50 dark:bg-indigo-900/40' : 'bg-indigo-50/20 dark:bg-transparent'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSeek && onSeek(parseMMSS(step.timestamp));
+                    }}
+                  >
+                     <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${isActive ? 'bg-indigo-600' : 'bg-indigo-500'}`}></div>
                      
                      <div className="flex gap-5">
                         <div className="w-12 shrink-0 font-mono text-indigo-600 dark:text-indigo-400 font-bold text-sm pt-1">

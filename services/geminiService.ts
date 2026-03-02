@@ -9,7 +9,10 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Initialize clients
 const getClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ 
+    apiKey: process.env.API_KEY,
+    httpOptions: { timeout: 300000 } // 5 minutes timeout for large video chunks
+  });
 };
 
 // --- SCHEMA DEFINITIONS FOR STRUCTURED OUTPUT ---
