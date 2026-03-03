@@ -43,7 +43,7 @@ To ensure continuity, the video is chunked with an overlapping sliding window (`
 ## 4. UI Component Hierarchy
 1.  **`App`**: Top-level router. Switches between Dashboard and active Project.
 2.  **`Dashboard`**: Reads `localStorage` index. Handles creation/deletion of projects.
-3.  **`AnalysisView`**: The heavy lifter. Orchestrates the `useEffect` async processing loops, maintains `useRef` backups for state, and manages the timer.
+3.  **`AnalysisView`**: The heavy lifter. Orchestrates the `useEffect` async processing loops, maintains `useRef` backups for state, and manages the timer. It also hosts the `ReactPlayer` instance for video playback.
     *   **`InputPanel`**: Sidebar controls for offsets, video URL, and starting the analysis.
     *   **`ChunkVisualizer`**: Bottom ticker showing the real-time status of Phase A/B chunk processing.
-    *   **`ResultsTimeline`**: The main view. Takes the flat `actions` and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters.
+    *   **`ResultsTimeline`**: The main view. Takes the flat `actions` and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters. It features two-way synchronization with the video player (clicking a step seeks the video, and playing the video auto-scrolls the timeline to highlight the active step).

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { InputPanel } from './InputPanel';
 import { ChunkVisualizer } from './ChunkVisualizer';
 import { ResultsTimeline } from './ResultsTimeline';
@@ -419,6 +419,20 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const playableUrl = getPlayableVideoUrl(videoUrl);
   const isGeminiFile = videoUrl.includes('generativelanguage.googleapis.com');
 
+  const activeNarrativeStep = useMemo(() => {
+    if (!narrativeSteps.length) return null;
+    let active = null;
+    let latestTime = -1;
+    for (const step of narrativeSteps) {
+      const time = parseMMSS(step.timestamp);
+      if (time <= currentTime && time >= latestTime) {
+        active = step;
+        latestTime = time;
+      }
+    }
+    return active;
+  }, [narrativeSteps, currentTime]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden relative bg-transparent">
       {/* Top Navigation Bar */}
@@ -531,8 +545,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             )}
           </div>
         ) : (
-          <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-black flex flex-col z-10 relative">
-            <div className="flex-1 w-full relative flex items-center justify-center">
+          <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-gray-50 dark:bg-gray-900 flex flex-col z-10 relative">
+            <div className="w-full aspect-video bg-black relative flex items-center justify-center shrink-0">
               {videoUrl ? (
                 <ReactPlayer
                   ref={playerRef}
@@ -564,6 +578,59 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                 />
               ) : (
                 <div className="text-gray-500 text-sm">No video URL provided</div>
+              )}
+            </div>
+            
+            {/* Active Narrative Block */}
+            <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-gray-850">
+              {activeNarrativeStep ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-indigo-100 tracking-tight">{activeNarrativeStep.intent}</h3>
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-200 dark:border-indigo-700/50 animate-pulse">
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400"></div>
+                      Current
+                    </span>
+                  </div>
+                  
+                  {/* Pre/Post Conditions */}
+                  <div className="grid grid-cols-1 gap-3">
+                    {activeNarrativeStep.precondition && (
+                      <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 border border-gray-200 dark:border-gray-750">
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-blue-500"></div> Precondition (Given)
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">{activeNarrativeStep.precondition}</p>
+                      </div>
+                    )}
+                    {activeNarrativeStep.postcondition && (
+                      <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 border border-gray-200 dark:border-gray-750">
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Postcondition (Then)
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">{activeNarrativeStep.postcondition}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-gray-600 dark:text-gray-400 italic font-serif leading-relaxed text-sm border-l-2 border-indigo-200 dark:border-indigo-900/50 pl-4 py-1">
+                    "{activeNarrativeStep.explanation}"
+                  </p>
+                  
+                  {activeNarrativeStep.topics && activeNarrativeStep.topics.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {activeNarrativeStep.topics.map((t, i) => (
+                        <span key={i} className="px-2 py-1 bg-indigo-50 dark:bg-gray-900/50 text-indigo-700 dark:text-indigo-300/70 text-[10px] font-medium rounded-md border border-indigo-100 dark:border-indigo-900/50">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm font-medium">
+                  No active narrative step
+                </div>
               )}
             </div>
           </div>

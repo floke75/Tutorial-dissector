@@ -12,8 +12,8 @@ The application is a client-side React SPA that uses `localStorage` for persiste
 *   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Gemini SDK `Type.OBJECT` schemas.**
 *   **`services/storage.ts`**: Wraps `localStorage`. Handles project creation, saving, and indexing.
 *   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).
-*   **`components/AnalysisView.tsx`**: The core orchestrator. Contains the two massive async `useEffect` loops (Visual and Narration).
-*   **`components/ResultsTimeline.tsx`**: The renderer and compiler. It maps the relational tree and contains the `downloadPlaywright()` automation compiler.
+*   **`components/AnalysisView.tsx`**: The core orchestrator. Contains the two massive async `useEffect` loops (Visual and Narration), and hosts the `ReactPlayer` instance for video playback.
+*   **`components/ResultsTimeline.tsx`**: The renderer and compiler. It maps the relational tree, handles two-way video synchronization (auto-scrolling and seeking), and contains the `downloadPlaywright()` automation compiler.
 
 ## 2. The Verifiable Execution Graph (Data Model)
 

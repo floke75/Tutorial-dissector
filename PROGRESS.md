@@ -18,6 +18,7 @@ The core architecture for the **Verifiable Execution Graph** is fully implemente
 | **Automation Compiler** | ✅ | `downloadPlaywright()` traverses the graph, mapping bounding boxes to Cartesian `(x, y)` centers. |
 | **Error Path Filtering** | ✅ | Compiler strictly filters out actions flagged as `is_error_recovery`. |
 | **Session Persistence** | ✅ | State autosaved to `localStorage` via `services/storage.ts`. |
+| **Video Synchronization** | ✅ | Two-way sync between ReactPlayer and ResultsTimeline with auto-scrolling and active state highlighting. |
 
 ---
 
