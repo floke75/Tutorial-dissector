@@ -310,32 +310,30 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
 
   return (
     <div className="bg-white/50 dark:bg-gray-850/50 bg-gradient-to-br from-indigo-500/10 via-transparent to-sky-400/10 dark:from-indigo-500/10 dark:via-transparent dark:to-sky-400/10 backdrop-blur-md h-full flex flex-col rounded-2xl border border-gray-200/50 dark:border-gray-750/50 shadow-xl dark:shadow-black/40 overflow-hidden">
-      {/* Header */}
-      <div className="p-5 border-b border-gray-200/50 dark:border-gray-750/50 flex flex-col md:flex-row justify-between items-center bg-gray-50/50 dark:bg-gray-900/30 gap-4">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Execution Graph</h2>
-        <div className="flex gap-3">
-           <button onClick={downloadPlaywright} className="text-xs bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-4 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
-             <Code2 size={15} />
-             Export Playwright
-           </button>
-           <button onClick={downloadJSON} className="text-xs bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-4 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
-             <Download size={15} />
-             Export JSON
-           </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="p-4 border-b border-gray-200/50 dark:border-gray-750/50 flex gap-4 bg-white/50 dark:bg-gray-900/20">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      {/* Header & Filters */}
+      <div className="p-3 border-b border-gray-200/50 dark:border-gray-750/50 flex flex-col md:flex-row justify-between items-center bg-gray-50/50 dark:bg-gray-900/30 gap-3">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white tracking-tight whitespace-nowrap">Execution Graph</h2>
+        
+        <div className="relative flex-1 max-w-md w-full">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           <input 
             type="text" 
             placeholder="Search actions or elements..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-white rounded-lg pl-10 pr-4 py-2 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500"
           />
+        </div>
+
+        <div className="flex gap-2">
+           <button onClick={downloadPlaywright} className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+             <Code2 size={13} />
+             Playwright
+           </button>
+           <button onClick={downloadJSON} className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+             <Download size={13} />
+             JSON
+           </button>
         </div>
       </div>
 
@@ -348,8 +346,12 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
         {filteredNodes.map((node, idx) => {
           if (node.type === 'boundary') {
             return (
-              <div key={`boundary-${idx}`} className="text-xs font-mono font-medium text-center text-gray-500 dark:text-gray-600 py-4 border-t border-b border-gray-200 dark:border-gray-800 bg-gray-100/50 dark:bg-gray-900/20 rounded-lg">
-                --- {node.detail} ---
+              <div key={`boundary-${idx}`} className="flex items-center gap-3 py-1 my-1">
+                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800"></div>
+                <div className="text-[10px] font-mono font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                  {node.detail}
+                </div>
+                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800"></div>
               </div>
             );
           }

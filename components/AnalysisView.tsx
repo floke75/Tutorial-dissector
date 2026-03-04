@@ -5,7 +5,7 @@ import { ChunkVisualizer } from './ChunkVisualizer';
 import { ResultsTimeline } from './ResultsTimeline';
 import { DevConsole } from './DevConsole';
 import { ThemeToggle } from './ThemeToggle';
-import { ArrowLeft, LayoutPanelLeft } from 'lucide-react';
+import { ArrowLeft, LayoutPanelLeft, Activity, Clock, Loader2 } from 'lucide-react';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService';
 import { getProject, saveProject } from '../services/storage';
@@ -436,35 +436,35 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   return (
     <div className="flex flex-col h-full overflow-hidden relative bg-transparent">
       {/* Top Navigation Bar */}
-      <div className="shrink-0 h-16 px-6 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/60 dark:bg-gray-900/60 backdrop-blur-md flex items-center justify-between z-20 shadow-sm dark:shadow-black/10">
-        <div className="flex items-center gap-6">
+      <div className="shrink-0 h-10 px-4 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/60 dark:bg-gray-900/60 backdrop-blur-md flex items-center justify-between z-20 shadow-sm dark:shadow-black/10">
+        <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
-            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-2 transition-colors font-medium"
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1.5 transition-colors font-medium"
           >
-            <ArrowLeft size={18} /> Dashboard
+            <ArrowLeft size={16} /> Dashboard
           </button>
-          <div className="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+          <div className="h-4 w-px bg-gray-200 dark:bg-gray-700"></div>
           <input 
             type="text" 
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             placeholder="Untitled Project"
-            className="bg-transparent border-none text-lg font-semibold text-gray-900 dark:text-white focus:outline-none placeholder:text-gray-300 dark:placeholder:text-gray-600 w-64"
+            className="bg-transparent border-none text-sm font-semibold text-gray-900 dark:text-white focus:outline-none placeholder:text-gray-300 dark:placeholder:text-gray-600 w-64"
           />
-          <span className="text-[10px] text-gray-500 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 font-medium uppercase tracking-wider">
+          <span className="text-[9px] text-gray-500 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700 font-medium uppercase tracking-wider">
             Autosave
           </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setShowSidebar(!showSidebar)}
-            className={`p-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors ${showSidebar ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+            className={`px-2 py-1 rounded-md flex items-center gap-1.5 text-[11px] font-medium transition-colors ${showSidebar ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
           >
-            <LayoutPanelLeft size={18} />
+            <LayoutPanelLeft size={14} />
             {showSidebar ? 'Hide Settings' : 'Show Settings'}
           </button>
-          <div className="h-6 w-px bg-gray-200 dark:bg-gray-700"></div>
+          <div className="h-4 w-px bg-gray-200 dark:bg-gray-700"></div>
           <ThemeToggle />
         </div>
       </div>
@@ -545,8 +545,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             )}
           </div>
         ) : (
-          <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-gray-50 dark:bg-gray-900 flex flex-col z-10 relative">
-            <div className="w-full aspect-video bg-black relative flex items-center justify-center shrink-0">
+          <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-transparent flex flex-col z-10 relative p-4 gap-4">
+            <div className="w-full aspect-video bg-black relative flex items-center justify-center shrink-0 rounded-2xl overflow-hidden shadow-xl dark:shadow-black/40 border border-gray-200/50 dark:border-gray-750/50">
               {videoUrl ? (
                 <ReactPlayer
                   ref={playerRef}
@@ -582,7 +582,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             </div>
             
             {/* Active Narrative Block */}
-            <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-gray-850">
+            <div className="flex-1 overflow-y-auto p-6 bg-white/50 dark:bg-gray-850/50 bg-gradient-to-br from-indigo-500/10 via-transparent to-sky-400/10 dark:from-indigo-500/10 dark:via-transparent dark:to-sky-400/10 backdrop-blur-md rounded-2xl border border-gray-200/50 dark:border-gray-750/50 shadow-xl dark:shadow-black/40 custom-scrollbar">
               {activeNarrativeStep ? (
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center gap-3">
@@ -637,7 +637,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         )}
 
         {/* Timeline & Visualizer Area */}
-        <div className="flex-1 min-w-0 flex flex-col p-6 gap-6 overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col p-4 gap-4 overflow-hidden">
           <div className="flex-1 min-h-0">
             <ResultsTimeline 
               actions={actions} 

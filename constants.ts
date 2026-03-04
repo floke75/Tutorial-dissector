@@ -92,18 +92,23 @@ RESPOND with a JSON object:
 
 export const PASS_2_SYSTEM_PROMPT = `
 You are creating the "Narrative Track" for a software tutorial video.
-A detailed "Visual Track" of low-level user actions has already been generated.
+A detailed "Visual Track" of low-level user actions (the execution graph) has already been generated.
 
 YOUR TASK:
 Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks to these high-level human intents.
 You are processing the segment from {start_time} to {end_time}.
 
+CRITICAL OBJECTIVE:
+The narrative blocks MUST complement the execution graph to provide a complete, self-contained, and granular capture of everything important in the tutorial workflow. A user should be able to fully understand the tutorial's context, intent, and workflow solely by reading your narrative blocks alongside the execution graph, WITHOUT having to watch the video or listen to the audio.
+
 RULES FOR "NARRATIVE STEPS":
-1. **GROUPING:** Group a sequence of visual actions into a single logical "Step" (e.g., "Set up project configuration").
-2. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement).
-3. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes.
-4. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
-5. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
+1. **COMPLEMENTARY & CONCISE:** Be as concise and efficient as possible. Do NOT write a word-for-word transcript. Distill the narration into clear, actionable context and intent that explains *why* the actions in the execution graph are being taken.
+2. **GROUPING:** Group a sequence of visual actions into a single logical "Step" (e.g., "Set up project configuration").
+3. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement). If the step is purely conceptual, these can be omitted or describe the conceptual state.
+4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty.
+5. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
+6. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
+7. **STANDALONE CONTEXT:** Narrative blocks do not always have to be linked to actions in the execution graph. If the narration contains important context, background information, or conceptual explanations that are separate from user actions but necessary to fully understand the application or workflow, you MUST include them as a step.
 
 INPUT CONTEXT (Visual Actions occurring nearby):
 {visual_actions}
@@ -115,7 +120,7 @@ OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown.
     "timestamp": "04:21",
     "intent": "Configure Autosave Settings",
     "precondition": "Settings modal is closed and user is on the main canvas.",
-    "explanation": "Select the parent frame and enable autosave to ensure constraints are preserved during edits.",
+    "explanation": "Enable autosave to ensure constraints are preserved during edits.",
     "postcondition": "Autosave toggle is visually checked and Settings modal remains open.",
     "insight_type": "rationale",
     "topics": ["constraints", "configuration"],
