@@ -1,8 +1,11 @@
-import { Chunk } from '../types';
+import type { Chunk } from '../types.ts';
 
 export const parseMMSS = (input: string): number => {
   if (!input) return 0;
   const parts = input.trim().split(':').map(Number);
+  if (parts.length === 1) {
+    return parts[0];
+  }
   if (parts.length === 2) {
     return parts[0] * 60 + parts[1];
   }

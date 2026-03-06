@@ -55,6 +55,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // Timing stats for UI
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [apiKey, setApiKey] = useState<string>('');
   
   const stateRef = useRef(procState);
   stateRef.current = procState;
@@ -68,6 +69,21 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    const fetchApiKey = async () => {
+      try {
+        const configRes = await fetch('/api/config');
+        const configData = await configRes.json();
+        if (configData.apiKey && configData.apiKey !== "MY_GEMINI_API_KEY") {
+          setApiKey(configData.apiKey);
+        }
+      } catch (e) {
+        console.warn("Failed to fetch API key from server", e);
+      }
+    };
+    fetchApiKey();
+  }, []);
+
+  useEffect(() => {
     const data = getProject(projectId);
     if (data) {
       setProjectName(data.name);
@@ -77,8 +93,31 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       setOverlap(data.overlap);
       setCustomContext(data.customContext || '');
       setChunks(data.chunks);
-      setActions(data.actions);
-      setNarrativeSteps(data.narrativeSteps || []);
+      
+      // Sanitize loaded actions to ensure unique IDs
+      const seenActionIds = new Set<string>();
+      const sanitizedActions = (data.actions || []).map((a, idx) => {
+        let id = a.id || `evt_missing_${idx}`;
+        if (seenActionIds.has(id)) {
+          id = `${id}_dup_${idx}`;
+        }
+        seenActionIds.add(id);
+        return { ...a, id };
+      });
+      setActions(sanitizedActions);
+
+      // Sanitize loaded narrative steps to ensure unique IDs
+      const seenStepIds = new Set<string>();
+      const sanitizedSteps = (data.narrativeSteps || []).map((s, idx) => {
+        let id = s.id || `step_missing_${idx}`;
+        if (seenStepIds.has(id)) {
+          id = `${id}_dup_${idx}`;
+        }
+        seenStepIds.add(id);
+        return { ...s, id };
+      });
+      setNarrativeSteps(sanitizedSteps);
+      
       setProcState(data.procState);
       setLatestUIState(data.latestUIState);
     }
@@ -108,14 +147,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     saveProject(saveData);
   }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
-  useEffect(() => {
-    if (durationInput && parseMMSS(durationInput) > 0 && procState.status === 'idle') {
-      const duration = parseMMSS(durationInput);
-      if (chunks.length === 0 || (procState.currentChunkIndex === 0 && chunks.every(c => c.status === 'pending'))) {
-         setChunks(computeChunkWindows(duration, chunkSize, overlap));
-      }
-    }
-  }, [durationInput, chunkSize, overlap, procState.status]);
+  // Local chunk computation removed as it's now handled by the server
 
   useEffect(() => {
     const isRunning = procState.status === 'running_visual' || procState.status === 'running_narration';
@@ -146,24 +178,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     });
   };
 
-  const handleStart = () => {
-    const duration = parseMMSS(durationInput);
-    if (duration <= 0) {
-      alert("Please enter a valid duration (MM:SS)");
-      return;
-    }
+  const handleStart = async () => {
     if (!videoUrl) {
       alert("Please enter a YouTube URL");
       return;
     }
 
-    if (procState.status === 'idle' || procState.status === 'completed') {
-       handleLog('info', 'Initializing new analysis pipeline...', { duration, chunkSize, overlap });
-       const newChunks = computeChunkWindows(duration, chunkSize, overlap);
-       setChunks(newChunks);
-       chunksRef.current = newChunks; 
+    if (procState.status === 'idle' || procState.status === 'completed' || procState.status === 'error' || procState.status === 'cancelled') {
+       handleLog('info', 'Initializing new analysis pipeline locally...', { chunkSize, overlap });
+       
        setActions([]);
        setNarrativeSteps([]);
+       setChunks([]);
        setProcState(prev => ({
         status: 'running_visual',
         currentChunkIndex: 0,
@@ -173,187 +199,214 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         startTime: Date.now(),
         lastInteractionId: null,
         chatHistory: [],
-        logs: prev.logs // retain logs on restart
+        logs: prev.logs, // retain logs on restart
+        jobId: 'local-job'
       }));
-    } else if (procState.status === 'paused') {
-      handleLog('info', 'Resuming analysis pipeline...');
-      const resumeStatus = chunks.some(c => c.status !== 'completed') ? 'running_visual' : 'running_narration';
-      setProcState(prev => ({
-        ...prev,
-        status: resumeStatus,
-        startTime: prev.startTime || Date.now() 
-      }));
-    }
-  };
 
-  const sortActions = (a: ActionItem, b: ActionItem) => {
-     const timeA = parseMMSS(a.timestamp);
-     const timeB = parseMMSS(b.timestamp);
-     return timeA - timeB;
-  };
-
-  // --------------------------------------------------------------------------------
-  // LOOP 1: VISUAL ANALYSIS
-  // --------------------------------------------------------------------------------
-  useEffect(() => {
-    let active = true;
-
-    const processNextVisual = async () => {
-      const { status, currentChunkIndex, chatHistory } = stateRef.current;
-      const currentChunks = chunksRef.current.length > 0 ? chunksRef.current : chunks;
-
-      if (status !== 'running_visual' || !active) return;
+      // Get API key from state or server
+      let currentApiKey = apiKey;
       
-      if (currentChunkIndex >= currentChunks.length) {
-        handleLog('success', 'Visual Phase Complete. Transitioning to Narration track.');
-        setProcState(s => ({ 
-            ...s, 
-            status: 'running_narration', 
-            narrationStartTime: 0 
-        }));
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        // @ts-ignore
+        currentApiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || '';
+      }
+
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        try {
+          const configRes = await fetch('/api/config');
+          const configData = await configRes.json();
+          currentApiKey = configData.apiKey;
+          if (currentApiKey && currentApiKey !== "MY_GEMINI_API_KEY") setApiKey(currentApiKey);
+        } catch (e) {
+          console.warn("Failed to fetch API key from server", e);
+        }
+      }
+
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        try {
+          // @ts-ignore
+          if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            // @ts-ignore
+            currentApiKey = process.env.API_KEY;
+          }
+        } catch (e) {
+          console.warn("process.env is not defined in browser");
+        }
+      }
+
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        // @ts-ignore
+        if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+          try {
+            // @ts-ignore
+            const hasKey = await window.aistudio.hasSelectedApiKey();
+            if (!hasKey) {
+              // @ts-ignore
+              await window.aistudio.openSelectKey();
+            }
+            
+            // Try fetching again after selection or if it already has a key
+            const configRes = await fetch('/api/config');
+            const configData = await configRes.json();
+            currentApiKey = configData.apiKey;
+            if (currentApiKey && currentApiKey !== "MY_GEMINI_API_KEY") {
+              setApiKey(currentApiKey);
+            }
+            
+            // Also check process.env.API_KEY again
+            if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+              // @ts-ignore
+              if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+                // @ts-ignore
+                currentApiKey = process.env.API_KEY;
+                setApiKey(currentApiKey);
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to handle aistudio key selection", e);
+          }
+        }
+      }
+
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        handleLog('error', 'API key is required. Please set GEMINI_API_KEY environment variable or select a key.');
+        setProcState(prev => ({ ...prev, status: 'error' }));
         return;
       }
-
-      const chunk = currentChunks[currentChunkIndex];
-      handleLog('info', `[Orchestrator] Starting Visual Pipeline for Chunk ${currentChunkIndex + 1}/${currentChunks.length}`);
-
+      
       try {
-        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'analyzing_phase_a' } : c));
-
-        const phaseAActions = await analyzeChunkPhaseA(
-          videoUrl,
-          chunk.clipStart,
-          chunk.clipEnd,
-          chunk.primaryStart,
-          chunk.primaryEnd,
-          overlap,
-          customContext,
-          handleLog
-        );
-
-        if (!active) return;
-
-        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { 
-          ...c, 
-          status: 'analyzing_phase_b',
-          phaseARawCount: phaseAActions.length 
-        } : c));
-
-        const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
-        const { newHistory, result } = await accumulateChunkPhaseB(
-          videoUrl,
-          durationInput,
-          phaseAActions,
-          currentChunkIndex + 1,
-          primaryWindowStr,
-          chatHistory || [],
-          customContext,
-          handleLog
-        );
-
-        if (!active) return;
-        
-        const mergedVisualActions = result.validated_segment_events ?? phaseAActions;
-        const addedVisualCount = result.new_actions_added ?? mergedVisualActions.length;
-        setLatestUIState(result.current_ui_state);
-
-        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { 
-          ...c, 
-          status: 'completed', 
-          phaseBAddedCount: addedVisualCount,
-          actionCount: mergedVisualActions.length 
-        } : c));
-
-        const taggedActions = mergedVisualActions.map(a => ({ ...a, chunkIndex: chunk.index }));
-        setActions(prev => [...prev, ...taggedActions].sort(sortActions));
-
-        setProcState(prev => ({
-          ...prev,
-          currentChunkIndex: prev.currentChunkIndex + 1,
-          chatHistory: newHistory,
-          totalActions: prev.totalActions + mergedVisualActions.length,
-          totalTokens: prev.totalTokens + 87000
-        }));
-
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        handleLog('error', `[Orchestrator] Visual Loop Paused due to fatal error.`, { error: errorMsg });
-        setChunks(prev => prev.map((c, i) => i === currentChunkIndex ? { ...c, status: 'error', errorMsg } : c));
-        setProcState(prev => ({ ...prev, status: 'paused' })); 
-      }
-    };
-
-    if (procState.status === 'running_visual') {
-      processNextVisual();
-    }
-
-    return () => { active = false; };
-  }, [procState.status, procState.currentChunkIndex]);
-
-
-  // --------------------------------------------------------------------------------
-  // LOOP 2: NARRATION ANALYSIS (With Context Anchoring)
-  // --------------------------------------------------------------------------------
-  useEffect(() => {
-    let active = true;
-
-    const processNextNarration = async () => {
-      const { status, narrationStartTime } = stateRef.current;
-      const totalDuration = parseMMSS(durationInput);
-
-      if (status !== 'running_narration' || !active) return;
-
-      if (narrationStartTime >= totalDuration) {
-        handleLog('success', 'Narration Phase Complete. Execution Graph is fully built.');
-        setProcState(s => ({ ...s, status: 'completed' }));
-        return;
-      }
-
-      const endSec = Math.min(narrationStartTime + NARRATION_CHUNK_SIZE_SEC, totalDuration);
-      handleLog('info', `[Orchestrator] Starting Narration Pipeline for ${formatMMSS(narrationStartTime)} to ${formatMMSS(endSec)}`);
-
-      try {
-        const relevantActions = actionsRef.current.filter(a => {
-           const t = parseMMSS(a.timestamp);
-           return t >= (narrationStartTime - 15) && t < (endSec + 15) && a.action_type !== 'chunk_boundary';
-        });
-
-        const newSteps = await analyzeNarrationSegment(
-           videoUrl,
-           narrationStartTime,
-           endSec,
-           relevantActions,
-           customContext,
-           handleLog
-        );
-
-        if (!active) return;
-
-        if (newSteps.length > 0) {
-            setNarrativeSteps(prev => [...prev, ...newSteps].sort((a,b) => parseMMSS(a.timestamp) - parseMMSS(b.timestamp)));
-            setProcState(prev => ({
-              ...prev,
-              totalTokens: prev.totalTokens + 300000 
-            }));
+        handleLog('info', 'Fetching video metadata...', { url: videoUrl });
+        let duration = 0;
+        if (durationInput) {
+          duration = parseMMSS(durationInput);
+          if (duration <= 0) {
+            throw new Error("Invalid duration format. Please use MM:SS or HH:MM:SS.");
+          }
+          handleLog('success', `Using provided duration: ${duration}s`);
+        } else if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+          const res = await fetch('/api/metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoUrl })
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          duration = data.duration;
+          handleLog('success', `Found YouTube duration: ${duration}s`);
+        } else {
+          throw new Error("Duration is required for non-YouTube videos. Please provide a duration.");
         }
 
-        setProcState(prev => ({
-           ...prev,
-           narrationStartTime: endSec
-        }));
+        setProcState(prev => ({ ...prev, duration }));
+        const computedChunks = computeChunkWindows(duration, chunkSize, overlap);
+        setChunks(computedChunks);
+        handleLog('info', `Calculated ${computedChunks.length} chunks for processing`);
 
-      } catch (err) {
-         handleLog('error', `[Orchestrator] Narration Loop Paused due to fatal error.`, { error: String(err) });
-         setProcState(prev => ({ ...prev, status: 'paused' }));
+        let chatHistory: any[] = [];
+        let cumulativeActions: ActionItem[] = [];
+        let cumulativeNarrative: NarrativeStep[] = [];
+        let currentUIState: any = null;
+
+        for (let i = 0; i < computedChunks.length; i++) {
+          // Check if cancelled (we can check stateRef)
+          if (stateRef.current.status === 'cancelled') {
+            handleLog('warn', 'Job cancelled by user');
+            return;
+          }
+
+          setProcState(prev => ({ ...prev, currentChunkIndex: i }));
+          const chunk = computedChunks[i];
+
+          handleLog('info', `--- Starting Chunk ${i + 1}/${computedChunks.length} ---`, { chunk });
+
+          // Phase A
+          handleLog('info', `Phase A: Extracting raw actions...`);
+          const rawActions = await analyzeChunkPhaseA(
+            videoUrl,
+            chunk.clipStart,
+            chunk.clipEnd,
+            chunk.primaryStart,
+            chunk.primaryEnd,
+            overlap,
+            customContext,
+            currentApiKey,
+            handleLog
+          );
+
+          // Phase B
+          handleLog('info', `Phase B: Validating and merging state...`);
+          const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
+          const phaseBResult = await accumulateChunkPhaseB(
+            videoUrl,
+            `${duration}s`,
+            rawActions,
+            i + 1,
+            primaryWindowStr,
+            chatHistory,
+            customContext,
+            currentApiKey,
+            handleLog
+          );
+
+          chatHistory = phaseBResult.newHistory;
+          currentUIState = phaseBResult.result.current_ui_state;
+          setLatestUIState(currentUIState);
+          
+          const uniqueEvents: ActionItem[] = [];
+          phaseBResult.result.validated_segment_events.forEach((evt, idx) => {
+            const isDuplicate = cumulativeActions.some(a => 
+              a.timestamp === evt.timestamp && a.action_type === evt.action_type
+            );
+            if (!isDuplicate) {
+              uniqueEvents.push({
+                ...evt,
+                id: `${evt.id}_c${i}_${idx}`
+              });
+            }
+          });
+
+          cumulativeActions = [...cumulativeActions, ...uniqueEvents];
+          setActions(cumulativeActions);
+          setProcState(prev => ({ ...prev, totalActions: cumulativeActions.length }));
+
+          // Phase C
+          handleLog('info', `Phase C: Synthesizing narrative steps...`);
+          const newNarrativeSteps = await analyzeNarrationSegment(
+            videoUrl,
+            chunk.clipStart,
+            chunk.clipEnd,
+            uniqueEvents,
+            customContext,
+            currentApiKey,
+            handleLog
+          );
+
+          const uniqueNarrativeSteps = newNarrativeSteps.map((step, idx) => ({
+            ...step,
+            id: `${step.id}_c${i}_${idx}`
+          }));
+
+          cumulativeNarrative = [...cumulativeNarrative, ...uniqueNarrativeSteps];
+          setNarrativeSteps(cumulativeNarrative);
+
+          handleLog('success', `Chunk ${i + 1} completed successfully.`);
+        }
+
+        setProcState(prev => ({ ...prev, status: 'completed' }));
+        handleLog('success', 'Workflow analysis completed successfully!');
+
+      } catch (err: any) {
+        console.error("Job failed:", err);
+        handleLog('error', `Fatal error: ${err.message || 'Unknown error occurred'}`);
+        setProcState(prev => ({ ...prev, status: 'error' }));
       }
-    };
-
-    if (procState.status === 'running_narration') {
-      processNextNarration();
     }
+  };
 
-    return () => { active = false; };
-  }, [procState.status, procState.narrationStartTime]);
+  // --------------------------------------------------------------------------------
+  // SERVER POLLING LOOP (REMOVED)
+  // --------------------------------------------------------------------------------
+  // The polling loop has been removed because the job now runs locally.
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -397,10 +450,36 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const getPlayableVideoUrl = (url: string) => {
     if (!url) return '';
     if (url.includes('generativelanguage.googleapis.com')) {
-      const apiKey = process.env.API_KEY;
-      if (apiKey) {
+      let currentApiKey = apiKey;
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        // @ts-ignore
+        currentApiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || '';
+      }
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        try {
+          // @ts-ignore
+          if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+            // @ts-ignore
+            currentApiKey = process.env.GEMINI_API_KEY;
+          }
+        } catch (e) {}
+      }
+      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+        try {
+          // @ts-ignore
+          if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            // @ts-ignore
+            currentApiKey = process.env.API_KEY;
+          }
+        } catch (e) {}
+      }
+      if (currentApiKey === "MY_GEMINI_API_KEY") {
+        currentApiKey = "";
+      }
+      
+      if (currentApiKey && currentApiKey !== "undefined") {
         const separator = url.includes('?') ? '&' : '?';
-        return `${url}${separator}alt=media&key=${apiKey}`;
+        return `${url}${separator}alt=media&key=${currentApiKey}`;
       }
     }
     // Normalize youtu.be links to standard youtube.com watch links for better iframe compatibility
@@ -511,7 +590,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                     <div className="flex justify-between items-center text-pink-600/80 dark:text-pink-300/80">
                       <span className="text-xs">Audio Progress</span>
                       <span className="font-mono text-xs">
-                         {formatMMSS(procState.narrationStartTime)} / {durationInput}
+                         {formatMMSS(procState.narrationStartTime)} / {procState.duration ? formatMMSS(procState.duration) : durationInput}
                       </span>
                     </div>
                   )}

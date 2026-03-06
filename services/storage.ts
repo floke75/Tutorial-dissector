@@ -1,5 +1,5 @@
 
-import { Project, ProjectSummary } from '../types';
+import type { Project, ProjectSummary } from '../types.ts';
 
 const INDEX_KEY = 'td_projects_index';
 const PROJ_PREFIX = 'td_project_';

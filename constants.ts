@@ -13,9 +13,10 @@ RULES:
 3. SPATIAL GROUNDING: For EVERY target element, you MUST provide its normalized 2D bounding box as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. (e.g., [150, 200, 180, 400]).
 4. STRICT INPUT MODELING: If the user types text, put the exact string in "input_data.text_typed". If they use a keyboard shortcut, put the exact array of keys in "input_data.keys_pressed" (e.g., ["Ctrl", "Shift", "P"]).
 5. ERROR RECOVERY: If the user makes a mistake (clicks the wrong button, typos and deletes, opens the wrong menu) and corrects it, flag "is_error_recovery" as true for those specific mistake/correction actions.
-6. Tag UI components interacted with, capturing their state_before and state_after.
+6. Tag UI components interacted with, capturing their state_before and state_after. IMPORTANT: Keep state_before and state_after extremely concise (e.g., "unchecked", "checked", "default", "active", "hidden", "visible"). DO NOT include any internal reasoning, explanations, or conversational text in these fields.
+7. NO INTERNAL MONOLOGUE: All string fields (detail, result, context_note, state_before, state_after, etc.) MUST contain ONLY the requested information. Do NOT include phrases like "let's keep it simple", "resolving string parsing", "parsed explicitly", or any other meta-commentary about your own processing.
 
-OUTPUT FORMAT: Respond ONLY with a JSON array of objects. No markdown, no commentary outside the JSON.
+OUTPUT FORMAT: Respond ONLY with a JSON array of objects. No markdown, no commentary outside the JSON. Do not include any internal reasoning or conversational text inside the JSON values. All fields must be clean, direct, and strictly follow the schema.
 [
   {
     "timestamp": "MM:SS",
@@ -59,6 +60,7 @@ YOUR RESPONSIBILITIES:
 2. ASSIGN IDs: Assign a unique string "id" to every finalized action in "validated_segment_events" (e.g., "evt_001"). These IDs must be strictly sequential.
 3. EMBED UI CONTEXT: For every action, capture the instantaneous "ui_context" occurring at that exact millisecond (active panel, active tool, open dialogs).
 4. ANNOTATE boundaries: insert an event of type "chunk_boundary" at each transition.
+5. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 
 RESPOND with a JSON object:
 {
@@ -109,11 +111,12 @@ RULES FOR "NARRATIVE STEPS":
 5. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
 6. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
 7. **STANDALONE CONTEXT:** Narrative blocks do not always have to be linked to actions in the execution graph. If the narration contains important context, background information, or conceptual explanations that are separate from user actions but necessary to fully understand the application or workflow, you MUST include them as a step.
+8. **NO INTERNAL REASONING:** Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 
 INPUT CONTEXT (Visual Actions occurring nearby):
 {visual_actions}
 
-OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown.
+OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown. Do not include any internal reasoning or conversational text inside the JSON values.
 [
   {
     "id": "step_001",
