@@ -27,7 +27,7 @@ export type ActionType =
 export type ActionConfidence = 'high' | 'medium' | 'low';
 export type ActorType = 'user' | 'system';
 export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
-export type ProcessingStatus = 'idle' | 'running_visual' | 'running_narration' | 'paused' | 'completed' | 'error';
+export type ProcessingStatus = 'idle' | 'running_visual' | 'running_narration' | 'paused' | 'completed' | 'error' | 'cancelled';
 export type InsightType = 'explanation' | 'rationale' | 'tip' | 'warning' | 'workflow_framing' | 'comparison';
 
 export type UIComponentType = 'button' | 'menu_item' | 'tab' | 'dropdown' | 'checkbox' | 'radio' | 'input_field' | 'toggle' | 'link' | 'modal' | 'panel' | 'other';
@@ -123,6 +123,8 @@ export interface ProcessingState {
   lastInteractionId: string | null; 
   chatHistory?: any[]; 
   logs?: LogMessage[]; // Added logs array for Dev Console
+  jobId?: string;
+  duration?: number;
 }
 
 export interface UIState {

@@ -48,12 +48,12 @@ export const InputPanel: React.FC<InputPanelProps> = ({
           />
         </div>
         <div>
-           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Duration (MM:SS)</label>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Duration (MM:SS) <span className="text-gray-400 font-normal text-xs ml-1">(Optional for YouTube)</span></label>
           <input 
             type="text" 
             value={durationInput}
             onChange={(e) => setDurationInput(e.target.value)}
-            placeholder="10:00"
+            placeholder="Auto-detected for YouTube"
             className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-2.5 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-mono"
             disabled={disabled}
           />
@@ -115,9 +115,9 @@ export const InputPanel: React.FC<InputPanelProps> = ({
       <div className="mt-6">
         <button 
           onClick={onStart}
-          disabled={disabled || !videoUrl || !durationInput}
+          disabled={disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !durationInput)}
           className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-            disabled || !videoUrl || !durationInput
+            disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !durationInput)
               ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed' 
               : 'bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-white text-white dark:text-gray-900 shadow-md hover:shadow-lg active:scale-[0.98]'
           }`}

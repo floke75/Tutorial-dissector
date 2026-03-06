@@ -1,17 +1,19 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
-import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT } from '../constants';
-import { ActionItem, PhaseBResponse, NarrativeStep, LogLevel } from '../types';
-import { formatMMSS } from '../utils/timeUtils';
+import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT } from '../constants.ts';
+import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel } from '../types.ts';
+import { formatMMSS } from '../utils/timeUtils.ts';
 
 // Helper for exponential backoff
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Initialize clients
-const getClient = () => {
+const getClient = (apiKey: string) => {
+  if (!apiKey) {
+    throw new Error("API key must be set when using the Gemini API.");
+  }
   return new GoogleGenAI({ 
-    apiKey: process.env.API_KEY,
-    httpOptions: { timeout: 300000 } // 5 minutes timeout for large video chunks
+    apiKey: apiKey
   });
 };
 
@@ -38,8 +40,14 @@ const uiComponentSchema = {
   properties: {
     type: { type: Type.STRING },
     label: { type: Type.STRING },
-    state_before: { type: Type.STRING },
-    state_after: { type: Type.STRING },
+    state_before: { 
+      type: Type.STRING,
+      description: "The state of the component BEFORE the action. MUST be a concise label (e.g., 'default', 'checked', 'hidden'). DO NOT include reasoning or conversation."
+    },
+    state_after: { 
+      type: Type.STRING,
+      description: "The state of the component AFTER the action. MUST be a concise label (e.g., 'active', 'unchecked', 'visible'). DO NOT include reasoning or conversation."
+    },
     action_value: { type: Type.STRING }
   },
   required: ["type", "label"]
@@ -163,9 +171,10 @@ export async function analyzeChunkPhaseA(
   primaryEndSec: number,
   overlapSec: number,
   customContext: string,
+  apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<ActionItem[]> {
-  const ai = getClient();
+  const ai = getClient(apiKey);
   
   const basePrompt = PHASE_A_SYSTEM_PROMPT
     .replace('{primary_start}', formatMMSS(primaryStartSec))
@@ -201,7 +210,7 @@ export async function analyzeChunkPhaseA(
         contents: [{
           role: 'user',
           parts: [
-            {
+            videoUrl.includes('generativelanguage.googleapis.com') ? {
               fileData: {
                 fileUri: videoUrl,
                 mimeType: 'video/*',
@@ -210,20 +219,27 @@ export async function analyzeChunkPhaseA(
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            } as any,
+            } as any : {
+              text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+            },
             { text: currentPrompt }
           ]
         }],
         config: {
+          httpOptions: {
+            headers: {
+              'x-goog-api-key': apiKey
+            }
+          },
           responseMimeType: 'application/json',
           responseSchema: phaseASchema,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000 
+          maxOutputTokens: 100000 
         }
       });
 
@@ -283,9 +299,10 @@ export async function accumulateChunkPhaseB(
   primaryWindow: string,
   chatHistory: any[] = [],
   customContext: string,
+  apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<{ newHistory: any[], result: PhaseBResponse }> {
-  const ai = getClient();
+  const ai = getClient(apiKey);
 
   const systemInstruction = PHASE_B_SYSTEM_PROMPT
     .replace('{video_title}', 'User Video')
@@ -329,16 +346,21 @@ export async function accumulateChunkPhaseB(
         model: 'gemini-3.1-pro-preview',
         contents: contents,
         config: {
+          httpOptions: {
+            headers: {
+              'x-goog-api-key': apiKey
+            }
+          },
           systemInstruction: finalSystemInstruction,
           responseMimeType: 'application/json',
           responseSchema: phaseBResponseSchema,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000
+          maxOutputTokens: 100000
         }
       });
 
@@ -401,9 +423,10 @@ export async function analyzeNarrationSegment(
   endSec: number,
   relevantVisualActions: ActionItem[],
   customContext: string,
+  apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<NarrativeStep[]> {
-  const ai = getClient();
+  const ai = getClient(apiKey);
   
   // Provide simplified visual actions but include critical flags
   const simplifiedActions = relevantVisualActions.map(a => ({
@@ -447,7 +470,7 @@ export async function analyzeNarrationSegment(
         contents: [{
           role: 'user',
           parts: [
-            {
+            videoUrl.includes('generativelanguage.googleapis.com') ? {
               fileData: {
                 fileUri: videoUrl,
                 mimeType: 'video/*', 
@@ -456,20 +479,27 @@ export async function analyzeNarrationSegment(
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            } as any,
+            } as any : {
+              text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+            },
             { text: currentPrompt }
           ]
         }],
         config: {
+          httpOptions: {
+            headers: {
+              'x-goog-api-key': apiKey
+            }
+          },
           responseMimeType: 'application/json',
           responseSchema: pass2Schema,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000
+          maxOutputTokens: 100000
         }
       });
 
