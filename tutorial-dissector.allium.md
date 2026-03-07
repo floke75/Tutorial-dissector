@@ -215,9 +215,8 @@ rule CompletePhaseB {
     
     requires: chunk.status = analyzing_phase_b
     
-    ensures: chunk.status = completed
+    ensures: chunk.status = analyzing_phase_c
     ensures: chunk.project.latest_ui_state = ui_state
-    ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
     ensures: chunk.action_count = count(merged_actions)
     
     -- Add Action Items (Mechanical layer)
@@ -239,6 +238,30 @@ rule CompletePhaseB {
                 result: action.result,
                 context_note: action.context_note,
                 confidence: action.confidence
+            )
+}
+
+rule CompletePhaseC {
+    when: PhaseCCompleted(chunk, narrative_steps)
+    
+    requires: chunk.status = analyzing_phase_c
+    
+    ensures: chunk.status = completed
+    ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    
+    -- Add Narrative Steps (Intent layer)
+    ensures:
+        for step in narrative_steps:
+            NarrativeStep.created(
+                project: chunk.project,
+                id: step.id,
+                chunk_index: chunk.index,
+                timestamp: step.timestamp,
+                description: step.description,
+                precondition: step.precondition,
+                postcondition: step.postcondition,
+                linked_visual_action_ids: step.linked_visual_action_ids,
+                insights: step.insights
             )
 }
 
