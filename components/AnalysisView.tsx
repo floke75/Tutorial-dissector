@@ -211,22 +211,28 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
 
     if (procState.status === 'idle' || procState.status === 'completed' || procState.status === 'error' || procState.status === 'cancelled') {
-       handleLog('info', 'Initializing new analysis pipeline locally...', { chunkSize, overlap });
+       const isResuming = (procState.status === 'cancelled' || procState.status === 'error') && chunks.length > 0;
        
-       setActions([]);
-       setNarrativeSteps([]);
-       setChunks([]);
+       handleLog('info', isResuming ? 'Resuming analysis pipeline locally...' : 'Initializing new analysis pipeline locally...', { chunkSize, overlap });
+       
+       if (!isResuming) {
+         setActions([]);
+         setNarrativeSteps([]);
+         setChunks([]);
+       }
+       
        setProcState(prev => ({
+        ...prev,
         status: 'running_visual',
-        currentChunkIndex: 0,
-        narrationStartTime: 0,
-        totalActions: 0,
-        totalTokens: 0,
-        startTime: Date.now(),
-        lastInteractionId: null,
-        chatHistory: [],
+        currentChunkIndex: isResuming ? prev.currentChunkIndex : 0,
+        narrationStartTime: isResuming ? prev.narrationStartTime : 0,
+        totalActions: isResuming ? prev.totalActions : 0,
+        totalTokens: isResuming ? prev.totalTokens : 0,
+        startTime: isResuming ? prev.startTime : Date.now(),
+        lastInteractionId: isResuming ? prev.lastInteractionId : null,
+        chatHistory: isResuming ? prev.chatHistory : [],
         logs: prev.logs, // retain logs on restart
-        jobId: null
+        jobId: isResuming ? prev.jobId : null
       }));
 
       // Get API key from state or server
@@ -299,6 +305,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            jobId: projectId,
             videoUrl,
             durationInput,
             chunkSize,
@@ -429,6 +436,25 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   useEffect(() => {
     setIsPlayerReady(false);
   }, [videoUrl]);
+
+  const handleCancelAndSave = async () => {
+    if (!projectId) return;
+    try {
+      handleLog('warn', 'Sending cancel request to server...');
+      await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
+      
+      if (timerRef.current) clearInterval(timerRef.current);
+      
+      setProcState(prev => ({
+        ...prev,
+        status: 'cancelled'
+      }));
+      handleLog('success', 'Job cancelled. Partial results saved and available for download.');
+    } catch (e) {
+      console.error("Failed to cancel job:", e);
+      handleLog('error', 'Failed to cancel job on server.');
+    }
+  };
 
   const handleSeek = (timeSec: number) => {
     console.log("handleSeek called with timeSec:", timeSec, "isPlayerReady:", isPlayerReady);
@@ -608,6 +634,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                     <span className="font-mono text-purple-600 dark:text-purple-300">{Math.round(procState.totalTokens / 1000)}k</span>
                   </div>
                 </div>
+                
+                {(isVisualRunning || isNarrationRunning) && (
+                  <button
+                    onClick={handleCancelAndSave}
+                    className="mt-5 w-full py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    Stop & Save Partial Results
+                  </button>
+                )}
               </div>
           )}
           

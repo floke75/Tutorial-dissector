@@ -6,7 +6,8 @@ import type { Chunk } from '../types.ts';
 
 export interface JobState {
   id: string;
-  status: 'running' | 'completed' | 'error' | 'cancelled';
+  runId: string;
+  status: 'idle' | 'running_visual' | 'running_narration' | 'completed' | 'error' | 'cancelled';
   progress: number;
   logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];
@@ -17,6 +18,9 @@ export interface JobState {
   duration: number;
   chunks: Chunk[];
   currentChunkIndex: number;
+  chatHistory?: any[];
+  chunkSize: number;
+  overlap: number;
 }
 
 const jobs = new Map<string, JobState>();
@@ -60,6 +64,7 @@ export async function fetchYouTubeDuration(url: string): Promise<number> {
 }
 
 export async function processVideoJob(params: {
+  jobId?: string;
   videoUrl: string;
   durationInput?: string;
   chunkSize: number;
@@ -67,7 +72,7 @@ export async function processVideoJob(params: {
   customContext: string;
   apiKey: string;
 }): Promise<string> {
-  const jobId = uuidv4();
+  const jobId = params.jobId || uuidv4();
   
   // Start the job asynchronously
   runJob(jobId, params).catch(err => {
@@ -111,78 +116,105 @@ async function runJob(jobId: string, params: {
     }
   };
 
-  jobs.set(jobId, {
-    id: jobId,
-    status: 'running_visual',
-    progress: 0,
-    logs: [],
-    actions: [],
-    narrativeSteps: [],
-    uiState: null,
-    videoUrl,
-    duration: 0,
-    chunks: [],
-    currentChunkIndex: 0
-  });
+  const existingState = jobs.get(jobId);
+  const isResuming = existingState && 
+                     (existingState.status === 'cancelled' || existingState.status === 'error') &&
+                     existingState.videoUrl === videoUrl &&
+                     existingState.chunkSize === chunkSize &&
+                     existingState.overlap === overlap &&
+                     existingState.chunks.length > 0; // Ensure chunks were calculated
+
+  const runId = uuidv4();
+
+  if (!isResuming) {
+    cancelTokens.delete(jobId);
+    jobs.set(jobId, {
+      id: jobId,
+      runId,
+      status: 'running_visual',
+      progress: 0,
+      logs: [],
+      actions: [],
+      narrativeSteps: [],
+      uiState: null,
+      videoUrl,
+      duration: 0,
+      chunks: [],
+      currentChunkIndex: 0,
+      chatHistory: [],
+      chunkSize,
+      overlap
+    });
+  } else {
+    existingState.status = 'running_visual';
+    existingState.runId = runId;
+    cancelTokens.delete(jobId);
+    addLog('info', `Resuming job from chunk ${existingState.currentChunkIndex + 1}...`);
+  }
 
   const state = jobs.get(jobId)!;
 
   try {
-    addLog('info', 'Fetching video metadata...', { url: videoUrl });
+    let duration = state.duration;
     
-    let duration = 0;
-    if (durationInput) {
-      duration = parseMMSS(durationInput);
-      if (duration <= 0) {
-        throw new Error("Invalid duration format. Please use MM:SS or HH:MM:SS.");
-      }
-      addLog('success', `Using provided duration: ${duration}s`);
-    } else if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-      try {
-        duration = await fetchYouTubeDuration(videoUrl);
-        addLog('success', `Found YouTube duration: ${duration}s`);
-      } catch (err: any) {
-        throw new Error(`Failed to fetch YouTube duration automatically. Please provide the duration manually in the settings. Details: ${err.message}`);
-      }
-    } else if (videoUrl.includes('generativelanguage.googleapis.com')) {
-      addLog('info', 'Fetching Gemini File metadata...');
-      const fileId = videoUrl.split('/').pop();
-      if (!fileId) throw new Error("Invalid Gemini File URI");
+    if (!isResuming) {
+      addLog('info', 'Fetching video metadata...', { url: videoUrl });
       
-      const fileRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/files/${fileId}`, {
-        headers: {
-          'x-goog-api-key': apiKey
+      if (durationInput) {
+        duration = parseMMSS(durationInput);
+        if (duration <= 0) {
+          throw new Error("Invalid duration format. Please use MM:SS or HH:MM:SS.");
         }
-      });
-      if (!fileRes.ok) {
-        throw new Error(`Failed to fetch file metadata: ${fileRes.statusText}`);
+        addLog('success', `Using provided duration: ${duration}s`);
+      } else if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
+        try {
+          duration = await fetchYouTubeDuration(videoUrl);
+          addLog('success', `Found YouTube duration: ${duration}s`);
+        } catch (err: any) {
+          throw new Error(`Failed to fetch YouTube duration automatically. Please provide the duration manually in the settings. Details: ${err.message}`);
+        }
+      } else if (videoUrl.includes('generativelanguage.googleapis.com')) {
+        addLog('info', 'Fetching Gemini File metadata...');
+        const fileId = videoUrl.split('/').pop();
+        if (!fileId) throw new Error("Invalid Gemini File URI");
+        
+        const fileRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/files/${fileId}`, {
+          headers: {
+            'x-goog-api-key': apiKey
+          }
+        });
+        if (!fileRes.ok) {
+          throw new Error(`Failed to fetch file metadata: ${fileRes.statusText}`);
+        }
+        const fileData = await fileRes.json();
+        
+        if (fileData.state !== 'ACTIVE') {
+          throw new Error(`File is not ready. Current state: ${fileData.state}`);
+        }
+        
+        if (!fileData.videoMetadata?.videoDuration) {
+          throw new Error("File does not contain video duration metadata");
+        }
+        
+        duration = parseInt(fileData.videoMetadata.videoDuration.replace('s', ''), 10);
+        addLog('success', `Retrieved Gemini File duration: ${duration}s`);
+      } else {
+        throw new Error("Duration is required for raw video URLs.");
       }
-      const fileData = await fileRes.json();
-      
-      if (fileData.state !== 'ACTIVE') {
-        throw new Error(`File is not ready. Current state: ${fileData.state}`);
-      }
-      
-      if (!fileData.videoMetadata?.videoDuration) {
-        throw new Error("File does not contain video duration metadata");
-      }
-      
-      duration = parseInt(fileData.videoMetadata.videoDuration.replace('s', ''), 10);
-      addLog('success', `Retrieved Gemini File duration: ${duration}s`);
-    } else {
-      throw new Error("Duration is required for raw video URLs.");
+
+      state.duration = duration;
+      state.chunks = computeChunkWindows(duration, chunkSize, overlap);
+      addLog('info', `Calculated ${state.chunks.length} chunks for processing`);
     }
 
-    state.duration = duration;
-    state.chunks = computeChunkWindows(duration, chunkSize, overlap);
-    addLog('info', `Calculated ${state.chunks.length} chunks for processing`);
+    let chatHistory: any[] = state.chatHistory || [];
+    let cumulativeActions: ActionItem[] = state.actions || [];
+    let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
+    let latestUIState: UIState | null = state.uiState || null;
 
-    let chatHistory: any[] = [];
-    let cumulativeActions: ActionItem[] = [];
-    let cumulativeNarrative: NarrativeStep[] = [];
-    let latestUIState: UIState | null = null;
+    const startIndex = isResuming ? state.currentChunkIndex : 0;
 
-    for (let i = 0; i < state.chunks.length; i++) {
+    for (let i = startIndex; i < state.chunks.length; i++) {
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
         addLog('warn', 'Job cancelled by user');
@@ -210,6 +242,12 @@ async function runJob(jobId: string, params: {
         addLog
       );
       
+      if (cancelTokens.has(jobId)) {
+        state.status = 'cancelled';
+        addLog('warn', 'Job cancelled by user after Phase A');
+        return;
+      }
+
       state.progress = progressBase + (100 / state.chunks.length) * 0.3;
 
       // Phase B: Validation & State
@@ -227,20 +265,22 @@ async function runJob(jobId: string, params: {
         addLog
       );
 
-      chatHistory = phaseBResult.newHistory;
-      // Sliding window: keep only the last 6 items (3 turns: user + model)
-      if (chatHistory.length > 6) {
-        chatHistory = chatHistory.slice(-6);
+      if (cancelTokens.has(jobId)) {
+        state.status = 'cancelled';
+        addLog('warn', 'Job cancelled by user after Phase B');
+        return;
       }
-      latestUIState = phaseBResult.result.current_ui_state;
-      state.uiState = latestUIState;
+
+      let nextChatHistory = phaseBResult.newHistory;
+      // Sliding window: keep only the last 6 items (3 turns: user + model)
+      if (nextChatHistory.length > 6) {
+        nextChatHistory = nextChatHistory.slice(-6);
+      }
+      let nextUIState = phaseBResult.result.current_ui_state;
       
       // Append new validated actions
-      cumulativeActions = [...cumulativeActions, ...phaseBResult.result.validated_segment_events];
-      state.actions = cumulativeActions;
+      let nextCumulativeActions = [...cumulativeActions, ...phaseBResult.result.validated_segment_events];
       
-      state.progress = progressBase + (100 / state.chunks.length) * 0.6;
-
       // Phase C: Narrative Synthesis
       addLog('info', `Phase C: Synthesizing narrative steps...`);
       
@@ -248,7 +288,7 @@ async function runJob(jobId: string, params: {
       const contextStart = chunk.clipStart - CONTEXT_BUFFER_SEC;
       const contextEnd   = chunk.clipEnd   + CONTEXT_BUFFER_SEC;
 
-      const relevantActions = cumulativeActions.filter(a => {
+      const relevantActions = nextCumulativeActions.filter(a => {
         const t = parseMMSS(a.timestamp);
         return t >= contextStart && t <= contextEnd;
       });
@@ -264,11 +304,28 @@ async function runJob(jobId: string, params: {
         addLog
       );
 
+      if (cancelTokens.has(jobId)) {
+        state.status = 'cancelled';
+        addLog('warn', 'Job cancelled by user after Phase C');
+        return;
+      }
+
+      // Atomic state update for the chunk
+      chatHistory = nextChatHistory;
+      state.chatHistory = chatHistory;
+      
+      latestUIState = nextUIState;
+      state.uiState = latestUIState;
+      
+      cumulativeActions = nextCumulativeActions;
+      state.actions = cumulativeActions;
+
       cumulativeNarrative = [...cumulativeNarrative, ...newNarrativeSteps];
       state.narrativeSteps = cumulativeNarrative;
 
       state.progress = progressBase + (100 / state.chunks.length);
       addLog('success', `Chunk ${i + 1} completed successfully.`);
+      state.currentChunkIndex = i + 1;
     }
 
     // After all chunks are processed, before global dedup
@@ -301,6 +358,12 @@ async function runJob(jobId: string, params: {
       addLog('warn', `Low link coverage (${coveragePercent}%). ${unlinkedActions.length} user actions have no narrative step.`);
     }
 
+    if (cancelTokens.has(jobId)) {
+      state.status = 'cancelled';
+      addLog('warn', 'Job cancelled by user before global deduplication');
+      return;
+    }
+
     // Final Global Deduplication Pass
     addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
     state.progress = 95;
@@ -308,6 +371,7 @@ async function runJob(jobId: string, params: {
     try {
       const deduplicatedActions = await analyzeGlobalDeduplication(
         cumulativeActions,
+        customContext,
         apiKey,
         addLog
       );
@@ -352,6 +416,8 @@ async function runJob(jobId: string, params: {
     state.error = error.message || 'Unknown error occurred';
     addLog('error', `Fatal error: ${state.error}`);
   } finally {
-    cancelTokens.delete(jobId);
+    if (jobs.get(jobId) === state && state.runId === runId) {
+      cancelTokens.delete(jobId);
+    }
   }
 }

@@ -48,8 +48,8 @@ describe('AnalysisView', () => {
       latestUIState: null
     };
 
-    vi.spyOn(storage, 'getProject').mockReturnValue(mockProject);
-    vi.spyOn(storage, 'saveProject').mockImplementation(() => {});
+    vi.spyOn(storage, 'getProject').mockResolvedValue(mockProject);
+    vi.spyOn(storage, 'saveProject').mockResolvedValue();
 
     render(
       <AnalysisView 

@@ -19,7 +19,7 @@ describe('Gemini Schema Validation', () => {
   });
 
   it('should convert anyOf nullables to type array format required by Gemini', () => {
-    const rawSchema = zodToJsonSchema(actionItemSchema, { target: "jsonSchema7", $refStrategy: "none" });
+    const rawSchema = zodToJsonSchema(actionItemSchema, { target: "jsonSchema7", $refStrategy: "none" }) as any;
     
     // Before fix, target should use anyOf
     expect(rawSchema.properties?.target).toHaveProperty('anyOf');
@@ -39,7 +39,7 @@ describe('Gemini Schema Validation', () => {
   });
 
   it('should successfully format Phase A schema for Gemini', () => {
-    const rawSchema = zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" });
+    const rawSchema = zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" }) as any;
     const fixedSchema = fixNullable(rawSchema);
     
     expect(fixedSchema).not.toHaveProperty('$schema');
@@ -49,7 +49,7 @@ describe('Gemini Schema Validation', () => {
   });
 
   it('should successfully format Phase B schema for Gemini', () => {
-    const rawSchema = zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" });
+    const rawSchema = zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" }) as any;
     const fixedSchema = fixNullable(rawSchema);
     
     expect(fixedSchema).not.toHaveProperty('$schema');
@@ -58,7 +58,7 @@ describe('Gemini Schema Validation', () => {
   });
 
   it('should successfully format Pass 2 schema for Gemini', () => {
-    const rawSchema = zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" });
+    const rawSchema = zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" }) as any;
     const fixedSchema = fixNullable(rawSchema);
     
     expect(fixedSchema).not.toHaveProperty('$schema');

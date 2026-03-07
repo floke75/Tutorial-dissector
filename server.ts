@@ -9,7 +9,7 @@ async function startServer() {
     console.warn("WARNING: GEMINI_API_KEY is not set in the environment. API calls will fail.");
   }
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
   app.use(express.json());
@@ -48,7 +48,7 @@ async function startServer() {
 
   app.post("/api/process", async (req, res) => {
     try {
-      const { videoUrl, durationInput, chunkSize, overlap, customContext } = req.body;
+      const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, customContext } = req.body;
       let apiKey = req.body.apiKey;
       
       console.log("[API /process] Received request.");
@@ -75,7 +75,7 @@ async function startServer() {
         return res.status(400).json({ error: "apiKey is required. Please select an API key in AI Studio, or set the GEMINI_API_KEY environment variable if deployed." });
       }
       
-      const jobId = await processVideoJob({ videoUrl, durationInput, chunkSize, overlap, customContext, apiKey });
+      const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, customContext, apiKey });
       res.json({ jobId });
     } catch (error: any) {
       console.error("Failed to start job:", error);
