@@ -8,7 +8,7 @@
 The application is a **full-stack** application: a React 19 SPA frontend backed by an Express server (`server.ts`). The frontend stores project data in **IndexedDB** (via `idb-keyval`). All Gemini API calls are made **server-side** via `server/jobManager.ts`, which imports from `services/geminiService.ts`.
 
 *   **`types.ts`**: The source of truth for the **Verifiable Execution Graph**. Contains definitions for `ActionItem` (mechanics) and `NarrativeStep` (intent). If you add a feature, update the types here first.
-*   **`constants.ts`**: Contains the raw system prompts for Phase A, Phase B, Phase C, and Phase D. Prompt engineering happens here.
+*   **`constants.ts`**: Contains the raw system prompts for Phase A (`PHASE_A_SYSTEM_PROMPT`), Phase B (`PHASE_B_SYSTEM_PROMPT`), Phase C (`PASS_2_SYSTEM_PROMPT`), and Phase D (`GLOBAL_DEDUPLICATION_PROMPT`). Prompt engineering happens here.
 *   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Gemini SDK `Type.OBJECT` schemas.**
 *   **`services/storage.ts`**: Wraps `IndexedDB` (via `idb-keyval`). Handles project creation, saving, and indexing.
 *   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).

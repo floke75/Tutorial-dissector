@@ -294,6 +294,7 @@ async function runJob(jobId: string, params: {
       let nextCumulativeActions = [...cumulativeActions, ...newValidatedEvents];
       
       // Phase C: Narrative Synthesis
+      chunk.status = 'analyzing_phase_c';
       addLog('info', `Phase C: Synthesizing narrative steps...`);
       
       const CONTEXT_BUFFER_SEC = 15;
@@ -427,7 +428,9 @@ async function runJob(jobId: string, params: {
           if (!remainingIds.has(oldAction.id)) {
             // This action was removed as a duplicate. Find the action that was kept.
             const keptAction = deduplicatedActions.find(
-              a => a.timestamp === oldAction.timestamp && a.action_type === oldAction.action_type
+              a => a.timestamp === oldAction.timestamp && 
+                   a.action_type === oldAction.action_type &&
+                   a.detail === oldAction.detail
             );
             if (keptAction) {
               oldToNew.set(oldAction.id, keptAction.id);

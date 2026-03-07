@@ -73,7 +73,7 @@ value InputData {
 ------------------------------------------------------------
 
 enum ProcessingStatus { idle | running_visual | paused | completed | error | cancelled }
-enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
+enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | analyzing_phase_c | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
 enum ActionType { 
@@ -320,7 +320,7 @@ surface AutomationCompiler {
         project.narrative_steps
         golden_path_actions
         
-    guarantee: NoErrorRecoveryReplication = all golden_path_actions where not is_error_recovery
+    guarantee: NoErrorRecoveryReplication
         -- Asserts that scripts exported by this surface will never
         -- execute actions flagged as is_error_recovery.
 }
