@@ -36,7 +36,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
-    narrationStartTime: 0,
     totalActions: 0,
     totalTokens: 0,
     startTime: null,
@@ -176,7 +175,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Local chunk computation removed as it's now handled by the server
 
   useEffect(() => {
-    const isRunning = procState.status === 'running_visual' || procState.status === 'running_narration';
+    const isRunning = procState.status === 'running_visual';
     if (isRunning) {
       timerRef.current = setInterval(() => {
         if (stateRef.current.startTime) {
@@ -225,7 +224,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         ...prev,
         status: 'running_visual',
         currentChunkIndex: isResuming ? prev.currentChunkIndex : 0,
-        narrationStartTime: isResuming ? prev.narrationStartTime : 0,
         totalActions: isResuming ? prev.totalActions : 0,
         totalTokens: isResuming ? prev.totalTokens : 0,
         startTime: isResuming ? prev.startTime : Date.now(),
@@ -418,7 +416,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   };
 
   const isVisualRunning = procState.status === 'running_visual';
-  const isNarrationRunning = procState.status === 'running_narration';
 
   // Auto-hide sidebar when completed
   useEffect(() => {
@@ -590,7 +587,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               customContext={customContext}
               setCustomContext={setCustomContext}
               onStart={handleStart}
-              disabled={isVisualRunning || isNarrationRunning}
+              disabled={isVisualRunning}
             />
             
             {procState.status !== 'idle' && (
@@ -601,24 +598,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                     <span className="text-gray-600 dark:text-gray-500">Status</span>
                     <span className={`font-mono font-medium ${
                         isVisualRunning ? 'text-blue-600 dark:text-blue-400 animate-pulse' :
-                        isNarrationRunning ? 'text-pink-600 dark:text-pink-400 animate-pulse' :
                         procState.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
                         'text-gray-500 dark:text-gray-400'
                     }`}>
                       {procState.status === 'running_visual' ? 'VISUAL ANALYSIS' :
-                       procState.status === 'running_narration' ? 'AUDIO NARRATION' :
                        procState.status.toUpperCase()}
                     </span>
                   </div>
-
-                  {isNarrationRunning && (
-                    <div className="flex justify-between items-center text-pink-600/80 dark:text-pink-300/80">
-                      <span className="text-xs">Audio Progress</span>
-                      <span className="font-mono text-xs">
-                         {formatMMSS(procState.narrationStartTime)} / {procState.duration ? formatMMSS(procState.duration) : durationInput}
-                      </span>
-                    </div>
-                  )}
 
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-500">Elapsed</span>
@@ -635,7 +621,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   </div>
                 </div>
                 
-                {(isVisualRunning || isNarrationRunning) && (
+                {isVisualRunning && (
                   <button
                     onClick={handleCancelAndSave}
                     className="mt-5 w-full py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
