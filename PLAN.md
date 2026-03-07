@@ -37,7 +37,7 @@ This phase runs *after* all chunks are complete.
 *   **Logic:** A final pass over all accumulated `ActionItems`.
 *   **Input:** The complete array of `ActionItems` and `customContext`.
 *   **Action:** Gemini identifies and removes duplicate actions that may have slipped through the chunk boundaries.
-*   **Output:** A finalized, deduplicated array of `ActionItems`, with `NarrativeStep` links remapped to the new IDs.
+*   **Output:** A finalized, deduplicated array of `ActionItems`, with `NarrativeStep` links remapped for any removed duplicate actions (pointing the orphaned link to the surviving action).
 
 ## 3. Mathematical Chunking Strategy
 To ensure continuity, the video is chunked with an overlapping sliding window (`utils/timeUtils.ts`).

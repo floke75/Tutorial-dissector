@@ -25,7 +25,7 @@ export type ActionType =
 
 export type ActionConfidence = 'high' | 'medium' | 'low';
 export type ActorType = 'user' | 'system';
-export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
+export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'analyzing_phase_c' | 'completed' | 'error';
 export type ProcessingStatus = 'idle' | 'running_visual' | 'paused' | 'completed' | 'error' | 'cancelled';
 export type InsightType = 'explanation' | 'rationale' | 'tip' | 'warning' | 'workflow_framing' | 'comparison';
 
