@@ -37,7 +37,6 @@ describe('AnalysisView', () => {
       procState: {
         status: 'idle',
         currentChunkIndex: 0,
-        narrationStartTime: 0,
         totalActions: 0,
         totalTokens: 0,
         startTime: null,

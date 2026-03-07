@@ -7,7 +7,7 @@ import type { Chunk } from '../types.ts';
 export interface JobState {
   id: string;
   runId: string;
-  status: 'idle' | 'running_visual' | 'running_narration' | 'completed' | 'error' | 'cancelled';
+  status: 'idle' | 'running_visual' | 'completed' | 'error' | 'cancelled';
   progress: number;
   logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];

@@ -39,8 +39,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
   const getStatusConfig = (status: string) => {
     switch(status) {
       case 'completed': return { color: 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-400/30 bg-emerald-50 dark:bg-emerald-900/20', icon: <CheckCircle2 size={14} /> };
-      case 'running_visual':
-      case 'running_narration': return { color: 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/30 bg-blue-50 dark:bg-blue-900/20 animate-pulse', icon: <Play size={14} /> };
+      case 'running_visual': return { color: 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/30 bg-blue-50 dark:bg-blue-900/20 animate-pulse', icon: <Play size={14} /> };
       case 'paused': return { color: 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-900/20', icon: <Pause size={14} /> };
       case 'error': return { color: 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/30 bg-red-50 dark:bg-red-900/20', icon: <AlertCircle size={14} /> };
       default: return { color: 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-800', icon: null };

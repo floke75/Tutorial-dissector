@@ -17,7 +17,7 @@ The core architecture for the **Verifiable Execution Graph** is fully implemente
 | **BDD Intent Mapping** | ✅ | Pass 2 links `NarrativeStep` (Given/Then) to `ActionItem` (Mechanics) via foreign keys. |
 | **Automation Compiler** | ✅ | `downloadPlaywright()` traverses the graph, mapping bounding boxes to Cartesian `(x, y)` centers. |
 | **Error Path Filtering** | ✅ | Compiler strictly filters out actions flagged as `is_error_recovery`. |
-| **Session Persistence** | ✅ | State autosaved to `localStorage` via `services/storage.ts`. |
+| **Session Persistence** | ✅ | State autosaved to `IndexedDB` via `services/storage.ts`. |
 | **Video Synchronization** | ✅ | Two-way sync between ReactPlayer and ResultsTimeline with auto-scrolling and active state highlighting. |
 
 ---
