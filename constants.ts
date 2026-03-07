@@ -106,6 +106,13 @@ RULES FOR FINAL POLISHING & DEDUPLICATION:
 4. NARRATIVE FLOW: Ensure the "detail", "result", and "context_note" fields flow logically from one action to the next. Fix any jarring inconsistencies in tone or terminology.
 5. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
 6. ID RE-ASSIGNMENT: Re-assign the "id" fields to be strictly sequential from "evt_001" to "evt_NNN" after removing duplicates.
+7. SCHEMA NORMALIZATION: Every action in the output MUST include ALL of the following fields. If a field was not populated during extraction, apply the specified default:
+   - "interacted_components": [] (empty array if no components were interacted with)
+   - "input_data": null (null if no keyboard input occurred)
+   - "is_error_recovery": false (false unless explicitly flagged)
+   - "context_note": "" (empty string if no continuity note applies)
+   - "confidence": "high" (default if not set)
+Do NOT omit these fields. Every action object must have an identical set of top-level keys.
 
 INPUT ACTIONS:
 {all_actions}
@@ -135,8 +142,9 @@ RULES FOR "NARRATIVE STEPS":
 4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty.
 5. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
 6. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
-7. **STANDALONE CONTEXT:** Narrative blocks do not always have to be linked to actions in the execution graph. If the narration contains important context, background information, or conceptual explanations that are separate from user actions but necessary to fully understand the application or workflow, you MUST include them as a step.
+7. **STANDALONE CONTEXT:** If the narration contains important background context or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.
 8. **NO INTERNAL REASONING:** Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
+9. **NO DUPLICATE INTENT:** Never generate two consecutive steps with the same or synonymous "intent". If you find yourself creating a step that restates the previous step's goal (e.g., "Prepare to insert blocks" followed by "Insert blocks"), merge them into a single step. Each step must represent a distinct user goal.
 
 INPUT CONTEXT (Visual Actions occurring nearby):
 {visual_actions}

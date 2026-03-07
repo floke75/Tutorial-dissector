@@ -425,7 +425,14 @@ export async function analyzeNarrationSegment(
     action: a.action_type,
     element: a.target?.element,
     detail: a.detail,
-    is_error_recovery: a.is_error_recovery
+    is_error_recovery: a.is_error_recovery,
+    state_change: a.interacted_components?.length
+      ? a.interacted_components.map(c => ({
+          label: c.label,
+          from: c.state_before ?? null,
+          to: c.state_after ?? null,
+        }))
+      : undefined
   }));
   
   const previousStepsContext = previousSteps.length > 0

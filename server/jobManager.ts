@@ -243,11 +243,21 @@ async function runJob(jobId: string, params: {
 
       // Phase C: Narrative Synthesis
       addLog('info', `Phase C: Synthesizing narrative steps...`);
+      
+      const CONTEXT_BUFFER_SEC = 15;
+      const contextStart = chunk.clipStart - CONTEXT_BUFFER_SEC;
+      const contextEnd   = chunk.clipEnd   + CONTEXT_BUFFER_SEC;
+
+      const relevantActions = cumulativeActions.filter(a => {
+        const t = parseMMSS(a.timestamp);
+        return t >= contextStart && t <= contextEnd;
+      });
+
       const newNarrativeSteps = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
-        phaseBResult.result.validated_segment_events,
+        relevantActions,
         customContext,
         apiKey,
         cumulativeNarrative.slice(-3),
@@ -259,6 +269,36 @@ async function runJob(jobId: string, params: {
 
       state.progress = progressBase + (100 / state.chunks.length);
       addLog('success', `Chunk ${i + 1} completed successfully.`);
+    }
+
+    // After all chunks are processed, before global dedup
+    addLog('info', 'Validating narrative-action link coverage...');
+
+    const allActionIds = new Set(cumulativeActions.map(a => a.id));
+    let brokenLinks = 0;
+    let unlinkedSteps = 0;
+
+    for (const step of cumulativeNarrative) {
+      // Remove references to IDs that don't exist in the action set
+      const validLinks = step.linked_visual_action_ids.filter((id: string) => allActionIds.has(id));
+      const broken = step.linked_visual_action_ids.length - validLinks.length;
+      brokenLinks += broken;
+      step.linked_visual_action_ids = validLinks;
+
+      if (validLinks.length === 0 && step.insight_type !== 'rationale') {
+        unlinkedSteps++;
+      }
+    }
+
+    const linkedActionIds = new Set(cumulativeNarrative.flatMap((s: NarrativeStep) => s.linked_visual_action_ids));
+    const userActions = cumulativeActions.filter(a => a.actor === 'user' && !a.is_error_recovery);
+    const unlinkedActions = userActions.filter(a => !linkedActionIds.has(a.id));
+
+    const coveragePercent = userActions.length > 0 ? ((userActions.length - unlinkedActions.length) / userActions.length * 100).toFixed(1) : "100.0";
+    addLog('info', `Link coverage: ${coveragePercent}% of user actions linked. ${brokenLinks} broken refs removed. ${unlinkedSteps} non-rationale steps with no links.`);
+
+    if (unlinkedActions.length > userActions.length * 0.3) {
+      addLog('warn', `Low link coverage (${coveragePercent}%). ${unlinkedActions.length} user actions have no narrative step.`);
     }
 
     // Final Global Deduplication Pass
@@ -273,6 +313,30 @@ async function runJob(jobId: string, params: {
       );
       state.actions = deduplicatedActions;
       addLog('success', `Global deduplication complete. Final action count: ${deduplicatedActions.length}`);
+      
+      // After global dedup, remap narrative links
+      if (deduplicatedActions !== cumulativeActions) {
+        const oldToNew = new Map<string, string>();
+        
+        // Build map by matching on timestamp + detail (since IDs were reassigned)
+        for (const oldAction of cumulativeActions) {
+          const match = deduplicatedActions.find(
+            a => a.timestamp === oldAction.timestamp && a.detail === oldAction.detail
+          );
+          if (match && oldAction.id !== match.id) {
+            oldToNew.set(oldAction.id, match.id);
+          }
+        }
+
+        if (oldToNew.size > 0) {
+          addLog('info', `Remapping ${oldToNew.size} narrative links after global dedup ID reassignment.`);
+          for (const step of cumulativeNarrative) {
+            step.linked_visual_action_ids = step.linked_visual_action_ids.map(
+              (id: string) => oldToNew.get(id) ?? id
+            );
+          }
+        }
+      }
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
       // We don't fail the whole job if the final polish step fails
