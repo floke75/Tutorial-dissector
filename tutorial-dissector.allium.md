@@ -1,39 +1,10 @@
 
--- tutorial-dissector.allium
--- Scope: Domain logic for the Tutorial Dissector application
--- Includes: Projects, Chunks, Actions, Narrative Steps, Automation Pipeline
--- Excludes: UI rendering logic, generic storage implementation details
-
-config {
-    default_chunk_size: Duration = 60.seconds
-    default_overlap: Duration = 30.seconds
-    narration_context_buffer: Duration = 15.seconds
-    spatial_normalization_max: Integer = 1000
-}
-
 ------------------------------------------------------------
 -- Actors
 ------------------------------------------------------------
 
-actor User { identified_by: true }
-actor System { identified_by: true }
-
-------------------------------------------------------------
--- Enumerations
-------------------------------------------------------------
-
-enum ProcessingStatus { idle | running_visual | paused | completed | error | cancelled }
-enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
-enum ActionConfidence { high | medium | low }
-enum ActorType { user | system }
-enum ActionType { 
-    click | double_click | right_click | drag | scroll | 
-    type | keyboard_shortcut | hover | select | menu_navigate | 
-    system_event | ui_response | transition
-}
-enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
-enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
-enum LogLevel { info | warn | error | success }
+actor User
+actor System
 
 ------------------------------------------------------------
 -- Value Types
@@ -45,7 +16,7 @@ value ActionTarget {
     panel: String
     visual: String
     -- Normalized bounding box [ymin, xmin, ymax, xmax] on a 0-1000 scale
-    spatial_bounding_box: List<Decimal>? 
+    spatial_bounding_box: List<Decimal>?
 }
 
 value UIComponent {
@@ -98,6 +69,23 @@ value InputData {
 }
 
 ------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ProcessingStatus { idle | running_visual | paused | completed | error | cancelled }
+enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
+enum ActionConfidence { high | medium | low }
+enum ActorType { user | system }
+enum ActionType { 
+    click | double_click | right_click | drag | scroll | 
+    type | keyboard_shortcut | hover | select | menu_navigate | 
+    system_event | ui_response | transition
+}
+enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
+enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
+enum LogLevel { info | warn | error | success }
+
+------------------------------------------------------------
 -- Entities
 ------------------------------------------------------------
 
@@ -105,7 +93,6 @@ entity Project {
     id: String
     name: String
     video_url: String
-    created_at: Timestamp
     updated_at: Timestamp
     status: ProcessingStatus
     action_count: Integer
@@ -190,6 +177,17 @@ entity NarrativeStep {
 }
 
 ------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    default_chunk_size: Duration = 60.seconds
+    default_overlap: Duration = 30.seconds
+    narration_context_buffer: Duration = 15.seconds
+    spatial_normalization_max: Integer = 1000
+}
+
+------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
 
@@ -209,6 +207,7 @@ rule CompletePhaseA {
     when: PhaseACompleted(chunk, raw_actions)
     requires: chunk.status = analyzing_phase_a
     ensures: chunk.status = analyzing_phase_b
+    ensures: chunk.phase_a_raw_count = count(raw_actions)
 }
 
 rule CompletePhaseB {
@@ -219,6 +218,7 @@ rule CompletePhaseB {
     ensures: chunk.status = completed
     ensures: chunk.project.latest_ui_state = ui_state
     ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    ensures: chunk.action_count = count(merged_actions)
     
     -- Add Action Items (Mechanical layer)
     ensures: 
@@ -274,12 +274,13 @@ rule AnalyzeNarrationSegment {
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
     requires: project.status = running_visual
-    requires: project.proc_state.current_chunk_index >= project.chunks.size()
+    requires: project.proc_state.current_chunk_index >= count(project.chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
     -- This is a complex graph operation, represented here as an atomic state transition
     ensures: project.status = completed
     ensures: project.proc_state.status = completed
+    ensures: project.action_count = count(deduplicated_actions)
 }
 
 ------------------------------------------------------------
@@ -319,7 +320,8 @@ surface AutomationCompiler {
         project.narrative_steps
         golden_path_actions
         
-    guarantee: NoErrorRecoveryReplication
+    guarantee: NoErrorRecoveryReplication = all golden_path_actions where not is_error_recovery
         -- Asserts that scripts exported by this surface will never
         -- execute actions flagged as is_error_recovery.
 }
+

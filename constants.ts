@@ -16,6 +16,13 @@ RULES:
 6. Tag UI components interacted with, capturing their state_before and state_after. IMPORTANT: Keep state_before and state_after extremely concise (e.g., "unchecked", "checked", "default", "active", "hidden", "visible"). DO NOT include any internal reasoning, explanations, or conversational text in these fields.
 7. NO INTERNAL MONOLOGUE: All string fields (detail, result, context_note, state_before, state_after, etc.) MUST contain ONLY the requested information. Do NOT include phrases like "let's keep it simple", "resolving string parsing", "parsed explicitly", or any other meta-commentary about your own processing.
 
+8. INTERACTION TYPES: Be highly specific with the "action_type". Do not default to "click" for everything.
+   - Use "hover" when the user pauses the mouse over an element to reveal a tooltip, menu, or state change.
+   - Use "select" when the user highlights text or chooses an option from a dropdown/list.
+   - Use "scroll" when the user scrolls the page or a panel to reveal new content.
+   - Use "drag" when the user clicks and holds to move an element or pan the canvas.
+   - Use "type" ONLY when text is entered.
+
 OUTPUT FORMAT: Respond ONLY with a JSON array of objects. No markdown, no commentary outside the JSON. Do not include any internal reasoning or conversational text inside the JSON values. All fields must be clean, direct, and strictly follow the schema.
 [
   {
@@ -105,7 +112,7 @@ RULES FOR FINAL POLISHING & DEDUPLICATION:
 3. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name.
 4. NARRATIVE FLOW: Ensure the "detail", "result", and "context_note" fields flow logically from one action to the next. Fix any jarring inconsistencies in tone or terminology.
 5. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
-6. ID RE-ASSIGNMENT: Re-assign the "id" fields to be strictly sequential from "evt_001" to "evt_NNN" after removing duplicates.
+6. ID PRESERVATION: DO NOT change the "id" field of any action. You MUST keep the original "id" exactly as it was provided. If you remove a duplicate action, simply omit it from the output.
 7. SCHEMA NORMALIZATION: Every action in the output MUST include ALL of the following fields. If a field was not populated during extraction, apply the specified default:
    - "interacted_components": [] (empty array if no components were interacted with)
    - "input_data": null (null if no keyboard input occurred)
@@ -140,12 +147,13 @@ RULES FOR "NARRATIVE STEPS":
 2. **GROUPING:** Group a sequence of visual actions into a single logical "Step" (e.g., "Set up project configuration").
 3. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement). If the step is purely conceptual, these can be empty strings or describe the conceptual state.
 4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty.
-5. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
-6. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
-7. **STANDALONE CONTEXT:** If the narration contains important background context or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.
-8. **NO INTERNAL REASONING:** Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
-9. **NO DUPLICATE INTENT:** Never generate two consecutive steps with the same or synonymous "intent". If you find yourself creating a step that restates the previous step's goal (e.g., "Prepare to insert blocks" followed by "Insert blocks"), merge them into a single step. Each step must represent a distinct user goal.
-10. **STEP ECONOMY:** Having domain context does not mean more steps. Prefer fewer, richer steps over many thin ones. A step that covers "open dialog, configure fields, save and close" is better than three steps for each sub-action. Target roughly one step per distinct user *goal*, not per UI interaction.
+5. **MAXIMIZE COVERAGE:** You MUST strive to link EVERY non-error visual action provided in the INPUT CONTEXT to at least one Narrative Step. Do not leave visual actions "orphaned" without a corresponding narrative explanation unless they are truly irrelevant background noise.
+6. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
+7. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
+8. **STANDALONE CONTEXT:** If the narration contains important background context or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.
+9. **NO INTERNAL REASONING:** Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
+10. **NO DUPLICATE INTENT:** Never generate two consecutive steps with the same or synonymous "intent". If you find yourself creating a step that restates the previous step's goal (e.g., "Prepare to insert blocks" followed by "Insert blocks"), merge them into a single step. Each step must represent a distinct user goal.
+11. **STEP ECONOMY:** Having domain context does not mean more steps. Prefer fewer, richer steps over many thin ones. A step that covers "open dialog, configure fields, save and close" is better than three steps for each sub-action. Target roughly one step per distinct user *goal*, not per UI interaction.
 
 INPUT CONTEXT (Visual Actions occurring nearby):
 {visual_actions}

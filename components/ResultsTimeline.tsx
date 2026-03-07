@@ -166,7 +166,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
   };
 
   // Renderer for a single low-level ActionItem
-  const renderAction = (action: ActionItem, isActive: boolean = false, ref?: React.Ref<HTMLDivElement>) => {
+  const renderAction = (action: ActionItem, isActive: boolean = false, ref?: React.Ref<HTMLDivElement>, idx?: number) => {
     const isError = action.is_error_recovery;
     const baseStyle = 'hover:bg-gray-50 dark:hover:bg-gray-800/60 hover:border-gray-300 dark:hover:border-gray-700';
     const bgStyle = isActive ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-500/50 shadow-md ring-1 ring-indigo-500/50' : isError ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30 hover:border-orange-300 dark:hover:border-orange-800/50' : 'bg-white dark:bg-gray-800/40 border-gray-200 dark:border-gray-800';
@@ -174,7 +174,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     
     return (
       <div 
-        key={action.id || action.timestamp + action.action_type} 
+        key={action.id || `${action.timestamp}-${action.action_type}-${idx}`} 
         ref={ref}
         className={`flex gap-4 p-3.5 rounded-xl border transition-all group relative cursor-pointer ${baseStyle} ${bgStyle}`}
         onClick={(e) => {
@@ -332,7 +332,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
         
         {filteredNodes.map((node, idx) => {
           const isActive = node.action.id === activeState.activeActionId;
-          return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined);
+          return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined, idx);
         })}
         <div ref={bottomRef} />
       </div>

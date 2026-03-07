@@ -226,6 +226,7 @@ async function runJob(jobId: string, params: {
       const progressBase = (i / state.chunks.length) * 100;
       state.progress = progressBase;
 
+      chunk.status = 'analyzing_phase_a';
       addLog('info', `--- Starting Chunk ${i + 1}/${state.chunks.length} ---`, { chunk });
 
       // Phase A: Raw Extraction
@@ -242,6 +243,8 @@ async function runJob(jobId: string, params: {
         addLog
       );
       
+      chunk.phaseARawCount = rawActions.length;
+
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
         addLog('warn', 'Job cancelled by user after Phase A');
@@ -251,6 +254,7 @@ async function runJob(jobId: string, params: {
       state.progress = progressBase + (100 / state.chunks.length) * 0.3;
 
       // Phase B: Validation & State
+      chunk.status = 'analyzing_phase_b';
       addLog('info', `Phase B: Validating and merging state...`);
       const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
       const phaseBResult = await accumulateChunkPhaseB(
@@ -279,7 +283,15 @@ async function runJob(jobId: string, params: {
       let nextUIState = phaseBResult.result.current_ui_state;
       
       // Append new validated actions
-      let nextCumulativeActions = [...cumulativeActions, ...phaseBResult.result.validated_segment_events];
+      const existingIds = new Set(cumulativeActions.map(a => a.id));
+      const newValidatedEvents = phaseBResult.result.validated_segment_events.map(action => {
+        if (!action.id || existingIds.has(action.id)) {
+          action.id = `evt_${uuidv4().substring(0, 8)}`;
+        }
+        existingIds.add(action.id);
+        return action;
+      });
+      let nextCumulativeActions = [...cumulativeActions, ...newValidatedEvents];
       
       // Phase C: Narrative Synthesis
       addLog('info', `Phase C: Synthesizing narrative steps...`);
@@ -293,7 +305,7 @@ async function runJob(jobId: string, params: {
         return t >= contextStart && t <= contextEnd;
       });
 
-      const newNarrativeSteps = await analyzeNarrationSegment(
+      const newNarrativeStepsRaw = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
@@ -303,6 +315,15 @@ async function runJob(jobId: string, params: {
         cumulativeNarrative.slice(-3),
         addLog
       );
+      
+      const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
+      const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
+        if (!step.id || existingStepIds.has(step.id)) {
+          step.id = `step_${uuidv4().substring(0, 8)}`;
+        }
+        existingStepIds.add(step.id);
+        return step;
+      });
 
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
@@ -314,6 +335,15 @@ async function runJob(jobId: string, params: {
       chatHistory = nextChatHistory;
       state.chatHistory = chatHistory;
       
+      const newActionsCount = nextCumulativeActions.length - cumulativeActions.length;
+      for (let j = cumulativeActions.length; j < nextCumulativeActions.length; j++) {
+        nextCumulativeActions[j].chunkIndex = i;
+      }
+      
+      chunk.phaseBAddedCount = newActionsCount;
+      chunk.actionCount = newActionsCount;
+      chunk.status = 'completed';
+
       latestUIState = nextUIState;
       state.uiState = latestUIState;
       
@@ -369,31 +399,44 @@ async function runJob(jobId: string, params: {
     state.progress = 95;
     
     try {
-      const deduplicatedActions = await analyzeGlobalDeduplication(
+      const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
         cumulativeActions,
         customContext,
         apiKey,
         addLog
       );
+      
+      const seenDedupIds = new Set<string>();
+      const deduplicatedActions = deduplicatedActionsRaw.map(action => {
+        if (!action.id || seenDedupIds.has(action.id)) {
+          action.id = `evt_${uuidv4().substring(0, 8)}`;
+        }
+        seenDedupIds.add(action.id);
+        return action;
+      });
+      
       state.actions = deduplicatedActions;
       addLog('success', `Global deduplication complete. Final action count: ${deduplicatedActions.length}`);
       
-      // After global dedup, remap narrative links
+      // After global dedup, remap narrative links for any removed duplicates
       if (deduplicatedActions !== cumulativeActions) {
         const oldToNew = new Map<string, string>();
+        const remainingIds = new Set(deduplicatedActions.map(a => a.id));
         
-        // Build map by matching on timestamp + detail (since IDs were reassigned)
         for (const oldAction of cumulativeActions) {
-          const match = deduplicatedActions.find(
-            a => a.timestamp === oldAction.timestamp && a.detail === oldAction.detail
-          );
-          if (match && oldAction.id !== match.id) {
-            oldToNew.set(oldAction.id, match.id);
+          if (!remainingIds.has(oldAction.id)) {
+            // This action was removed as a duplicate. Find the action that was kept.
+            const keptAction = deduplicatedActions.find(
+              a => a.timestamp === oldAction.timestamp && a.action_type === oldAction.action_type
+            );
+            if (keptAction) {
+              oldToNew.set(oldAction.id, keptAction.id);
+            }
           }
         }
 
         if (oldToNew.size > 0) {
-          addLog('info', `Remapping ${oldToNew.size} narrative links after global dedup ID reassignment.`);
+          addLog('info', `Remapping ${oldToNew.size} narrative links for removed duplicates.`);
           for (const step of cumulativeNarrative) {
             step.linked_visual_action_ids = step.linked_visual_action_ids.map(
               (id: string) => oldToNew.get(id) ?? id
