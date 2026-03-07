@@ -1,7 +1,7 @@
 
 # PLAN: Tutorial Dissector Architecture
 
-**"Tutorial Dissector"** is a client-side web application that extracts an ultra-detailed, timestamped **Verifiable Execution Graph** from software tutorial videos. It uses Gemini 3.1 Pro Preview's native video and spatial understanding to produce a strictly typed relational tree of BDD intents and deterministic mechanical actions, capable of being compiled directly into Playwright automation scripts.
+**"Tutorial Dissector"** is a full-stack application that extracts an ultra-detailed, timestamped **Verifiable Execution Graph** from software tutorial videos. It uses Gemini 3.1 Pro Preview's native video and spatial understanding to produce a strictly typed relational tree of BDD intents and deterministic mechanical actions, capable of being compiled directly into Playwright automation scripts.
 
 ## 1. Tech Stack & Infrastructure
 - **Frontend:** React 19 + Tailwind CSS (via CDN/ESM).

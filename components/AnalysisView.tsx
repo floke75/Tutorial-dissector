@@ -7,7 +7,6 @@ import { DevConsole } from './DevConsole';
 import { ThemeToggle } from './ThemeToggle';
 import { ArrowLeft, LayoutPanelLeft, Activity, Clock, Loader2 } from 'lucide-react';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
-import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService';
 import { getProject, saveProject } from '../services/storage';
 import { Chunk, ProcessingState, ActionItem, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
 import ReactPlayer from 'react-player';
@@ -16,8 +15,6 @@ interface AnalysisViewProps {
   projectId: string;
   onBack: () => void;
 }
-
-const NARRATION_CHUNK_SIZE_SEC = 300; 
 
 export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack }) => {
   // Config State
@@ -73,6 +70,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   actionsRef.current = actions;
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const fetchApiKey = async () => {
@@ -186,7 +184,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => { 
+      if (timerRef.current) clearInterval(timerRef.current); 
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   }, [procState.status]);
 
   // System Logger
@@ -327,9 +328,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setProcState(prev => ({ ...prev, jobId }));
         
         // Start polling
-        if (timerRef.current) clearInterval(timerRef.current);
+        if (pollingRef.current) clearInterval(pollingRef.current);
         
-        timerRef.current = setInterval(async () => {
+        pollingRef.current = setInterval(async () => {
           try {
             const pollRes = await fetch(`/api/process/${jobId}`);
             if (!pollRes.ok) throw new Error("Failed to fetch job state");
@@ -383,7 +384,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             }
             
             if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
-              if (timerRef.current) clearInterval(timerRef.current);
+              if (pollingRef.current) clearInterval(pollingRef.current);
               if (state.status === 'error') {
                 handleLog('error', `Server job failed: ${state.error}`);
               } else if (state.status === 'completed') {
@@ -402,11 +403,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       }
     }
   };
-
-  // --------------------------------------------------------------------------------
-  // SERVER POLLING LOOP (REMOVED)
-  // --------------------------------------------------------------------------------
-  // The polling loop has been removed because the job now runs locally.
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -440,6 +436,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       handleLog('warn', 'Sending cancel request to server...');
       await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
       
+      if (pollingRef.current) clearInterval(pollingRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       
       setProcState(prev => ({
