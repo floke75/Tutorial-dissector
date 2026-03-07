@@ -56,11 +56,10 @@ ON EACH TURN you receive:
 2. The chunk's primary time window and overlap margins
 
 YOUR RESPONSIBILITIES:
-1. MERGE new actions into the running log. Deduplicate overlap actions. Maintain spatial_bounding_box, input_data, and is_error_recovery flags.
-2. ASSIGN IDs: Assign a unique string "id" to every finalized action in "validated_segment_events" (e.g., "evt_001"). These IDs must be strictly sequential.
+1. MERGE new actions into the running log. Deduplicate overlap actions. If an action in the current chunk was already processed and returned in a previous chunk's "validated_segment_events", DO NOT include it again.
+2. ASSIGN IDs: Assign a unique string "id" to every finalized action in "validated_segment_events" (e.g., "evt_001"). These IDs must be strictly sequential across the entire video.
 3. EMBED UI CONTEXT: For every action, capture the instantaneous "ui_context" occurring at that exact millisecond (active panel, active tool, open dialogs).
-4. ANNOTATE boundaries: insert an event of type "chunk_boundary" at each transition.
-5. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
+4. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 
 RESPOND with a JSON object:
 {
@@ -78,6 +77,7 @@ RESPOND with a JSON object:
   },
   "cumulative_action_count": 42,
   "validated_segment_events": [
+     // ONLY THE NEW, DEDUPLICATED ACTIONS FROM THIS CHUNK. Do NOT include actions from previous chunks.
      {
        "id": "evt_042",
        ... <standard action properties including spatial_bounding_box and input_data>,
@@ -92,6 +92,27 @@ RESPOND with a JSON object:
 }
 `;
 
+export const GLOBAL_DEDUPLICATION_PROMPT = `
+You are the final quality assurance controller for a video tutorial analysis pipeline.
+You have been provided with the complete, merged log of all user actions extracted from the video.
+
+YOUR TASK:
+Perform a final, global pass to identify and remove any remaining duplicate actions, ensure naming consistency, and apply final polishing across the entire timeline.
+
+RULES FOR FINAL POLISHING & DEDUPLICATION:
+1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action. Keep the one with the most detailed "target" and "interacted_components" information, and discard the other.
+2. DO NOT remove actions that are distinct but occur rapidly (e.g., a rapid double-click, or typing multiple characters). Only remove true duplicates.
+3. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name.
+4. NARRATIVE FLOW: Ensure the "detail", "result", and "context_note" fields flow logically from one action to the next. Fix any jarring inconsistencies in tone or terminology.
+5. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
+6. ID RE-ASSIGNMENT: Re-assign the "id" fields to be strictly sequential from "evt_001" to "evt_NNN" after removing duplicates.
+
+INPUT ACTIONS:
+{all_actions}
+
+OUTPUT FORMAT: Respond ONLY with a JSON array of the cleaned, polished, and deduplicated action objects. No markdown.
+`;
+
 export const PASS_2_SYSTEM_PROMPT = `
 You are creating the "Narrative Track" for a software tutorial video.
 A detailed "Visual Track" of low-level user actions (the execution graph) has already been generated.
@@ -99,6 +120,10 @@ A detailed "Visual Track" of low-level user actions (the execution graph) has al
 YOUR TASK:
 Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks to these high-level human intents.
 You are processing the segment from {start_time} to {end_time}.
+
+CONTINUITY: You are continuing a narrative. Here are the last few steps from the previous segment: 
+{previous_steps_context}
+DO NOT repeat these steps. Start your new steps immediately after the last event described.
 
 CRITICAL OBJECTIVE:
 The narrative blocks MUST complement the execution graph to provide a complete, self-contained, and granular capture of everything important in the tutorial workflow. A user should be able to fully understand the tutorial's context, intent, and workflow solely by reading your narrative blocks alongside the execution graph, WITHOUT having to watch the video or listen to the audio.

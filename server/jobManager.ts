@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment } from '../services/geminiService.ts';
+import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, analyzeGlobalDeduplication } from '../services/geminiService.ts';
 import type { ActionItem, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
@@ -8,7 +8,7 @@ export interface JobState {
   id: string;
   status: 'running' | 'completed' | 'error' | 'cancelled';
   progress: number;
-  logs: { timestamp: number; level: LogLevel; message: string; data?: any }[];
+  logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];
   narrativeSteps: NarrativeStep[];
   uiState: UIState | null;
@@ -107,13 +107,13 @@ async function runJob(jobId: string, params: {
   const addLog = (level: LogLevel, message: string, data?: any) => {
     const state = jobs.get(jobId);
     if (state) {
-      state.logs.push({ timestamp: Date.now(), level, message, data });
+      state.logs.push({ id: uuidv4(), timestamp: Date.now(), level, message, data });
     }
   };
 
   jobs.set(jobId, {
     id: jobId,
-    status: 'running',
+    status: 'running_visual',
     progress: 0,
     logs: [],
     actions: [],
@@ -144,8 +144,33 @@ async function runJob(jobId: string, params: {
       } catch (err: any) {
         throw new Error(`Failed to fetch YouTube duration automatically. Please provide the duration manually in the settings. Details: ${err.message}`);
       }
+    } else if (videoUrl.includes('generativelanguage.googleapis.com')) {
+      addLog('info', 'Fetching Gemini File metadata...');
+      const fileId = videoUrl.split('/').pop();
+      if (!fileId) throw new Error("Invalid Gemini File URI");
+      
+      const fileRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/files/${fileId}`, {
+        headers: {
+          'x-goog-api-key': apiKey
+        }
+      });
+      if (!fileRes.ok) {
+        throw new Error(`Failed to fetch file metadata: ${fileRes.statusText}`);
+      }
+      const fileData = await fileRes.json();
+      
+      if (fileData.state !== 'ACTIVE') {
+        throw new Error(`File is not ready. Current state: ${fileData.state}`);
+      }
+      
+      if (!fileData.videoMetadata?.videoDuration) {
+        throw new Error("File does not contain video duration metadata");
+      }
+      
+      duration = parseInt(fileData.videoMetadata.videoDuration.replace('s', ''), 10);
+      addLog('success', `Retrieved Gemini File duration: ${duration}s`);
     } else {
-      throw new Error("Duration is required for non-YouTube videos, or if YouTube duration fetching fails. Please provide a duration.");
+      throw new Error("Duration is required for raw video URLs.");
     }
 
     state.duration = duration;
@@ -203,6 +228,10 @@ async function runJob(jobId: string, params: {
       );
 
       chatHistory = phaseBResult.newHistory;
+      // Sliding window: keep only the last 6 items (3 turns: user + model)
+      if (chatHistory.length > 6) {
+        chatHistory = chatHistory.slice(-6);
+      }
       latestUIState = phaseBResult.result.current_ui_state;
       state.uiState = latestUIState;
       
@@ -221,6 +250,7 @@ async function runJob(jobId: string, params: {
         phaseBResult.result.validated_segment_events,
         customContext,
         apiKey,
+        cumulativeNarrative.slice(-3),
         addLog
       );
 
@@ -229,6 +259,23 @@ async function runJob(jobId: string, params: {
 
       state.progress = progressBase + (100 / state.chunks.length);
       addLog('success', `Chunk ${i + 1} completed successfully.`);
+    }
+
+    // Final Global Deduplication Pass
+    addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
+    state.progress = 95;
+    
+    try {
+      const deduplicatedActions = await analyzeGlobalDeduplication(
+        cumulativeActions,
+        apiKey,
+        addLog
+      );
+      state.actions = deduplicatedActions;
+      addLog('success', `Global deduplication complete. Final action count: ${deduplicatedActions.length}`);
+    } catch (dedupError: any) {
+      addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
+      // We don't fail the whole job if the final polish step fails
     }
 
     state.progress = 100;

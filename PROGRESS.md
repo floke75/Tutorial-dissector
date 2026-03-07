@@ -38,9 +38,8 @@ If you are a coding agent tasked with upgrading this application, pay attention 
 
 ### ⚠️ C. Token Cost & Context Window Limits
 *   **Issue:** The "Chat History" array in Phase B grows continuously. For a 30-minute video, the accumulated JSON context injected into the Phase B prompt becomes massive, potentially hitting output/input token limits.
-*   **Workaround Implemented:** None yet.
-*   **Future Fix:** Implement a "sliding window" for the Phase B chat history (e.g., only pass the last 3 turns) instead of the entire array.
+*   **Workaround Implemented:** Implemented a "sliding window" for the Phase B chat history (keeps only the last 3 turns) instead of the entire array.
 
 ### ⚠️ D. Local Storage Quotas
 *   **Issue:** Browsers limit `localStorage` to ~5MB. Storing massive arrays of detailed ActionItems and chat history strings will eventually crash the storage service (`QuotaExceededError`).
-*   **Future Fix:** Migrate `storage.ts` to use `IndexedDB` (via a wrapper like `idb-keyval`) to allow for gigabytes of local project storage.
+*   **Workaround Implemented:** Migrated `storage.ts` to use `IndexedDB` (via `idb-keyval`) to allow for gigabytes of local project storage.

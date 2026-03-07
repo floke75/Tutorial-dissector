@@ -21,8 +21,7 @@ export type ActionType =
   | 'menu_navigate' 
   | 'system_event' 
   | 'ui_response' 
-  | 'transition' 
-  | 'chunk_boundary';
+  | 'transition';
 
 export type ActionConfidence = 'high' | 'medium' | 'low';
 export type ActorType = 'user' | 'system';

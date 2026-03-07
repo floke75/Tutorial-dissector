@@ -11,7 +11,7 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT || 3000;
 
-  app.use(cors());
+  app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
   app.use(express.json());
 
   // API Routes
@@ -20,14 +20,14 @@ async function startServer() {
   });
 
   app.get("/api/config", (req, res) => {
-    let key = process.env.GEMINI_API_KEY;
-    if (!key || key === "MY_GEMINI_API_KEY") {
-      key = process.env.API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      apiKey = process.env.API_KEY;
     }
-    if (key === "MY_GEMINI_API_KEY") {
-      key = "";
+    if (apiKey === "MY_GEMINI_API_KEY") {
+      apiKey = "";
     }
-    res.json({ apiKey: key || "" });
+    res.json({ apiKey: apiKey || "" });
   });
 
   app.post("/api/metadata", async (req, res) => {
@@ -50,7 +50,13 @@ async function startServer() {
     try {
       const { videoUrl, durationInput, chunkSize, overlap, customContext } = req.body;
       let apiKey = req.body.apiKey;
-      if (apiKey === "undefined" || apiKey === "null" || !apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      
+      console.log("[API /process] Received request.");
+      console.log("[API /process] Client provided apiKey:", apiKey ? (apiKey.length > 10 ? apiKey.substring(0, 5) + "..." : apiKey) : "none");
+      console.log("[API /process] process.env.GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+      console.log("[API /process] process.env.API_KEY exists:", !!process.env.API_KEY);
+
+      if (apiKey === "undefined" || apiKey === "null" || !apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey === "AISTUDIO_KEY_SELECTED") {
         apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
           apiKey = process.env.API_KEY;
@@ -60,11 +66,13 @@ async function startServer() {
         }
       }
       
+      console.log("[API /process] Resolved apiKey exists:", !!apiKey);
+
       if (!videoUrl) {
         return res.status(400).json({ error: "videoUrl is required" });
       }
       if (!apiKey || apiKey === "undefined") {
-        return res.status(400).json({ error: "apiKey is required. Please select an API key." });
+        return res.status(400).json({ error: "apiKey is required. Please select an API key in AI Studio, or set the GEMINI_API_KEY environment variable if deployed." });
       }
       
       const jobId = await processVideoJob({ videoUrl, durationInput, chunkSize, overlap, customContext, apiKey });
@@ -89,6 +97,41 @@ async function startServer() {
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Job not found or already completed" });
+    }
+  });
+
+  app.post("/api/test-integration", async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      if (!apiKey || apiKey === "undefined") {
+        return res.status(400).json({ error: "apiKey is required" });
+      }
+
+      const { analyzeChunkPhaseA } = await import("./services/geminiService.ts");
+      const videoUrl = 'https://youtu.be/RHx-PGeh9xk?is=KcxIQuIjAfBbV_Iz';
+      const startSec = 0;
+      const endSec = 15;
+      
+      const logs: any[] = [];
+      const result = await analyzeChunkPhaseA(
+        videoUrl,
+        startSec,
+        endSec,
+        startSec,
+        endSec,
+        0,
+        'This is a live integration test evaluating the model performance.',
+        apiKey,
+        (level, msg, data) => {
+          logs.push({ level, msg, data });
+          console.log(`[TEST ${level.toUpperCase()}] ${msg}`);
+        }
+      );
+
+      res.json({ success: true, result, logs });
+    } catch (error: any) {
+      console.error("Integration test failed:", error);
+      res.status(500).json({ error: error.message || "Integration test failed" });
     }
   });
 

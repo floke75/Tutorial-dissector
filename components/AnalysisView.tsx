@@ -55,7 +55,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // Timing stats for UI
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [apiKey, setApiKey] = useState<string>('');
+  const [apiKey, setApiKey] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('gemini_api_key') || '';
+    }
+    return '';
+  });
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [manualApiKey, setManualApiKey] = useState("");
   
   const stateRef = useRef(procState);
   stateRef.current = procState;
@@ -72,9 +79,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     const fetchApiKey = async () => {
       try {
         const configRes = await fetch('/api/config');
-        const configData = await configRes.json();
-        if (configData.apiKey && configData.apiKey !== "MY_GEMINI_API_KEY") {
-          setApiKey(configData.apiKey);
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          if (configData.apiKey && configData.apiKey !== "MY_GEMINI_API_KEY") {
+            setApiKey(configData.apiKey);
+          }
         }
       } catch (e) {
         console.warn("Failed to fetch API key from server", e);
@@ -84,44 +93,61 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   }, []);
 
   useEffect(() => {
-    const data = getProject(projectId);
-    if (data) {
-      setProjectName(data.name);
-      setVideoUrl(data.videoUrl);
-      setDurationInput(data.durationInput);
-      setChunkSize(data.chunkSize);
-      setOverlap(data.overlap);
-      setCustomContext(data.customContext || '');
-      setChunks(data.chunks);
-      
-      // Sanitize loaded actions to ensure unique IDs
-      const seenActionIds = new Set<string>();
-      const sanitizedActions = (data.actions || []).map((a, idx) => {
-        let id = a.id || `evt_missing_${idx}`;
-        if (seenActionIds.has(id)) {
-          id = `${id}_dup_${idx}`;
-        }
-        seenActionIds.add(id);
-        return { ...a, id };
-      });
-      setActions(sanitizedActions);
+    const loadData = async () => {
+      const data = await getProject(projectId);
+      if (data) {
+        setProjectName(data.name);
+        setVideoUrl(data.videoUrl);
+        setDurationInput(data.durationInput);
+        setChunkSize(data.chunkSize);
+        setOverlap(data.overlap);
+        setCustomContext(data.customContext || '');
+        setChunks(data.chunks);
+        
+        // Sanitize loaded actions to ensure unique IDs
+        const seenActionIds = new Set<string>();
+        const sanitizedActions = (data.actions || []).map((a, idx) => {
+          let id = a.id || `evt_missing_${idx}`;
+          if (seenActionIds.has(id)) {
+            id = `${id}_dup_${idx}`;
+          }
+          seenActionIds.add(id);
+          return { ...a, id };
+        });
+        setActions(sanitizedActions);
 
-      // Sanitize loaded narrative steps to ensure unique IDs
-      const seenStepIds = new Set<string>();
-      const sanitizedSteps = (data.narrativeSteps || []).map((s, idx) => {
-        let id = s.id || `step_missing_${idx}`;
-        if (seenStepIds.has(id)) {
-          id = `${id}_dup_${idx}`;
-        }
-        seenStepIds.add(id);
-        return { ...s, id };
-      });
-      setNarrativeSteps(sanitizedSteps);
-      
-      setProcState(data.procState);
-      setLatestUIState(data.latestUIState);
-    }
-    setIsLoaded(true);
+        // Sanitize loaded narrative steps to ensure unique IDs
+        const seenStepIds = new Set<string>();
+        const sanitizedSteps = (data.narrativeSteps || []).map((s, idx) => {
+          let id = s.id || `step_missing_${idx}`;
+          if (seenStepIds.has(id)) {
+            id = `${id}_dup_${idx}`;
+          }
+          seenStepIds.add(id);
+          return { ...s, id };
+        });
+        setNarrativeSteps(sanitizedSteps);
+        
+        // Sanitize logs
+        const seenLogIds = new Set<string>();
+        const sanitizedLogs = (data.procState?.logs || []).map((l, idx) => {
+          let id = l.id || `log_missing_${idx}_${l.timestamp}`;
+          if (seenLogIds.has(id)) {
+            id = `${id}_dup_${idx}`;
+          }
+          seenLogIds.add(id);
+          return { ...l, id };
+        });
+        
+        setProcState({
+          ...data.procState,
+          logs: sanitizedLogs
+        });
+        setLatestUIState(data.latestUIState);
+      }
+      setIsLoaded(true);
+    };
+    loadData();
   }, [projectId]);
 
   useEffect(() => {
@@ -200,7 +226,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         lastInteractionId: null,
         chatHistory: [],
         logs: prev.logs, // retain logs on restart
-        jobId: 'local-job'
+        jobId: null
       }));
 
       // Get API key from state or server
@@ -209,29 +235,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
         // @ts-ignore
         currentApiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || '';
-      }
-
-      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
-        try {
-          const configRes = await fetch('/api/config');
-          const configData = await configRes.json();
-          currentApiKey = configData.apiKey;
-          if (currentApiKey && currentApiKey !== "MY_GEMINI_API_KEY") setApiKey(currentApiKey);
-        } catch (e) {
-          console.warn("Failed to fetch API key from server", e);
-        }
-      }
-
-      if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
-        try {
-          // @ts-ignore
-          if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-            // @ts-ignore
-            currentApiKey = process.env.API_KEY;
-          }
-        } catch (e) {
-          console.warn("process.env is not defined in browser");
-        }
       }
 
       if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
@@ -245,22 +248,23 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               await window.aistudio.openSelectKey();
             }
             
-            // Try fetching again after selection or if it already has a key
-            const configRes = await fetch('/api/config');
-            const configData = await configRes.json();
-            currentApiKey = configData.apiKey;
-            if (currentApiKey && currentApiKey !== "MY_GEMINI_API_KEY") {
-              setApiKey(currentApiKey);
-            }
+            // Assume key was selected successfully and rely on the backend to use process.env.API_KEY
+            // The backend will automatically pick up the key from the environment
+            currentApiKey = "AISTUDIO_KEY_SELECTED";
+            setApiKey(currentApiKey);
             
-            // Also check process.env.API_KEY again
-            if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
-              // @ts-ignore
-              if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-                // @ts-ignore
-                currentApiKey = process.env.API_KEY;
-                setApiKey(currentApiKey);
+            // Re-fetch the real API key from the backend so the frontend can use it (e.g., for video playback)
+            try {
+              const configRes = await fetch('/api/config');
+              if (configRes.ok) {
+                const configData = await configRes.json();
+                if (configData.apiKey && configData.apiKey !== "MY_GEMINI_API_KEY") {
+                  currentApiKey = configData.apiKey;
+                  setApiKey(currentApiKey);
+                }
               }
+            } catch (e) {
+              console.warn("Failed to fetch API key from server after selection", e);
             }
           } catch (e) {
             console.warn("Failed to handle aistudio key selection", e);
@@ -269,134 +273,125 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       }
 
       if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
-        handleLog('error', 'API key is required. Please set GEMINI_API_KEY environment variable or select a key.');
-        setProcState(prev => ({ ...prev, status: 'error' }));
-        return;
+        try {
+          const configRes = await fetch('/api/config');
+          if (configRes.ok) {
+            const configData = await configRes.json();
+            if (configData.apiKey && configData.apiKey !== "MY_GEMINI_API_KEY") {
+              currentApiKey = configData.apiKey;
+              setApiKey(currentApiKey);
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to fetch API key from server", e);
+        }
+        
+        // If still missing, use placeholder so backend can try its env vars
+        if (!currentApiKey || currentApiKey === "undefined" || currentApiKey === "MY_GEMINI_API_KEY") {
+          currentApiKey = "AISTUDIO_KEY_SELECTED";
+        }
       }
       
       try {
-        handleLog('info', 'Fetching video metadata...', { url: videoUrl });
-        let duration = 0;
-        if (durationInput) {
-          duration = parseMMSS(durationInput);
-          if (duration <= 0) {
-            throw new Error("Invalid duration format. Please use MM:SS or HH:MM:SS.");
-          }
-          handleLog('success', `Using provided duration: ${duration}s`);
-        } else if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-          const res = await fetch('/api/metadata', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoUrl })
-          });
-          const data = await res.json();
-          if (data.error) throw new Error(data.error);
-          duration = data.duration;
-          handleLog('success', `Found YouTube duration: ${duration}s`);
-        } else {
-          throw new Error("Duration is required for non-YouTube videos. Please provide a duration.");
-        }
-
-        setProcState(prev => ({ ...prev, duration }));
-        const computedChunks = computeChunkWindows(duration, chunkSize, overlap);
-        setChunks(computedChunks);
-        handleLog('info', `Calculated ${computedChunks.length} chunks for processing`);
-
-        let chatHistory: any[] = [];
-        let cumulativeActions: ActionItem[] = [];
-        let cumulativeNarrative: NarrativeStep[] = [];
-        let currentUIState: any = null;
-
-        for (let i = 0; i < computedChunks.length; i++) {
-          // Check if cancelled (we can check stateRef)
-          if (stateRef.current.status === 'cancelled') {
-            handleLog('warn', 'Job cancelled by user');
-            return;
-          }
-
-          setProcState(prev => ({ ...prev, currentChunkIndex: i }));
-          const chunk = computedChunks[i];
-
-          handleLog('info', `--- Starting Chunk ${i + 1}/${computedChunks.length} ---`, { chunk });
-
-          // Phase A
-          handleLog('info', `Phase A: Extracting raw actions...`);
-          const rawActions = await analyzeChunkPhaseA(
+        handleLog('info', 'Starting analysis job on server...', { url: videoUrl });
+        
+        const res = await fetch('/api/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             videoUrl,
-            chunk.clipStart,
-            chunk.clipEnd,
-            chunk.primaryStart,
-            chunk.primaryEnd,
+            durationInput,
+            chunkSize,
             overlap,
             customContext,
-            currentApiKey,
-            handleLog
-          );
-
-          // Phase B
-          handleLog('info', `Phase B: Validating and merging state...`);
-          const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
-          const phaseBResult = await accumulateChunkPhaseB(
-            videoUrl,
-            `${duration}s`,
-            rawActions,
-            i + 1,
-            primaryWindowStr,
-            chatHistory,
-            customContext,
-            currentApiKey,
-            handleLog
-          );
-
-          chatHistory = phaseBResult.newHistory;
-          currentUIState = phaseBResult.result.current_ui_state;
-          setLatestUIState(currentUIState);
-          
-          const uniqueEvents: ActionItem[] = [];
-          phaseBResult.result.validated_segment_events.forEach((evt, idx) => {
-            const isDuplicate = cumulativeActions.some(a => 
-              a.timestamp === evt.timestamp && a.action_type === evt.action_type
-            );
-            if (!isDuplicate) {
-              uniqueEvents.push({
-                ...evt,
-                id: `${evt.id}_c${i}_${idx}`
+            apiKey: currentApiKey
+          })
+        });
+        
+        const data = await res.json();
+        if (data.error) {
+          if (data.error.includes("apiKey is required") || data.error.includes("API key")) {
+            setShowApiKeyModal(true);
+            setProcState(prev => ({ ...prev, status: 'error', error: "API key is required. Please enter it to continue." }));
+            return;
+          }
+          throw new Error(data.error);
+        }
+        
+        const jobId = data.jobId;
+        setProcState(prev => ({ ...prev, jobId }));
+        
+        // Start polling
+        if (timerRef.current) clearInterval(timerRef.current);
+        
+        timerRef.current = setInterval(async () => {
+          try {
+            const pollRes = await fetch(`/api/process/${jobId}`);
+            if (!pollRes.ok) throw new Error("Failed to fetch job state");
+            const state = await pollRes.json();
+            
+            // Update local state with server state
+            setProcState(prev => ({
+              ...prev,
+              status: state.status,
+              progress: state.progress,
+              currentChunkIndex: state.currentChunkIndex,
+              totalActions: state.actions.length,
+              duration: state.duration
+            }));
+            
+            if (state.chunks && state.chunks.length > 0) {
+              setChunks(state.chunks);
+            }
+            
+            if (state.actions && state.actions.length > 0) {
+              setActions(state.actions);
+            }
+            
+            if (state.narrativeSteps && state.narrativeSteps.length > 0) {
+              setNarrativeSteps(state.narrativeSteps);
+            }
+            
+            if (state.uiState) {
+              setLatestUIState(state.uiState);
+            }
+            
+            // Append new logs
+            if (state.logs && state.logs.length > 0) {
+              setProcState(prev => {
+                const existingLogIds = new Set(prev.logs.map(l => l.id));
+                const newLogs = state.logs
+                  .filter((l: any) => !existingLogIds.has(l.id))
+                  .map((l: any, idx: number) => {
+                    let id = l.id || `log_${l.timestamp}_${idx}`;
+                    if (existingLogIds.has(id)) {
+                      id = `${id}_dup_${idx}`;
+                    }
+                    existingLogIds.add(id);
+                    return { ...l, id };
+                  });
+                return {
+                  ...prev,
+                  logs: [...prev.logs, ...newLogs]
+                };
               });
             }
-          });
-
-          cumulativeActions = [...cumulativeActions, ...uniqueEvents];
-          setActions(cumulativeActions);
-          setProcState(prev => ({ ...prev, totalActions: cumulativeActions.length }));
-
-          // Phase C
-          handleLog('info', `Phase C: Synthesizing narrative steps...`);
-          const newNarrativeSteps = await analyzeNarrationSegment(
-            videoUrl,
-            chunk.clipStart,
-            chunk.clipEnd,
-            uniqueEvents,
-            customContext,
-            currentApiKey,
-            handleLog
-          );
-
-          const uniqueNarrativeSteps = newNarrativeSteps.map((step, idx) => ({
-            ...step,
-            id: `${step.id}_c${i}_${idx}`
-          }));
-
-          cumulativeNarrative = [...cumulativeNarrative, ...uniqueNarrativeSteps];
-          setNarrativeSteps(cumulativeNarrative);
-
-          handleLog('success', `Chunk ${i + 1} completed successfully.`);
-        }
-
-        setProcState(prev => ({ ...prev, status: 'completed' }));
-        handleLog('success', 'Workflow analysis completed successfully!');
-
+            
+            if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
+              if (timerRef.current) clearInterval(timerRef.current);
+              if (state.status === 'error') {
+                handleLog('error', `Server job failed: ${state.error}`);
+              } else if (state.status === 'completed') {
+                handleLog('success', 'Workflow analysis completed successfully!');
+              }
+            }
+          } catch (e) {
+            console.error("Polling error:", e);
+          }
+        }, 2000);
+        
       } catch (err: any) {
-        console.error("Job failed:", err);
+        console.error("Job failed to start:", err);
         handleLog('error', `Fatal error: ${err.message || 'Unknown error occurred'}`);
         setProcState(prev => ({ ...prev, status: 'error' }));
       }
@@ -473,7 +468,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           }
         } catch (e) {}
       }
-      if (currentApiKey === "MY_GEMINI_API_KEY") {
+      if (currentApiKey === "MY_GEMINI_API_KEY" || currentApiKey === "AISTUDIO_KEY_SELECTED") {
         currentApiKey = "";
       }
       
@@ -492,6 +487,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       const videoId = url.split('youtube.com/shorts/')[1].split('?')[0];
       return `https://www.youtube.com/watch?v=${videoId}`;
     }
+    if (url.startsWith('gs://')) {
+      return url.replace('gs://', 'https://storage.googleapis.com/');
+    }
+    
     return url;
   };
 
@@ -739,6 +738,48 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
          logs={procState.logs || []} 
          onClear={() => setProcState(prev => ({ ...prev, logs: [] }))} 
       />
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">API Key Required</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+              It looks like you're running this app outside of AI Studio without a configured API key. Please enter your Gemini API key to continue.
+            </p>
+            <input
+              type="password"
+              value={manualApiKey}
+              onChange={(e) => setManualApiKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none mb-4 text-gray-900 dark:text-white"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (manualApiKey.trim()) {
+                    const newKey = manualApiKey.trim();
+                    setApiKey(newKey);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('gemini_api_key', newKey);
+                    }
+                    setShowApiKeyModal(false);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+              >
+                Save & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

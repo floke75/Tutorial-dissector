@@ -12,8 +12,7 @@ interface ResultsTimelineProps {
 }
 
 type TimelineNode = 
-  | { type: 'action'; action: ActionItem }
-  | { type: 'boundary'; detail: string; timestamp: string };
+  | { type: 'action'; action: ActionItem };
 
 export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narrativeSteps, currentTime = 0, onSeek }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,16 +24,12 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     const nodes: TimelineNode[] = [];
 
     actions.forEach(action => {
-      if (action.action_type === 'chunk_boundary') {
-        nodes.push({ type: 'boundary', detail: action.detail, timestamp: action.timestamp });
-      } else {
-        nodes.push({ type: 'action', action });
-      }
+      nodes.push({ type: 'action', action });
     });
 
     nodes.sort((a, b) => {
-      const timeA = parseMMSS(a.type === 'action' ? a.action.timestamp : a.timestamp);
-      const timeB = parseMMSS(b.type === 'action' ? b.action.timestamp : b.timestamp);
+      const timeA = parseMMSS(a.action.timestamp);
+      const timeB = parseMMSS(b.action.timestamp);
       return timeA - timeB;
     });
 
@@ -46,11 +41,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     const lowerTerm = searchTerm.toLowerCase();
 
     return timelineNodes.filter(node => {
-      if (node.type === 'boundary') return false;
-      if (node.type === 'action') {
-        return node.action.detail.toLowerCase().includes(lowerTerm) || node.action.target?.element?.toLowerCase().includes(lowerTerm);
-      }
-      return false;
+      return node.action.detail.toLowerCase().includes(lowerTerm) || node.action.target?.element?.toLowerCase().includes(lowerTerm);
     });
   }, [timelineNodes, searchTerm]);
 
@@ -62,14 +53,10 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     let latestTime = -1;
 
     for (const node of filteredNodes) {
-      if (node.type === 'boundary') continue;
-
-      if (node.type === 'action') {
-        const time = parseMMSS(node.action.timestamp);
-        if (time <= currentTime && time >= latestTime) {
-          activeActionId = node.action.id || null;
-          latestTime = time;
-        }
+      const time = parseMMSS(node.action.timestamp);
+      if (time <= currentTime && time >= latestTime) {
+        activeActionId = node.action.id || null;
+        latestTime = time;
       }
     }
 
@@ -344,24 +331,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
         )}
         
         {filteredNodes.map((node, idx) => {
-          if (node.type === 'boundary') {
-            return (
-              <div key={`boundary-${idx}`} className="flex items-center gap-3 py-1 my-1">
-                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800"></div>
-                <div className="text-[10px] font-mono font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                  {node.detail}
-                </div>
-                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-800"></div>
-              </div>
-            );
-          }
-
-          if (node.type === 'action') {
-            const isActive = node.action.id === activeState.activeActionId;
-            return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined);
-          }
-
-          return null;
+          const isActive = node.action.id === activeState.activeActionId;
+          return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined);
         })}
         <div ref={bottomRef} />
       </div>

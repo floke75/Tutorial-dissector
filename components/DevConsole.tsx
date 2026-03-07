@@ -64,6 +64,36 @@ export const DevConsole: React.FC<DevConsoleProps> = ({ logs, onClear }) => {
         {isOpen && (
           <div className="flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
             <button 
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/config');
+                  const { apiKey } = await res.json();
+                  if (!apiKey) {
+                    alert('Please select an API key first.');
+                    return;
+                  }
+                  
+                  const testRes = await fetch('/api/test-integration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey })
+                  });
+                  const data = await testRes.json();
+                  if (data.success) {
+                    console.log('Test successful:', data.result);
+                    alert(`Test successful! Extracted ${data.result.length} actions. Check DevConsole logs for details.`);
+                  } else {
+                    alert(`Test failed: ${data.error}`);
+                  }
+                } catch (e: any) {
+                  alert(`Test failed: ${e.message}`);
+                }
+              }}
+              className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 px-2.5 py-1 rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors border border-emerald-200 dark:border-emerald-800/50"
+            >
+              Run Live Test
+            </button>
+            <button 
               onClick={onClear}
               className="text-xs font-mono font-medium text-gray-500 hover:text-gray-900 dark:hover:text-white px-2.5 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >

@@ -10,23 +10,29 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
-    setProjects(getProjects());
+    getProjects().then(setProjects);
   }, []);
 
-  const handleCreate = () => {
-    const id = createProject();
+  const handleCreate = async () => {
+    const id = await createProject();
     if (id) {
       onOpenProject(id);
     }
   };
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm("Are you sure you want to delete this project?")) {
-      deleteProject(id);
-      setProjects(getProjects());
+    if (confirmDeleteId === id) {
+      await deleteProject(id);
+      setProjects(await getProjects());
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+      // Auto-cancel confirmation after 3 seconds
+      setTimeout(() => setConfirmDeleteId(null), 3000);
     }
   };
 
@@ -90,10 +96,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
                 </span>
                 <button 
                   onClick={(e) => handleDelete(e, project.id)}
-                  className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-gray-900 transition-colors"
-                  title="Delete Project"
+                  className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${
+                    confirmDeleteId === project.id 
+                      ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60' 
+                      : 'text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-gray-900'
+                  }`}
+                  title={confirmDeleteId === project.id ? "Click again to confirm" : "Delete Project"}
                 >
-                  <Trash2 size={18} />
+                  {confirmDeleteId === project.id ? (
+                    <span className="text-xs font-medium px-1">Confirm</span>
+                  ) : (
+                    <Trash2 size={18} />
+                  )}
                 </button>
               </div>
 
