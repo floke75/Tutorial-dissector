@@ -420,7 +420,7 @@ async function runJob(jobId: string, params: {
       addLog('success', `Global deduplication complete. Final action count: ${deduplicatedActions.length}`);
       
       // After global dedup, remap narrative links for any removed duplicates
-      if (deduplicatedActions !== cumulativeActions) {
+      if (deduplicatedActions.length < cumulativeActions.length) {
         const oldToNew = new Map<string, string>();
         const remainingIds = new Set(deduplicatedActions.map(a => a.id));
         

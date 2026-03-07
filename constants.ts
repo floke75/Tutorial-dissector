@@ -86,7 +86,7 @@ RESPOND with a JSON object:
   "validated_segment_events": [
      // ONLY THE NEW, DEDUPLICATED ACTIONS FROM THIS CHUNK. Do NOT include actions from previous chunks.
      {
-       "id": "evt_042",
+       "id": "evt_a1b2c3d4",
        ... <standard action properties including spatial_bounding_box and input_data>,
        "ui_context": {
          "active_panel": "Layers",
