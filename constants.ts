@@ -141,16 +141,17 @@ DO NOT repeat these steps. Start your new steps immediately after the last event
 
 CRITICAL OBJECTIVE:
 The narrative blocks MUST complement the execution graph to provide a complete, self-contained, and granular capture of everything important in the tutorial workflow. A user should be able to fully understand the tutorial's context, intent, and workflow solely by reading your narrative blocks alongside the execution graph, WITHOUT having to watch the video or listen to the audio.
+It is CRITICAL that you capture the "why" behind the actions. Extract the narrator's intent, justification, and context for the workflow being demonstrated. This is essential for understanding the software's use cases and implementing similar workflows elsewhere.
 
 RULES FOR "NARRATIVE STEPS":
-1. **COMPLEMENTARY & CONCISE:** Be as concise and efficient as possible. Do NOT write a word-for-word transcript. Distill the narration into clear, actionable context and intent that explains *why* the actions in the execution graph are being taken.
+1. **COMPLEMENTARY & CONCISE:** Be as concise and efficient as possible. Do NOT write a word-for-word transcript. Distill the narration into clear, actionable context and intent that explains *why* the actions in the execution graph are being taken. Capture the narrator's justification for the workflow.
 2. **GROUPING:** Group a sequence of visual actions into a single logical "Step" (e.g., "Set up project configuration").
 3. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement). If the step is purely conceptual, these can be empty strings or describe the conceptual state.
 4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty.
 5. **MAXIMIZE COVERAGE:** You MUST strive to link EVERY non-error visual action provided in the INPUT CONTEXT to at least one Narrative Step. Do not leave visual actions "orphaned" without a corresponding narrative explanation unless they are truly irrelevant background noise.
-6. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations.
+6. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations, ensuring the underlying intent and business/workflow justification are preserved.
 7. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
-8. **STANDALONE CONTEXT:** If the narration contains important background context or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.
+8. **STANDALONE CONTEXT:** If the narration contains important background context, workflow justification, or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.
 9. **NO INTERNAL REASONING:** Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 10. **NO DUPLICATE INTENT:** Never generate two consecutive steps with the same or synonymous "intent". If you find yourself creating a step that restates the previous step's goal (e.g., "Prepare to insert blocks" followed by "Insert blocks"), merge them into a single step. Each step must represent a distinct user goal.
 11. **STEP ECONOMY:** Having domain context does not mean more steps. Prefer fewer, richer steps over many thin ones. A step that covers "open dialog, configure fields, save and close" is better than three steps for each sub-action. Target roughly one step per distinct user *goal*, not per UI interaction.
@@ -161,15 +162,15 @@ INPUT CONTEXT (Visual Actions occurring nearby):
 OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown. Do not include any internal reasoning or conversational text inside the JSON values.
 [
   {
-    "id": "step_001",
+    "id": "step_a1b2c3d4",
     "timestamp": "04:21",
     "intent": "Configure Autosave Settings",
     "precondition": "Settings modal is closed and user is on the main canvas.",
-    "explanation": "Enable autosave to ensure constraints are preserved during edits.",
+    "explanation": "Enable autosave to ensure constraints are preserved during edits. This prevents data loss when switching between complex component states.",
     "postcondition": "Autosave toggle is visually checked and Settings modal remains open.",
     "insight_type": "rationale",
-    "topics": ["constraints", "configuration"],
-    "linked_visual_action_ids": ["evt_056", "evt_057", "evt_058"]
+    "topics": ["constraints", "configuration", "data preservation"],
+    "linked_visual_action_ids": ["evt_a1b2c3d4", "evt_e5f6g7h8", "evt_i9j0k1l2"]
   }
 ]
 `;
