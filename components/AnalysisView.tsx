@@ -71,7 +71,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   actionsRef.current = actions;
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activePollingJobRef = useRef<string | null>(null);
 
   useEffect(() => {
     const fetchApiKey = async () => {
@@ -206,6 +207,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Clean up polling on unmount
   useEffect(() => {
     return () => {
+      activePollingJobRef.current = null;
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, []);
@@ -350,14 +352,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         
         // Start polling
         if (pollingRef.current) clearTimeout(pollingRef.current);
+        activePollingJobRef.current = jobId;
         
         let consecutiveErrors = 0;
-        const MAX_ERRORS = 15; // Allow for up to ~1-2 minutes of network interruption before failing
+        const MAX_ERRORS = 15; // Allow for ~3-5 minutes of network interruption (exponential backoff up to 15s/retry + 10s request timeout) before failing
 
         const poll = async () => {
+          if (activePollingJobRef.current !== jobId) return;
+          
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout per request
+            timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout per request
             
             const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { 
               cache: 'no-store',
@@ -365,8 +371,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             });
             clearTimeout(timeoutId);
             
+            if (activePollingJobRef.current !== jobId) return;
+            
             if (!pollRes.ok) throw new Error(`HTTP error! status: ${pollRes.status}`);
             const state = await pollRes.json();
+            
+            if (activePollingJobRef.current !== jobId) return;
             
             // Success! Reset error counter
             consecutiveErrors = 0;
@@ -433,6 +443,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               return; // Stop polling
             }
           } catch (e: any) {
+            if (timeoutId) clearTimeout(timeoutId);
             consecutiveErrors++;
             
             if (e.name === 'AbortError') {
@@ -458,10 +469,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             ? Math.min(2000 * Math.pow(1.5, consecutiveErrors), 15000) 
             : 2000;
             
-          pollingRef.current = setTimeout(poll, nextDelay);
+          if (activePollingJobRef.current === jobId) {
+            pollingRef.current = setTimeout(poll, nextDelay);
+          }
         };
         
-        pollingRef.current = setTimeout(poll, 2000);
+        if (activePollingJobRef.current === jobId) {
+          pollingRef.current = setTimeout(poll, 2000);
+        }
         
       } catch (err: any) {
         console.error("Job failed to start:", err);
@@ -505,6 +520,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       
       if (pollingRef.current) clearTimeout(pollingRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
+      activePollingJobRef.current = null;
       
       setProcState(prev => ({
         ...prev,
