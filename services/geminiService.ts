@@ -423,12 +423,8 @@ export async function accumulateChunkPhaseB(
               if (!original) {
                 const strictMatch = chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail);
                 const moderateMatch = !strictMatch && chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type);
-                const looseMatch = !strictMatch && !moderateMatch && chunkActions.find(a => a.timestamp === action.timestamp);
-
-                if (looseMatch) {
-                  onLog?.('warn', `Phase B: loose timestamp-only fallback used for action "${action.id}" at ${action.timestamp}; ui_context may be from wrong source action`);
-                }
-                original = strictMatch || moderateMatch || looseMatch;
+                
+                original = strictMatch || moderateMatch;
               }
 
               if (original) {
@@ -725,12 +721,8 @@ export async function analyzeGlobalDeduplication(
           if (!original) {
             const strictMatch = actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail);
             const moderateMatch = !strictMatch && actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type);
-            const looseMatch = !strictMatch && !moderateMatch && actions.find(a => a.timestamp === action.timestamp);
-
-            if (looseMatch) {
-              onLog?.('warn', `Phase D: loose timestamp-only fallback used for action "${action.id}" at ${action.timestamp}; ui_context/chunkIndex may be from wrong source action`);
-            }
-            original = strictMatch || moderateMatch || looseMatch;
+            
+            original = strictMatch || moderateMatch;
           }
 
           if (original) {

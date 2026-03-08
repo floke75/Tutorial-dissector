@@ -75,7 +75,7 @@ export interface ActionItem {
   timestamp: string;
   action_type: ActionType;
   actor: ActorType;
-  target: ActionTarget;
+  target?: ActionTarget | null;
   detail: string;
   result: string | null;
   context_note: string | null;
@@ -141,6 +141,7 @@ export interface ProcessingState {
   startTime: number | null;
   lastInteractionId: string | null; 
   chatHistory?: any[]; 
+  learnedContext?: string;
   logs?: LogMessage[]; // Added logs array for Dev Console
   jobId?: string;
   duration?: number;
