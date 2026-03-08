@@ -1,5 +1,11 @@
+import type { Chunk } from '../types.ts';
+
 export const parseMMSS = (input: string): number => {
-  const parts = input.split(':').map(Number);
+  if (!input) return 0;
+  const parts = input.trim().split(':').map(Number);
+  if (parts.length === 1) {
+    return parts[0];
+  }
   if (parts.length === 2) {
     return parts[0] * 60 + parts[1];
   }
@@ -19,8 +25,8 @@ export const computeChunkWindows = (
   durationSec: number, 
   chunkSizeSec: number, 
   overlapSec: number
-): import('../types').ChunkWindow[] => {
-  const chunks: import('../types').ChunkWindow[] = [];
+): Chunk[] => {
+  const chunks: Chunk[] = [];
   let index = 0;
   
   // We advance by chunkSizeSec each time
@@ -40,7 +46,12 @@ export const computeChunkWindows = (
       clipEnd,
       primaryStart,
       primaryEnd,
-      status: 'pending'
+      status: 'pending',
+      // Explicitly init new spec fields to undefined for clarity
+      phaseARawCount: undefined,
+      phaseBAddedCount: undefined,
+      interactionId: undefined,
+      actionCount: 0
     });
     index++;
   }
