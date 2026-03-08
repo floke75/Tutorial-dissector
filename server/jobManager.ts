@@ -75,6 +75,11 @@ export async function processVideoJob(params: {
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
+  const existingState = jobs.get(jobId);
+  if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
+    return jobId; // Job is already running, do nothing
+  }
+
   // Start the job asynchronously
   runJob(jobId, params).catch(err => {
     console.error(`Job ${jobId} failed:`, err);
@@ -118,6 +123,10 @@ async function runJob(jobId: string, params: {
   };
 
   const existingState = jobs.get(jobId);
+  if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
+    throw new Error(`Job ${jobId} is already running.`);
+  }
+
   const isResuming = existingState && 
                      (existingState.status === 'cancelled' || existingState.status === 'error') &&
                      existingState.videoUrl === videoUrl &&
@@ -465,10 +474,11 @@ async function runJob(jobId: string, params: {
         for (const oldAction of cumulativeActions) {
           if (!remainingIds.has(oldAction.id)) {
             // This action was removed as a duplicate. Find the action that was kept.
+            // We use timestamp and action_type as the primary matching criteria,
+            // since detail might have been normalized by the LLM.
             const keptAction = deduplicatedActions.find(
               a => a.timestamp === oldAction.timestamp && 
-                   a.action_type === oldAction.action_type &&
-                   a.detail === oldAction.detail
+                   a.action_type === oldAction.action_type
             );
             if (keptAction) {
               oldToNew.set(oldAction.id, keptAction.id);
@@ -503,5 +513,7 @@ async function runJob(jobId: string, params: {
     if (jobs.get(jobId) === state && state.runId === runId) {
       cancelTokens.delete(jobId);
     }
+    const JOB_TTL_MS = 60 * 60 * 1000;
+    setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
   }
 }

@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
 import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
@@ -224,11 +224,6 @@ export async function analyzeChunkPhaseA(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -359,11 +354,6 @@ export async function accumulateChunkPhaseB(
         contents: contents,
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           systemInstruction: finalSystemInstruction,
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
@@ -532,11 +522,6 @@ export async function analyzeNarrationSegment(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -637,11 +622,6 @@ export async function analyzeGlobalDeduplication(
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(z.array(actionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000

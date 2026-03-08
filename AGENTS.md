@@ -9,7 +9,7 @@ The application is a **full-stack** application: a React 19 SPA frontend backed 
 
 *   **`types.ts`**: The source of truth for the **Verifiable Execution Graph**. Contains definitions for `ActionItem` (mechanics) and `NarrativeStep` (intent). If you add a feature, update the types here first.
 *   **`constants.ts`**: Contains the raw system prompts for Phase A (`PHASE_A_SYSTEM_PROMPT`), Phase B (`PHASE_B_SYSTEM_PROMPT`), Phase C (`PASS_2_SYSTEM_PROMPT`), and Phase D (`GLOBAL_DEDUPLICATION_PROMPT`). Prompt engineering happens here.
-*   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Gemini SDK `Type.OBJECT` schemas.**
+*   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Zod schemas compiled via `zodToJsonSchema`.**
 *   **`services/storage.ts`**: Wraps `IndexedDB` (via `idb-keyval`). Handles project creation, saving, and indexing.
 *   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).
 *   **`components/AnalysisView.tsx`**: The core frontend orchestrator. Submits jobs to the backend, polls for updates, and hosts the `ReactPlayer` instance for video playback.
@@ -35,7 +35,7 @@ Because video analysis takes minutes, the React frontend submits jobs to the Exp
 *   We use the `@google/genai` SDK (`>= 1.41.0`).
 *   **Video Offsets:** When passing video to Gemini, use the `videoMetadata` payload to clip the video natively without FFMPEG:
     ```typescript
-    fileData: { fileUri: videoUrl, mimeType: 'video/*' },
+    fileData: { fileUri: videoUrl, ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' }) },
     videoMetadata: { startOffset: `${startSec}s`, endOffset: `${endSec}s` }
     ```
 *   **Schema Resilience:** Bounding boxes must use `Type.NUMBER` (not `INTEGER`) because Gemini occasionally returns float values (e.g., `150.5`).

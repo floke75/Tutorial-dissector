@@ -28,7 +28,7 @@ If you are a coding agent tasked with upgrading this application, pay attention 
 
 ### ⚠️ A. YouTube CORS / Direct File Limitations
 *   **Issue:** Currently, `@google/genai`'s `fileData.fileUri` expects a raw video file URL or a supported Google Cloud Storage URI. Passing standard `youtube.com/watch?v=` links directly into `fileUri` often fails unless the backend proxies it to a raw `.mp4` stream.
-*   **Workaround Implemented:** The UI assumes the user provides a direct raw URL or relies on Gemini's internal capability to resolve specific YouTube links. The user must manually input the video `duration` because we cannot extract metadata via standard browser CORS policies.
+*   **Workaround Implemented:** The UI assumes the user provides a direct raw URL or relies on Gemini's internal capability to resolve specific YouTube links. The backend now uses `fetchYouTubeDuration()` to auto-scrape the HTML for the video length, removing the need for manual duration input (which is now just a fallback). Note that this HTML-scraping approach is fragile, as it sends a browser `User-Agent` header that can be blocked by YouTube's bot-detection at any time.
 *   **Future Fix:** Implement a lightweight Node.js/Python backend proxy using `yt-dlp` to fetch the true video length and provide a direct `.mp4` stream to the frontend.
 
 ### ⚠️ B. Float Handling in Spatial Coordinates
