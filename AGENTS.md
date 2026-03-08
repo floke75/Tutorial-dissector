@@ -5,14 +5,14 @@
 
 ## 1. System Architecture & Directory Map
 
-The application is a client-side React SPA that uses `localStorage` for persistence and talks directly to the `@google/genai` SDK.
+The application is a **full-stack** application: a React 19 SPA frontend backed by an Express server (`server.ts`). The frontend stores project data in **IndexedDB** (via `idb-keyval`). All Gemini API calls are made **server-side** via `server/jobManager.ts`, which imports from `services/geminiService.ts`.
 
 *   **`types.ts`**: The source of truth for the **Verifiable Execution Graph**. Contains definitions for `ActionItem` (mechanics) and `NarrativeStep` (intent). If you add a feature, update the types here first.
-*   **`constants.ts`**: Contains the raw system prompts for Phase A, Phase B, and Pass 2. Prompt engineering happens here.
-*   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Gemini SDK `Type.OBJECT` schemas.**
-*   **`services/storage.ts`**: Wraps `localStorage`. Handles project creation, saving, and indexing.
+*   **`constants.ts`**: Contains the raw system prompts for Phase A (`PHASE_A_SYSTEM_PROMPT`), Phase B (`PHASE_B_SYSTEM_PROMPT`), Phase C (`PASS_2_SYSTEM_PROMPT`), and Phase D (`GLOBAL_DEDUPLICATION_PROMPT`). Prompt engineering happens here.
+*   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Zod schemas compiled via `zodToJsonSchema`.**
+*   **`services/storage.ts`**: Wraps `IndexedDB` (via `idb-keyval`). Handles project creation, saving, and indexing.
 *   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).
-*   **`components/AnalysisView.tsx`**: The core orchestrator. Contains the two massive async `useEffect` loops (Visual and Narration), and hosts the `ReactPlayer` instance for video playback.
+*   **`components/AnalysisView.tsx`**: The core frontend orchestrator. Submits jobs to the backend, polls for updates, and hosts the `ReactPlayer` instance for video playback.
 *   **`components/ResultsTimeline.tsx`**: The renderer and compiler. It maps the relational tree, handles two-way video synchronization (auto-scrolling and seeking), and contains the `downloadPlaywright()` automation compiler.
 
 ## 2. The Verifiable Execution Graph (Data Model)
@@ -26,23 +26,29 @@ This app doesn't output flat text; it builds a highly normalized relational data
 
 ## 3. Strict Implementation Rules (DO NOT VIOLATE)
 
-### Rule A: State Management & Stale Closures
-Because video analysis takes minutes, `AnalysisView.tsx` uses asynchronous `useEffect` loops.
-*   **NEVER** rely directly on `procState` inside the `setInterval` or `processNextVisual`/`processNextNarration` async functions.
-*   **ALWAYS** use `stateRef.current`, `chunksRef.current`, and `actionsRef.current`. If you add new state that the async loop needs to read, you MUST back it with a `useRef` to prevent stale closure bugs.
+### Rule A: State Management & Job Polling
+Because video analysis takes minutes, the React frontend submits jobs to the Express backend and polls for updates.
+*   **NEVER** implement long-running analysis loops in the React frontend.
+*   **ALWAYS** use the backend `server/jobManager.ts` for orchestrating the Gemini API calls and state transitions.
 
 ### Rule B: Gemini SDK Usage
 *   We use the `@google/genai` SDK (`>= 1.41.0`).
 *   **Video Offsets:** When passing video to Gemini, use the `videoMetadata` payload to clip the video natively without FFMPEG:
     ```typescript
-    fileData: { fileUri: videoUrl, mimeType: 'video/*' },
+    fileData: { fileUri: videoUrl, ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' }) },
     videoMetadata: { startOffset: `${startSec}s`, endOffset: `${endSec}s` }
     ```
-*   **Schema Resilience:** Bounding boxes must use `Type.NUMBER` (not `INTEGER`) because Gemini occasionally returns float values (e.g., `150.5`).
+*   **Schema Resilience:** Bounding boxes must use `z.number()` (not `z.number().int()`) because Gemini occasionally returns float values (e.g., `150.5`).
 
 ### Rule C: Automation Compilation (Playwright)
 *   **Viewport Normalization:** The spatial extraction prompts force Gemini to map the screen to a `1000x1000` grid. Therefore, `ResultsTimeline.tsx` hardcodes `page.setViewportSize({ width: 1000, height: 1000 })` so Cartesian coordinates map 1:1.
 *   **Error Exclusion:** The compiler script MUST include `.filter(a => !a.is_error_recovery)`. The bot must not execute human mistakes.
+
+### Rule D: Context Flow & Dynamic Accumulation
+*   **Chat History (Phase B):** The Gemini SDK requires `chatHistory` to strictly alternate between `user` and `model` roles, always starting with `user`. The sliding window in `jobManager.ts` retains up to 60 items (30 turns) to leverage the large context window while enforcing this rule.
+*   **"Zipper" Optimization:** To prevent token exhaustion, `ui_context` is stripped from actions before sending them to the LLM in Phase B, and both `ui_context` and `chunkIndex` are stripped in Phase D. They are re-attached afterward using a cascading content-similarity fallback to handle ID drift.
+*   **Dynamic Context (Phase C):** Phase C extracts `learned_insights` (factual UI terminology only, e.g., panel names and persistent global state changes) which are appended to a `learnedContext` string. This string is injected into the prompt for all subsequent chunks, allowing the pipeline to accumulate stable domain vocabulary as it processes the video.
+*   **Token Optimization (Phase D):** Global deduplication receives the cumulative narrative to inform its decisions. To prevent token exhaustion, the narrative array is minified (id, description, links) before being passed to the LLM.
 
 ## 4. How to Modify the Extraction Pipeline
 If a user asks you to extract a new type of data (e.g., "Extract cursor shapes"):

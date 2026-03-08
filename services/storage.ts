@@ -1,14 +1,15 @@
 
-import { Project, ProjectSummary } from '../types';
+import { get, set, del } from 'idb-keyval';
+import type { Project, ProjectSummary } from '../types.ts';
 
 const INDEX_KEY = 'td_projects_index';
 const PROJ_PREFIX = 'td_project_';
 
 export const generateId = () => Math.random().toString(36).substr(2, 9);
 
-export const getProjects = (): ProjectSummary[] => {
+export const getProjects = async (): Promise<ProjectSummary[]> => {
   try {
-    const raw = localStorage.getItem(INDEX_KEY);
+    const raw = await get(INDEX_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) { 
     console.error("Failed to load project index", e);
@@ -16,7 +17,7 @@ export const getProjects = (): ProjectSummary[] => {
   }
 };
 
-export const createProject = (): string => {
+export const createProject = async (): Promise<string> => {
   const id = generateId();
   const now = Date.now();
   const newProject: Project = {
@@ -32,11 +33,11 @@ export const createProject = (): string => {
     customContext: '',
     chunks: [],
     actions: [],
+    annotations: [],
     narrativeSteps: [],
     procState: {
       status: 'idle',
       currentChunkIndex: 0,
-      narrationStartTime: 0,
       totalActions: 0,
       totalTokens: 0,
       startTime: null,
@@ -49,10 +50,10 @@ export const createProject = (): string => {
   
   // Save Data
   try {
-    localStorage.setItem(PROJ_PREFIX + id, JSON.stringify(newProject));
+    await set(PROJ_PREFIX + id, JSON.stringify(newProject));
     
     // Update Index
-    const index = getProjects();
+    const index = await getProjects();
     index.unshift({
       id,
       name: newProject.name,
@@ -61,7 +62,7 @@ export const createProject = (): string => {
       status: 'idle',
       actionCount: 0
     });
-    localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+    await set(INDEX_KEY, JSON.stringify(index));
   } catch (e) {
     console.error("Storage limit reached or error", e);
     alert("Failed to create project. Storage might be full.");
@@ -71,9 +72,9 @@ export const createProject = (): string => {
   return id;
 };
 
-export const getProject = (id: string): Project | null => {
+export const getProject = async (id: string): Promise<Project | null> => {
   try {
-    const data = localStorage.getItem(PROJ_PREFIX + id);
+    const data = await get(PROJ_PREFIX + id);
     const parsed = data ? JSON.parse(data) : null;
     // Backwards compatibility for older saves without narrativeSteps
     if (parsed && !parsed.narrativeSteps) {
@@ -87,15 +88,15 @@ export const getProject = (id: string): Project | null => {
   } catch { return null; }
 };
 
-export const saveProject = (data: Project) => {
+export const saveProject = async (data: Project) => {
   const now = Date.now();
   const updated = { ...data, updatedAt: now };
   
   try {
-    localStorage.setItem(PROJ_PREFIX + data.id, JSON.stringify(updated));
+    await set(PROJ_PREFIX + data.id, JSON.stringify(updated));
     
     // Update index
-    const index = getProjects();
+    const index = await getProjects();
     const idx = index.findIndex(p => p.id === data.id);
     const summary: ProjectSummary = {
       id: data.id,
@@ -111,14 +112,14 @@ export const saveProject = (data: Project) => {
     } else {
       index.unshift(summary);
     }
-    localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+    await set(INDEX_KEY, JSON.stringify(index));
   } catch (e) {
     console.error("Failed to save project", e);
   }
 };
 
-export const deleteProject = (id: string) => {
-  localStorage.removeItem(PROJ_PREFIX + id);
-  const index = getProjects().filter(p => p.id !== id);
-  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+export const deleteProject = async (id: string) => {
+  await del(PROJ_PREFIX + id);
+  const index = (await getProjects()).filter(p => p.id !== id);
+  await set(INDEX_KEY, JSON.stringify(index));
 };

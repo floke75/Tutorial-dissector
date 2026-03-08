@@ -33,11 +33,11 @@ describe('AnalysisView', () => {
       customContext: '',
       chunks: [],
       actions: [],
+      annotations: [],
       narrativeSteps: [],
       procState: {
         status: 'idle',
         currentChunkIndex: 0,
-        narrationStartTime: 0,
         totalActions: 0,
         totalTokens: 0,
         startTime: null,
@@ -48,8 +48,8 @@ describe('AnalysisView', () => {
       latestUIState: null
     };
 
-    vi.spyOn(storage, 'getProject').mockReturnValue(mockProject);
-    vi.spyOn(storage, 'saveProject').mockImplementation(() => {});
+    vi.spyOn(storage, 'getProject').mockResolvedValue(mockProject);
+    vi.spyOn(storage, 'saveProject').mockResolvedValue();
 
     render(
       <AnalysisView 

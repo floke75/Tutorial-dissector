@@ -10,31 +10,36 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
-    setProjects(getProjects());
+    getProjects().then(setProjects);
   }, []);
 
-  const handleCreate = () => {
-    const id = createProject();
+  const handleCreate = async () => {
+    const id = await createProject();
     if (id) {
       onOpenProject(id);
     }
   };
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (window.confirm("Are you sure you want to delete this project?")) {
-      deleteProject(id);
-      setProjects(getProjects());
+    if (confirmDeleteId === id) {
+      await deleteProject(id);
+      setProjects(await getProjects());
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+      // Auto-cancel confirmation after 3 seconds
+      setTimeout(() => setConfirmDeleteId(null), 3000);
     }
   };
 
   const getStatusConfig = (status: string) => {
     switch(status) {
       case 'completed': return { color: 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-400/30 bg-emerald-50 dark:bg-emerald-900/20', icon: <CheckCircle2 size={14} /> };
-      case 'running_visual':
-      case 'running_narration': return { color: 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/30 bg-blue-50 dark:bg-blue-900/20 animate-pulse', icon: <Play size={14} /> };
+      case 'running_visual': return { color: 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-400/30 bg-blue-50 dark:bg-blue-900/20 animate-pulse', icon: <Play size={14} /> };
       case 'paused': return { color: 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-400/30 bg-amber-50 dark:bg-amber-900/20', icon: <Pause size={14} /> };
       case 'error': return { color: 'text-red-600 dark:text-red-400 border-red-200 dark:border-red-400/30 bg-red-50 dark:bg-red-900/20', icon: <AlertCircle size={14} /> };
       default: return { color: 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-800', icon: null };
@@ -90,10 +95,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
                 </span>
                 <button 
                   onClick={(e) => handleDelete(e, project.id)}
-                  className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-gray-900 transition-colors"
-                  title="Delete Project"
+                  className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${
+                    confirmDeleteId === project.id 
+                      ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/60' 
+                      : 'text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-gray-900'
+                  }`}
+                  title={confirmDeleteId === project.id ? "Click again to confirm" : "Delete Project"}
                 >
-                  <Trash2 size={18} />
+                  {confirmDeleteId === project.id ? (
+                    <span className="text-xs font-medium px-1">Confirm</span>
+                  ) : (
+                    <Trash2 size={18} />
+                  )}
                 </button>
               </div>
 
