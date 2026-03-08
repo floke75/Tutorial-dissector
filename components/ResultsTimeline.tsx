@@ -1,20 +1,22 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ActionItem, NarrativeStep } from '../types';
+import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
 
 import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 
 interface ResultsTimelineProps {
   actions: ActionItem[];
+  annotations?: VideoAnnotation[];
   narrativeSteps: NarrativeStep[];
   currentTime?: number;
   onSeek?: (time: number) => void;
 }
 
 type TimelineNode = 
-  | { type: 'action'; action: ActionItem };
+  | { type: 'action'; action: ActionItem }
+  | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narrativeSteps, currentTime = 0, onSeek }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
@@ -27,40 +29,55 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
       nodes.push({ type: 'action', action });
     });
 
+    annotations.forEach(annotation => {
+      nodes.push({ type: 'annotation', annotation });
+    });
+
     nodes.sort((a, b) => {
-      const timeA = parseMMSS(a.action.timestamp);
-      const timeB = parseMMSS(b.action.timestamp);
+      const timeA = a.type === 'action' ? parseMMSS(a.action.timestamp) : parseMMSS(a.annotation.timestamp);
+      const timeB = b.type === 'action' ? parseMMSS(b.action.timestamp) : parseMMSS(b.annotation.timestamp);
       return timeA - timeB;
     });
 
     return nodes;
-  }, [actions]);
+  }, [actions, annotations]);
 
   const filteredNodes = useMemo(() => {
     if (!searchTerm) return timelineNodes;
     const lowerTerm = searchTerm.toLowerCase();
 
     return timelineNodes.filter(node => {
-      return node.action.detail.toLowerCase().includes(lowerTerm) || node.action.target?.element?.toLowerCase().includes(lowerTerm);
+      if (node.type === 'action') {
+        return (node.action.detail || '').toLowerCase().includes(lowerTerm) || (node.action.target?.element || '').toLowerCase().includes(lowerTerm);
+      } else {
+        return (node.annotation.content || '').toLowerCase().includes(lowerTerm) || (node.annotation.annotation_type || '').toLowerCase().includes(lowerTerm);
+      }
     });
   }, [timelineNodes, searchTerm]);
 
   const activeState = useMemo(() => {
     let activeActionId: string | null = null;
+    let activeAnnotationId: string | null = null;
     
-    if (currentTime === 0) return { activeActionId };
+    if (currentTime === 0) return { activeActionId, activeAnnotationId };
 
     let latestTime = -1;
 
     for (const node of filteredNodes) {
-      const time = parseMMSS(node.action.timestamp);
+      const time = node.type === 'action' ? parseMMSS(node.action.timestamp) : parseMMSS(node.annotation.timestamp);
       if (time <= currentTime && time >= latestTime) {
-        activeActionId = node.action.id || null;
+        if (node.type === 'action') {
+          activeActionId = node.action.id || null;
+          activeAnnotationId = null;
+        } else {
+          activeAnnotationId = node.annotation.id || null;
+          activeActionId = null;
+        }
         latestTime = time;
       }
     }
 
-    return { activeActionId };
+    return { activeActionId, activeAnnotationId };
   }, [filteredNodes, currentTime]);
 
   // Auto-scroll to bottom on new items
@@ -92,10 +109,12 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
       exported_at: new Date().toISOString(),
       metadata: {
          total_steps: narrativeSteps.length,
-         total_actions: actions.length
+         total_actions: actions.length,
+         total_annotations: annotations.length
       },
       narrative_steps: narrativeSteps,
-      visual_actions: actions
+      visual_actions: actions,
+      video_annotations: annotations
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -194,8 +213,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
         
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
-            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${isError ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700/50' : getTypeColor(action.action_type)}`}>
-              {action.action_type.replace('_', ' ')}
+            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${isError ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700/50' : getTypeColor(action.action_type || 'action')}`}>
+              {(action.action_type || 'action').replace('_', ' ')}
             </span>
             <span className={`text-xs font-mono font-medium ${isError ? 'text-orange-400/80 dark:text-orange-300/60 line-through' : 'text-gray-600 dark:text-gray-400'}`}>
               {action.target?.element}
@@ -295,6 +314,45 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
     );
   };
 
+  // Renderer for a VideoAnnotation
+  const renderAnnotation = (annotation: VideoAnnotation, isActive: boolean = false, ref?: React.Ref<HTMLDivElement>, idx?: number) => {
+    const baseStyle = 'hover:bg-gray-50 dark:hover:bg-gray-800/60 hover:border-gray-300 dark:hover:border-gray-700';
+    const bgStyle = isActive ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-300 dark:border-purple-500/50 shadow-md ring-1 ring-purple-500/50' : 'bg-gray-50 dark:bg-gray-800/20 border-gray-200 dark:border-gray-800 border-dashed';
+    const textStyle = 'text-gray-700 dark:text-gray-300';
+    
+    return (
+      <div 
+        key={annotation.id || `ann-${annotation.timestamp}-${idx}`} 
+        ref={ref}
+        className={`flex gap-4 p-3.5 rounded-xl border transition-all group relative cursor-pointer ${baseStyle} ${bgStyle}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSeek && onSeek(parseMMSS(annotation.timestamp));
+        }}
+      >
+        <div className="w-12 shrink-0 font-mono text-xs pt-1 font-medium text-purple-500/70 dark:text-purple-400/70">
+          {annotation.timestamp}
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700/50">
+              {(annotation.annotation_type || 'annotation').replace('_', ' ')}
+            </span>
+          </div>
+          
+          <p className={`text-sm leading-relaxed mb-1 font-medium ${textStyle}`}>
+            {annotation.content}
+          </p>
+
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+            {annotation.relevance}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-white/50 dark:bg-gray-850/50 bg-gradient-to-br from-indigo-500/10 via-transparent to-sky-400/10 dark:from-indigo-500/10 dark:via-transparent dark:to-sky-400/10 backdrop-blur-md h-full flex flex-col rounded-2xl border border-gray-200/50 dark:border-gray-750/50 shadow-xl dark:shadow-black/40 overflow-hidden">
       {/* Header & Filters */}
@@ -331,8 +389,13 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, narra
         )}
         
         {filteredNodes.map((node, idx) => {
-          const isActive = node.action.id === activeState.activeActionId;
-          return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined, idx);
+          if (node.type === 'action') {
+            const isActive = node.action.id === activeState.activeActionId;
+            return renderAction(node.action, isActive, isActive ? activeNodeRef : undefined, idx);
+          } else {
+            const isActive = node.annotation.id === activeState.activeAnnotationId;
+            return renderAnnotation(node.annotation, isActive, isActive ? activeNodeRef : undefined, idx);
+          }
         })}
         <div ref={bottomRef} />
       </div>

@@ -1,5 +1,25 @@
 
 
+export type AnnotationType = 
+  | 'title_card'
+  | 'lower_third'
+  | 'text_overlay'
+  | 'gui_highlight'
+  | 'zoom_in'
+  | 'transition'
+  | 'illustration'
+  | 'bullet_points'
+  | string;
+
+export interface VideoAnnotation {
+  id: string;                  // e.g., ann_a1b2c3d4
+  timestamp: string;           // When it appears
+  annotation_type: AnnotationType;
+  content: string;             // The text shown, or description of the highlight/illustration
+  relevance: string;           // Why this matters to the workflow
+  chunkIndex?: number;
+}
+
 export interface ActionTarget {
   element: string;
   location: string;
@@ -81,6 +101,7 @@ export interface NarrativeStep {
   insight_type: InsightType;
   topics: string[];
   linked_visual_action_ids: string[]; 
+  linked_annotation_ids?: string[];
 }
 
 export interface Chunk {
@@ -145,6 +166,7 @@ export interface PhaseBResponse {
   current_ui_state: UIState;
   cumulative_action_count: number;
   validated_segment_events: ActionItem[]; 
+  validated_segment_annotations?: VideoAnnotation[];
   merged_log_excerpt?: ActionItem[];
 }
 
@@ -171,6 +193,7 @@ export interface Project extends ProjectSummary {
   
   chunks: Chunk[];
   actions: ActionItem[];
+  annotations: VideoAnnotation[];
   narrativeSteps: NarrativeStep[];
   
   // Runtime State

@@ -8,7 +8,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { ArrowLeft, LayoutPanelLeft, Activity, Clock, Loader2 } from 'lucide-react';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
 import { getProject, saveProject } from '../services/storage';
-import { Chunk, ProcessingState, ActionItem, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
+import { Chunk, ProcessingState, ActionItem, VideoAnnotation, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
 import ReactPlayer from 'react-player';
 
 interface AnalysisViewProps {
@@ -29,6 +29,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Runtime State
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
@@ -113,6 +114,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         });
         setActions(sanitizedActions);
 
+        // Sanitize loaded annotations to ensure unique IDs
+        const seenAnnotationIds = new Set<string>();
+        const sanitizedAnnotations = (data.annotations || []).map((a, idx) => {
+          let id = a.id || `ann_missing_${idx}`;
+          if (seenAnnotationIds.has(id)) {
+            id = `${id}_dup_${idx}`;
+          }
+          seenAnnotationIds.add(id);
+          return { ...a, id };
+        });
+        setAnnotations(sanitizedAnnotations);
+
         // Sanitize loaded narrative steps to ensure unique IDs
         const seenStepIds = new Set<string>();
         const sanitizedSteps = (data.narrativeSteps || []).map((s, idx) => {
@@ -161,6 +174,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       customContext,
       chunks,
       actions,
+      annotations,
       narrativeSteps,
       procState,
       latestUIState,
@@ -168,7 +182,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       actionCount: actions.length
     };
     saveProject(saveData);
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
   // Local chunk computation removed as it's now handled by the server
 
@@ -354,6 +368,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               setActions(state.actions);
             }
             
+            if (state.annotations && state.annotations.length > 0) {
+              setAnnotations(state.annotations);
+            }
+
             if (state.narrativeSteps && state.narrativeSteps.length > 0) {
               setNarrativeSteps(state.narrativeSteps);
             }
@@ -738,6 +756,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           <div className="flex-1 min-h-0">
             <ResultsTimeline 
               actions={actions} 
+              annotations={annotations}
               narrativeSteps={narrativeSteps} 
               currentTime={currentTime}
               onSeek={handleSeek}

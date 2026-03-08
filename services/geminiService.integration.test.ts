@@ -46,15 +46,16 @@ describe('Gemini 3.1 Live Integration Tests', () => {
     const duration = (Date.now() - startTime) / 1000;
 
     console.log(`\n✅ --- LIVE TEST RESULTS (${duration.toFixed(1)}s) ---`);
-    console.log(`Extracted ${result.length} actions.`);
+    console.log(`Extracted ${result.actions.length} actions and ${result.annotations.length} annotations.`);
     console.log(JSON.stringify(result, null, 2));
     console.log(`------------------------------------------\n`);
 
     // Assertions to ensure the schema matches our expectations
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.actions)).toBe(true);
+    expect(Array.isArray(result.annotations)).toBe(true);
     
-    if (result.length > 0) {
-      const firstAction = result[0];
+    if (result.actions.length > 0) {
+      const firstAction = result.actions[0];
       expect(firstAction).toHaveProperty('id');
       expect(firstAction).toHaveProperty('timestamp');
       expect(firstAction).toHaveProperty('action_type');

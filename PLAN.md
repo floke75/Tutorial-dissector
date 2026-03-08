@@ -17,19 +17,19 @@ This pass focuses purely on *deterministic spatial events and state mutations*. 
 
 *   **Phase A (Stateless Perception):** 
     *   **Input:** Video URL + `clipStart` / `clipEnd` offsets.
-    *   **Action:** Gemini is prompted to extract raw clicks, drags, and keystrokes.
-    *   **Output:** Array of unlinked `ActionItem` objects with normalized `[ymin, xmin, ymax, xmax]` bounding boxes and exact `input_data`.
+    *   **Action:** Gemini is prompted to extract raw clicks, drags, keystrokes, and editorial annotations (title cards, highlights, etc.).
+    *   **Output:** Arrays of unlinked `ActionItem` objects (with normalized bounding boxes) and `VideoAnnotation` objects.
 *   **Phase B (Stateful Cognition):**
     *   **Input:** The output of Phase A + Chat History of all previous Phase B chunks.
-    *   **Action:** Gemini is prompted to deduplicate actions within the overlap window, assign unique truncated-UUID-based IDs (e.g., `evt_a1b2c3d4`), flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
+    *   **Action:** Gemini is prompted to deduplicate actions and annotations within the overlap window, assign unique truncated-UUID-based IDs (e.g., `evt_a1b2c3d4`, `ann_e5f6g7h8`), flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
 
 ### Phase C: Hierarchical BDD Mapping (The Intent Track)
 This phase runs *per chunk*, immediately after Phase B.
 
 *   **Logic:** Iterates through the video using the same chunks as Phase A.
-*   **Input:** Video audio + The finalized array of `ActionItems` (filtered to the current timeframe with a 15-second buffer).
-*   **Action:** Gemini maps spoken audio to the mechanical actions.
-*   **Output:** Generates `NarrativeStep` objects containing `intent`, `explanation`, `insight_type`, `topics`, BDD `precondition` / `postcondition` strings, and a `linked_visual_action_ids` array that acts as a Foreign Key to the `ActionItems`.
+*   **Input:** Video audio + The finalized arrays of `ActionItems` and `VideoAnnotations` (filtered to the current timeframe with a 15-second buffer).
+*   **Action:** Gemini maps spoken audio to the mechanical actions and editorial annotations.
+*   **Output:** Generates `NarrativeStep` objects containing `intent`, `explanation`, `insight_type`, `topics`, BDD `precondition` / `postcondition` strings, and `linked_visual_action_ids` / `linked_annotation_ids` arrays that act as Foreign Keys to the `ActionItems` and `VideoAnnotations`.
 
 ### Phase D: Global Deduplication
 This phase runs *after* all chunks are complete.
@@ -54,4 +54,4 @@ To ensure continuity, the video is chunked with an overlapping sliding window (`
 3.  **`AnalysisView`**: The heavy lifter. Submits jobs to the backend, polls for updates, and manages the timer. It also hosts the `ReactPlayer` instance for video playback.
     *   **`InputPanel`**: Sidebar controls for offsets, video URL, and starting the analysis.
     *   **`ChunkVisualizer`**: Bottom ticker showing the real-time status of Phase A/B chunk processing.
-    *   **`ResultsTimeline`**: The main view. Takes the flat `actions` and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters. It features two-way synchronization with the video player (clicking a step seeks the video, and playing the video auto-scrolls the timeline to highlight the active step).
+    *   **`ResultsTimeline`**: The main view. Takes the flat `actions`, `annotations`, and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters. It features two-way synchronization with the video player (clicking a step seeks the video, and playing the video auto-scrolls the timeline to highlight the active step).

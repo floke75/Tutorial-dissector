@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, analyzeGlobalDeduplication } from '../services/geminiService.ts';
-import type { ActionItem, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
+import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
 
@@ -11,6 +11,7 @@ export interface JobState {
   progress: number;
   logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];
+  annotations: VideoAnnotation[];
   narrativeSteps: NarrativeStep[];
   uiState: UIState | null;
   error?: string;
@@ -135,6 +136,7 @@ async function runJob(jobId: string, params: {
       progress: 0,
       logs: [],
       actions: [],
+      annotations: [],
       narrativeSteps: [],
       uiState: null,
       videoUrl,
@@ -209,6 +211,7 @@ async function runJob(jobId: string, params: {
 
     let chatHistory: any[] = state.chatHistory || [];
     let cumulativeActions: ActionItem[] = state.actions || [];
+    let cumulativeAnnotations: VideoAnnotation[] = state.annotations || [];
     let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
     let latestUIState: UIState | null = state.uiState || null;
 
@@ -230,8 +233,8 @@ async function runJob(jobId: string, params: {
       addLog('info', `--- Starting Chunk ${i + 1}/${state.chunks.length} ---`, { chunk });
 
       // Phase A: Raw Extraction
-      addLog('info', `Phase A: Extracting raw actions...`);
-      const rawActions = await analyzeChunkPhaseA(
+      addLog('info', `Phase A: Extracting raw actions and annotations...`);
+      const { actions: rawActions, annotations: rawAnnotations } = await analyzeChunkPhaseA(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
@@ -261,6 +264,7 @@ async function runJob(jobId: string, params: {
         videoUrl,
         `${duration}s`,
         rawActions,
+        rawAnnotations,
         i + 1,
         primaryWindowStr,
         chatHistory,
@@ -284,7 +288,7 @@ async function runJob(jobId: string, params: {
       
       // Append new validated actions
       const existingIds = new Set(cumulativeActions.map(a => a.id));
-      const newValidatedEvents = phaseBResult.result.validated_segment_events.map(action => {
+      const newValidatedEvents = (phaseBResult.result.validated_segment_events || []).map(action => {
         if (!action.id || existingIds.has(action.id)) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
         }
@@ -292,6 +296,17 @@ async function runJob(jobId: string, params: {
         return action;
       });
       let nextCumulativeActions = [...cumulativeActions, ...newValidatedEvents];
+
+      // Append new validated annotations
+      const existingAnnIds = new Set(cumulativeAnnotations.map(a => a.id));
+      const newValidatedAnnotations = (phaseBResult.result.validated_segment_annotations || []).map(ann => {
+        if (!ann.id || existingAnnIds.has(ann.id)) {
+          ann.id = `ann_${uuidv4().substring(0, 8)}`;
+        }
+        existingAnnIds.add(ann.id);
+        return ann;
+      });
+      let nextCumulativeAnnotations = [...cumulativeAnnotations, ...newValidatedAnnotations];
       
       // Phase C: Narrative Synthesis
       chunk.status = 'analyzing_phase_c';
@@ -305,12 +320,18 @@ async function runJob(jobId: string, params: {
         const t = parseMMSS(a.timestamp);
         return t >= contextStart && t <= contextEnd;
       });
+      
+      const relevantAnnotations = nextCumulativeAnnotations.filter(a => {
+        const t = parseMMSS(a.timestamp);
+        return t >= contextStart && t <= contextEnd;
+      });
 
       const newNarrativeStepsRaw = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
         relevantActions,
+        relevantAnnotations,
         customContext,
         apiKey,
         cumulativeNarrative.slice(-3),
@@ -340,6 +361,11 @@ async function runJob(jobId: string, params: {
       for (let j = cumulativeActions.length; j < nextCumulativeActions.length; j++) {
         nextCumulativeActions[j].chunkIndex = i;
       }
+
+      const newAnnotationsCount = nextCumulativeAnnotations.length - cumulativeAnnotations.length;
+      for (let j = cumulativeAnnotations.length; j < nextCumulativeAnnotations.length; j++) {
+        nextCumulativeAnnotations[j].chunkIndex = i;
+      }
       
       chunk.phaseBAddedCount = newActionsCount;
       chunk.actionCount = newActionsCount;
@@ -350,6 +376,9 @@ async function runJob(jobId: string, params: {
       
       cumulativeActions = nextCumulativeActions;
       state.actions = cumulativeActions;
+
+      cumulativeAnnotations = nextCumulativeAnnotations;
+      state.annotations = cumulativeAnnotations;
 
       cumulativeNarrative = [...cumulativeNarrative, ...newNarrativeSteps];
       state.narrativeSteps = cumulativeNarrative;
@@ -363,6 +392,7 @@ async function runJob(jobId: string, params: {
     addLog('info', 'Validating narrative-action link coverage...');
 
     const allActionIds = new Set(cumulativeActions.map(a => a.id));
+    const allAnnotationIds = new Set(cumulativeAnnotations.map(a => a.id));
     let brokenLinks = 0;
     let unlinkedSteps = 0;
 
@@ -373,7 +403,15 @@ async function runJob(jobId: string, params: {
       brokenLinks += broken;
       step.linked_visual_action_ids = validLinks;
 
-      if (validLinks.length === 0 && step.insight_type !== 'rationale') {
+      // Remove references to IDs that don't exist in the annotation set
+      if (step.linked_annotation_ids) {
+        const validAnnotationLinks = step.linked_annotation_ids.filter((id: string) => allAnnotationIds.has(id));
+        const brokenAnnotations = step.linked_annotation_ids.length - validAnnotationLinks.length;
+        brokenLinks += brokenAnnotations;
+        step.linked_annotation_ids = validAnnotationLinks;
+      }
+
+      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && step.insight_type !== 'rationale') {
         unlinkedSteps++;
       }
     }
