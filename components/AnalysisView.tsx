@@ -187,7 +187,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Local chunk computation removed as it's now handled by the server
 
   useEffect(() => {
-    const isRunning = procState.status === 'running_visual';
+    const isRunning = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
     if (isRunning) {
       timerRef.current = setInterval(() => {
         if (stateRef.current.startTime) {
@@ -430,7 +430,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     return `${h > 0 ? h + ':' : ''}${m % 60}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
-  const isVisualRunning = procState.status === 'running_visual';
+  const isVisualRunning = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
 
   // Auto-hide sidebar when completed
   useEffect(() => {
@@ -618,6 +618,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                         'text-gray-500 dark:text-gray-400'
                     }`}>
                       {procState.status === 'running_visual' ? 'VISUAL ANALYSIS' :
+                       procState.status === 'running_narrative' ? 'NARRATIVE SYNTHESIS' :
+                       procState.status === 'running_dedup' ? 'GLOBAL DEDUPLICATION' :
                        procState.status.toUpperCase()}
                     </span>
                   </div>

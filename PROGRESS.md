@@ -33,7 +33,7 @@ If you are a coding agent tasked with upgrading this application, pay attention 
 
 ### ⚠️ B. Float Handling in Spatial Coordinates
 *   **Issue:** Gemini occasionally ignores instructions to return pure integers for the `spatial_bounding_box` and returns floats (e.g., `15.5`). 
-*   **Workaround Implemented:** The schema in `geminiService.ts` was updated from `Type.INTEGER` to `Type.NUMBER` to prevent strict JSON schema validation from crashing the request.
+*   **Workaround Implemented:** The schema in `geminiService.ts` was updated from `z.number().int()` to `z.number()` to prevent strict JSON schema validation from crashing the request.
 *   **Future Fix:** The Playwright compiler currently uses `Math.round()` to fix this. Keep this in mind if building new exporters (like Selenium or Puppeteer).
 
 ### ⚠️ C. Token Cost & Context Window Limits

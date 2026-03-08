@@ -38,7 +38,7 @@ Because video analysis takes minutes, the React frontend submits jobs to the Exp
     fileData: { fileUri: videoUrl, ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' }) },
     videoMetadata: { startOffset: `${startSec}s`, endOffset: `${endSec}s` }
     ```
-*   **Schema Resilience:** Bounding boxes must use `Type.NUMBER` (not `INTEGER`) because Gemini occasionally returns float values (e.g., `150.5`).
+*   **Schema Resilience:** Bounding boxes must use `z.number()` (not `z.number().int()`) because Gemini occasionally returns float values (e.g., `150.5`).
 
 ### Rule C: Automation Compilation (Playwright)
 *   **Viewport Normalization:** The spatial extraction prompts force Gemini to map the screen to a `1000x1000` grid. Therefore, `ResultsTimeline.tsx` hardcodes `page.setViewportSize({ width: 1000, height: 1000 })` so Cartesian coordinates map 1:1.
