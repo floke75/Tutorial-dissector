@@ -510,11 +510,11 @@ async function runJob(jobId: string, params: {
             if (candidates.length > 1) {
               // Tie-breaker: find the most similar original action
               keptAction = candidates.reduce((best, current) => {
-                const scoreCurrent = (current.target.element === oldAction.target.element ? 2 : 0) + 
-                                     (current.target.panel === oldAction.target.panel ? 1 : 0) +
+                const scoreCurrent = (current.target?.element === oldAction.target?.element ? 2 : 0) + 
+                                     (current.target?.panel === oldAction.target?.panel ? 1 : 0) +
                                      (current.detail === oldAction.detail ? 3 : 0);
-                const scoreBest = (best.target.element === oldAction.target.element ? 2 : 0) + 
-                                  (best.target.panel === oldAction.target.panel ? 1 : 0) +
+                const scoreBest = (best.target?.element === oldAction.target?.element ? 2 : 0) + 
+                                  (best.target?.panel === oldAction.target?.panel ? 1 : 0) +
                                   (best.detail === oldAction.detail ? 3 : 0);
                 return scoreCurrent > scoreBest ? current : best;
               });

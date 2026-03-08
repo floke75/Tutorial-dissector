@@ -444,6 +444,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             }
           } catch (e: any) {
             if (timeoutId) clearTimeout(timeoutId);
+            
+            // Only retry on network-level failures
+            if (e instanceof SyntaxError) {
+              handleLog('error', 'Received malformed response from server. Stopping poll.');
+              setProcState(prev => ({ ...prev, status: 'error' }));
+              return;
+            }
+            
             consecutiveErrors++;
             
             if (e.name === 'AbortError') {

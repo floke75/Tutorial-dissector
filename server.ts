@@ -11,7 +11,10 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
+  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
+    console.warn("WARNING: CORS_ORIGIN is not set in production. Cross-origin requests may be rejected.");
+  }
+  app.use(cors({ origin: process.env.CORS_ORIGIN || (process.env.NODE_ENV !== 'production' ? 'http://localhost:3000' : undefined) }));
   app.use(express.json());
 
   // API Routes
