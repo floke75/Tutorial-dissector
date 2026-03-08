@@ -313,7 +313,8 @@ rule AnalyzeNarrationSegment {
     let annotation_context = project.annotations where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
 
-    -- External AI Synthesis produces NarrativeSteps that link to ActionItems via ID
+    -- Both visual_context and annotation_context are provided as context
+    -- to the External AI Synthesis that produces synthesized_steps
     ensures:
         for step in synthesized_steps:
             NarrativeStep.created(
