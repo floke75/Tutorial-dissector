@@ -21,7 +21,7 @@ This pass focuses purely on *deterministic spatial events and state mutations*. 
     *   **Output:** Array of unlinked `ActionItem` objects with normalized `[ymin, xmin, ymax, xmax]` bounding boxes and exact `input_data`.
 *   **Phase B (Stateful Cognition):**
     *   **Input:** The output of Phase A + Chat History of all previous Phase B chunks.
-    *   **Action:** Gemini is prompted to deduplicate actions within the overlap window, assign unique UUID-based IDs (e.g., `evt_a1b2c3d4`), flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
+    *   **Action:** Gemini is prompted to deduplicate actions within the overlap window, assign unique truncated-UUID-based IDs (e.g., `evt_a1b2c3d4`), flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
 
 ### Phase C: Hierarchical BDD Mapping (The Intent Track)
 This phase runs *per chunk*, immediately after Phase B.
