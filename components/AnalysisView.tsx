@@ -206,7 +206,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Clean up polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, []);
 
@@ -349,13 +349,27 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setProcState(prev => ({ ...prev, jobId }));
         
         // Start polling
-        if (pollingRef.current) clearInterval(pollingRef.current);
+        if (pollingRef.current) clearTimeout(pollingRef.current);
         
-        pollingRef.current = setInterval(async () => {
+        let consecutiveErrors = 0;
+        const MAX_ERRORS = 15; // Allow for up to ~1-2 minutes of network interruption before failing
+
+        const poll = async () => {
           try {
-            const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { cache: 'no-store' });
-            if (!pollRes.ok) throw new Error("Failed to fetch job state");
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout per request
+            
+            const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { 
+              cache: 'no-store',
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (!pollRes.ok) throw new Error(`HTTP error! status: ${pollRes.status}`);
             const state = await pollRes.json();
+            
+            // Success! Reset error counter
+            consecutiveErrors = 0;
             
             // Update local state with server state
             setProcState(prev => ({
@@ -410,17 +424,44 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             }
             
             if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
-              if (pollingRef.current) clearInterval(pollingRef.current);
+              if (pollingRef.current) clearTimeout(pollingRef.current);
               if (state.status === 'error') {
                 handleLog('error', `Server job failed: ${state.error}`);
               } else if (state.status === 'completed') {
                 handleLog('success', 'Workflow analysis completed successfully!');
               }
+              return; // Stop polling
             }
-          } catch (e) {
-            console.error("Polling error:", e);
+          } catch (e: any) {
+            consecutiveErrors++;
+            
+            if (e.name === 'AbortError') {
+              console.warn(`Polling request timed out (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
+              handleLog('warn', `Network timeout while fetching progress (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
+            } else {
+              console.error(`Polling error (attempt ${consecutiveErrors}/${MAX_ERRORS}):`, e);
+              // Only log to UI every 3 errors to avoid spamming the log
+              if (consecutiveErrors % 3 === 1) {
+                handleLog('warn', `Network error while fetching progress. Retrying...`);
+              }
+            }
+            
+            if (consecutiveErrors >= MAX_ERRORS) {
+              handleLog('error', 'Lost connection to server after multiple attempts. Please check your network or restart the job.');
+              setProcState(prev => ({ ...prev, status: 'error' }));
+              return; // Stop polling
+            }
           }
-        }, 2000);
+          
+          // Exponential backoff for errors, standard 2000ms for success
+          const nextDelay = consecutiveErrors > 0 
+            ? Math.min(2000 * Math.pow(1.5, consecutiveErrors), 15000) 
+            : 2000;
+            
+          pollingRef.current = setTimeout(poll, nextDelay);
+        };
+        
+        pollingRef.current = setTimeout(poll, 2000);
         
       } catch (err: any) {
         console.error("Job failed to start:", err);
@@ -462,7 +503,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       handleLog('warn', 'Sending cancel request to server...');
       await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
       
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (pollingRef.current) clearTimeout(pollingRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       
       setProcState(prev => ({
