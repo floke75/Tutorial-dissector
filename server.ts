@@ -84,6 +84,9 @@ async function startServer() {
   });
 
   app.get("/api/process/:jobId", (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const state = getJobState(req.params.jobId);
     if (!state) {
       return res.status(404).json({ error: "Job not found" });

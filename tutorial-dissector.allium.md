@@ -292,7 +292,7 @@ rule CompletePhaseC {
     ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
     
     -- Accumulate learned context
-    ensures: chunk.project.proc_state.learned_context = chunk.project.proc_state.learned_context + "\n- " + learned_insights
+    ensures: if learned_insights != null then chunk.project.proc_state.learned_context = chunk.project.proc_state.learned_context + "\n- " + learned_insights
     
     -- Add Narrative Steps (Intent layer)
     ensures:
