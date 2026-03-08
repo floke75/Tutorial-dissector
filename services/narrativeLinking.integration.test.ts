@@ -11,7 +11,7 @@ describe('Narrative Linking & Output Quality Integration Tests', () => {
       return;
     }
 
-    const videoUrl = 'https://youtu.be/RHx-PGeh9xk?is=KcxIQuIjAfBbV_Iz';
+    const videoUrl = 'https://youtu.be/RHx-PGeh9xk';
     const startSec = 0;
     const endSec = 30;
 

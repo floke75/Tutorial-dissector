@@ -132,10 +132,10 @@ async function main() {
     const apiKey = data.apiKey;
 
     // Short video test (single chunk) - 15 seconds
-    await runTest("Short Video (Single Chunk)", "https://youtu.be/RHx-PGeh9xk?is=KcxIQuIjAfBbV_Iz", "00:15", 15, 0, apiKey);
+    await runTest("Short Video (Single Chunk)", "https://youtu.be/RHx-PGeh9xk", "00:15", 15, 0, apiKey);
     
     // Multi-chunk test (simulating a longer video, but keeping it short enough to run in a test) - 30 seconds, 15s chunks, 5s overlap
-    await runTest("Multi-Chunk Video", "https://youtu.be/RHx-PGeh9xk?is=KcxIQuIjAfBbV_Iz", "00:30", 15, 5, apiKey);
+    await runTest("Multi-Chunk Video", "https://youtu.be/RHx-PGeh9xk", "00:30", 15, 5, apiKey);
     
     console.log("\n🎉 All verification tests completed.");
     process.exit(0);

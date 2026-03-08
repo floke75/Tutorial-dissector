@@ -353,7 +353,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         
         pollingRef.current = setInterval(async () => {
           try {
-            const pollRes = await fetch(`/api/process/${jobId}`);
+            const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { cache: 'no-store' });
             if (!pollRes.ok) throw new Error("Failed to fetch job state");
             const state = await pollRes.json();
             
@@ -363,7 +363,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               status: state.status,
               progress: state.progress,
               currentChunkIndex: state.currentChunkIndex,
-              totalActions: state.actions.length,
+              totalActions: state.actions?.length || 0,
               duration: state.duration
             }));
             
@@ -390,7 +390,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             // Append new logs
             if (state.logs && state.logs.length > 0) {
               setProcState(prev => {
-                const existingLogIds = new Set(prev.logs.map(l => l.id));
+                const existingLogIds = new Set((prev.logs || []).map(l => l.id));
                 const newLogs = state.logs
                   .filter((l: any) => !existingLogIds.has(l.id))
                   .map((l: any, idx: number) => {
@@ -403,7 +403,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   });
                 return {
                   ...prev,
-                  logs: [...prev.logs, ...newLogs]
+                  logs: [...(prev.logs || []), ...newLogs]
                 };
               });
             }

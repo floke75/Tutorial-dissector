@@ -389,7 +389,6 @@ async function runJob(jobId: string, params: {
         nextCumulativeActions[j].chunkIndex = i;
       }
 
-      const newAnnotationsCount = nextCumulativeAnnotations.length - cumulativeAnnotations.length;
       for (let j = cumulativeAnnotations.length; j < nextCumulativeAnnotations.length; j++) {
         nextCumulativeAnnotations[j].chunkIndex = i;
       }
