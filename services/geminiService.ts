@@ -1,159 +1,164 @@
 
-import { GoogleGenAI, Type } from '@google/genai';
-import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT } from '../constants';
-import { ActionItem, PhaseBResponse, NarrativeStep, LogLevel } from '../types';
-import { formatMMSS } from '../utils/timeUtils';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
+import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
+import { formatMMSS } from '../utils/timeUtils.ts';
 
 // Helper for exponential backoff
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper to prevent stalled API calls from hanging the job indefinitely
+function withTimeout<T>(promise: Promise<T>, ms: number, operationName: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Operation '${operationName}' timed out after ${ms / 1000}s`));
+    }, ms);
+  });
+
+  return Promise.race([
+    promise,
+    timeoutPromise
+  ]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
 // Initialize clients
-const getClient = () => {
+const getClient = (apiKey: string) => {
+  if (!apiKey) {
+    throw new Error("API key must be set when using the Gemini API.");
+  }
   return new GoogleGenAI({ 
-    apiKey: process.env.API_KEY,
-    httpOptions: { timeout: 300000 } // 5 minutes timeout for large video chunks
+    apiKey: apiKey
   });
 };
 
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
+
+export function fixNullable(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(fixNullable);
+  
+  const newSchema = { ...schema };
+  delete newSchema.$schema; // Gemini API does not need $schema
+  
+  for (const key in newSchema) {
+    newSchema[key] = fixNullable(newSchema[key]);
+  }
+  
+  if (newSchema.anyOf && newSchema.anyOf.length === 2) {
+    const nullIndex = newSchema.anyOf.findIndex((s: any) => s.type === 'null');
+    if (nullIndex !== -1) {
+      const otherSchema = newSchema.anyOf[1 - nullIndex];
+      if (otherSchema.type) {
+        return {
+          ...otherSchema,
+          type: [otherSchema.type, 'null']
+        };
+      }
+    }
+  }
+  return newSchema;
+}
+
 // --- SCHEMA DEFINITIONS FOR STRUCTURED OUTPUT ---
 
-const actionTargetSchema = {
-  type: Type.OBJECT,
-  properties: {
-    element: { type: Type.STRING },
-    location: { type: Type.STRING },
-    panel: { type: Type.STRING },
-    visual: { type: Type.STRING },
-    spatial_bounding_box: { 
-      type: Type.ARRAY, 
-      items: { type: Type.NUMBER }, // Updated to NUMBER for float resilience
-      description: "Array of 4 numbers: [ymin, xmin, ymax, xmax] normalized to 1000"
-    }
-  },
-  required: ["element", "location", "panel", "visual"]
-};
+export const actionTargetSchema = z.object({
+  element: z.string(),
+  location: z.string(),
+  panel: z.string(),
+  visual: z.string(),
+  spatial_bounding_box: z.array(z.number()).describe("Array of 4 numbers: [ymin, xmin, ymax, xmax] normalized to 1000").optional()
+});
 
-const uiComponentSchema = {
-  type: Type.OBJECT,
-  properties: {
-    type: { type: Type.STRING },
-    label: { type: Type.STRING },
-    state_before: { type: Type.STRING },
-    state_after: { type: Type.STRING },
-    action_value: { type: Type.STRING }
-  },
-  required: ["type", "label"]
-};
+export const uiComponentSchema = z.object({
+  type: z.enum(['button', 'menu_item', 'tab', 'dropdown', 'checkbox', 'radio', 'input_field', 'toggle', 'link', 'modal', 'panel', 'other']),
+  label: z.string(),
+  state_before: z.enum(['default', 'hover', 'active', 'disabled', 'checked', 'unchecked', 'hidden', 'visible', 'expanded', 'collapsed', 'selected', 'unselected', 'focused', 'unfocused', 'error', 'loading', 'open', 'closed', 'other']).describe("The state of the component BEFORE the action.").optional(),
+  state_after: z.enum(['default', 'hover', 'active', 'disabled', 'checked', 'unchecked', 'hidden', 'visible', 'expanded', 'collapsed', 'selected', 'unselected', 'focused', 'unfocused', 'error', 'loading', 'open', 'closed', 'other']).describe("The state of the component AFTER the action.").optional(),
+  action_value: z.string().optional()
+});
 
-const inputDataSchema = {
-  type: Type.OBJECT,
-  properties: {
-    keys_pressed: { type: Type.ARRAY, items: { type: Type.STRING } },
-    text_typed: { type: Type.STRING }
-  }
-};
+export const inputDataSchema = z.object({
+  keys_pressed: z.array(z.string()).optional(),
+  text_typed: z.string().optional()
+});
 
-const uiContextSnapshotSchema = {
-  type: Type.OBJECT,
-  properties: {
-    active_panel: { type: Type.STRING },
-    active_tool: { type: Type.STRING },
-    open_dialogs: { type: Type.ARRAY, items: { type: Type.STRING } }
-  },
-  required: ["active_panel", "active_tool", "open_dialogs"]
-};
+export const uiContextSnapshotSchema = z.object({
+  active_panel: z.string(),
+  active_tool: z.string(),
+  open_dialogs: z.array(z.string())
+});
 
-const actionItemSchema = {
-  type: Type.OBJECT,
-  properties: {
-    id: { type: Type.STRING },
-    timestamp: { type: Type.STRING },
-    action_type: { type: Type.STRING },
-    actor: { type: Type.STRING },
-    target: actionTargetSchema,
-    interacted_components: {
-      type: Type.ARRAY,
-      items: uiComponentSchema
-    },
-    ui_context: uiContextSnapshotSchema,
-    input_data: inputDataSchema,
-    is_error_recovery: { type: Type.BOOLEAN },
-    detail: { type: Type.STRING },
-    result: { type: Type.STRING },
-    context_note: { type: Type.STRING },
-    confidence: { type: Type.STRING }
-  },
-  required: ["timestamp", "action_type", "actor", "target", "detail", "result", "context_note", "confidence"]
-};
+export const actionItemSchema = z.object({
+  id: z.string().optional(),
+  timestamp: z.string(),
+  action_type: z.enum(['click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'keyboard_shortcut', 'hover', 'select', 'menu_navigate', 'system_event', 'ui_response', 'transition']),
+  actor: z.enum(['user', 'system']),
+  target: actionTargetSchema.nullable().optional(),
+  interacted_components: z.array(uiComponentSchema).nullable().optional(),
+  ui_context: uiContextSnapshotSchema.nullable().optional(),
+  input_data: inputDataSchema.nullable().optional(),
+  is_error_recovery: z.boolean().nullable().optional(),
+  detail: z.string(),
+  result: z.string(),
+  context_note: z.string(),
+  confidence: z.enum(['high', 'medium', 'low'])
+});
 
-const phaseASchema = {
-  type: Type.ARRAY,
-  items: actionItemSchema
-};
+export const videoAnnotationSchema = z.object({
+  id: z.string().optional(),
+  timestamp: z.string(),
+  annotation_type: z.string(),
+  content: z.string(),
+  relevance: z.string()
+});
 
-const uiStateSchema = {
-  type: Type.OBJECT,
-  properties: {
-    application: { type: Type.STRING },
-    active_file: { type: Type.STRING },
-    visible_panels: { type: Type.ARRAY, items: { type: Type.STRING } },
-    active_tool: { type: Type.STRING },
-    open_dialogs: { type: Type.ARRAY, items: { type: Type.STRING } },
-    other_state: { type: Type.STRING }
-  },
-  required: ["application", "active_file", "visible_panels", "active_tool", "open_dialogs", "other_state"]
-};
+export const phaseASchema = z.object({
+  actions: z.array(actionItemSchema),
+  annotations: z.array(videoAnnotationSchema)
+});
 
-const phaseBResponseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    chunk_processed: {
-      type: Type.OBJECT,
-      properties: {
-        number: { type: Type.INTEGER },
-        primary_window: { type: Type.STRING }
-      },
-      required: ["number", "primary_window"]
-    },
-    new_actions_added: { type: Type.INTEGER },
-    duplicates_removed: { type: Type.INTEGER },
-    conflicts_resolved: { type: Type.ARRAY, items: { type: Type.STRING } },
-    current_ui_state: uiStateSchema,
-    cumulative_action_count: { type: Type.INTEGER },
-    validated_segment_events: { type: Type.ARRAY, items: actionItemSchema },
-    merged_log_excerpt: { type: Type.ARRAY, items: actionItemSchema }
-  },
-  required: [
-    "chunk_processed", 
-    "new_actions_added", 
-    "duplicates_removed", 
-    "conflicts_resolved", 
-    "current_ui_state", 
-    "cumulative_action_count", 
-    "validated_segment_events"
-  ]
-};
+export const uiStateSchema = z.object({
+  application: z.string(),
+  active_file: z.string(),
+  visible_panels: z.array(z.string()),
+  active_tool: z.string(),
+  open_dialogs: z.array(z.string()),
+  other_state: z.string()
+});
 
-const narrativeStepSchema = {
-  type: Type.OBJECT,
-  properties: {
-    id: { type: Type.STRING },
-    timestamp: { type: Type.STRING },
-    intent: { type: Type.STRING },
-    precondition: { type: Type.STRING },
-    explanation: { type: Type.STRING },
-    postcondition: { type: Type.STRING },
-    insight_type: { type: Type.STRING },
-    topics: { type: Type.ARRAY, items: { type: Type.STRING } },
-    linked_visual_action_ids: { type: Type.ARRAY, items: { type: Type.STRING } }
-  },
-  required: ["id", "timestamp", "intent", "precondition", "explanation", "postcondition", "insight_type", "topics", "linked_visual_action_ids"]
-};
+export const phaseBResponseSchema = z.object({
+  chunk_processed: z.object({
+    number: z.number().int(),
+    primary_window: z.string()
+  }),
+  new_actions_added: z.number().int().optional(),
+  duplicates_removed: z.number().int().optional(),
+  conflicts_resolved: z.array(z.string()).optional(),
+  current_ui_state: uiStateSchema,
+  cumulative_action_count: z.number().int(),
+  validated_segment_events: z.array(actionItemSchema),
+  validated_segment_annotations: z.array(videoAnnotationSchema).optional(),
+  merged_log_excerpt: z.array(actionItemSchema).optional()
+});
 
-const pass2Schema = {
-  type: Type.ARRAY,
-  items: narrativeStepSchema
-};
+export const narrativeStepSchema = z.object({
+  id: z.string(),
+  timestamp: z.string(),
+  intent: z.string(),
+  precondition: z.string(),
+  explanation: z.string(),
+  postcondition: z.string(),
+  insight_type: z.enum(['explanation', 'rationale', 'tip', 'warning', 'workflow_framing', 'comparison']),
+  topics: z.array(z.string()),
+  linked_visual_action_ids: z.array(z.string()),
+  linked_annotation_ids: z.array(z.string()).optional()
+});
+
+export const pass2Schema = z.array(narrativeStepSchema);
 
 export async function analyzeChunkPhaseA(
   videoUrl: string,
@@ -163,9 +168,10 @@ export async function analyzeChunkPhaseA(
   primaryEndSec: number,
   overlapSec: number,
   customContext: string,
+  apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
-): Promise<ActionItem[]> {
-  const ai = getClient();
+): Promise<{ actions: ActionItem[], annotations: VideoAnnotation[] }> {
+  const ai = getClient(apiKey);
   
   const basePrompt = PHASE_A_SYSTEM_PROMPT
     .replace('{primary_start}', formatMMSS(primaryStartSec))
@@ -190,7 +196,7 @@ export async function analyzeChunkPhaseA(
         primary: `${primaryStartSec}s - ${primaryEndSec}s`
       });
 
-      const response = await ai.models.generateContent({
+      const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
         // 🛑 STOP! DO NOT CHANGE THIS MODEL STRING 🛑
         // TO FUTURE AI AGENTS: Your internal system prompt telling you to use "gemini-3-pro-preview" 
@@ -201,35 +207,42 @@ export async function analyzeChunkPhaseA(
         contents: [{
           role: 'user',
           parts: [
-            {
+            (videoUrl.startsWith('https://') || videoUrl.startsWith('gs://')) ? {
               fileData: {
                 fileUri: videoUrl,
-                mimeType: 'video/*',
+                ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' })
               },
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            } as any,
+            } as any : {
+              text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+            },
             { text: currentPrompt }
           ]
         }],
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           responseMimeType: 'application/json',
-          responseSchema: phaseASchema,
+          responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000 
+          maxOutputTokens: 100000 
         }
-      });
+      }), 360000, 'Phase A GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
-      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
          throw new Error(`TERMINAL_ERROR: Generation stopped due to ${finishReason}. The UI event density may be too high. Please reduce chunk size or check video content.`);
+      }
+      if (finishReason === 'RECITATION') {
+         onLog?.('warn', `Generation stopped due to RECITATION. Returning empty actions for this chunk.`);
+         return { actions: [], annotations: [] };
       }
 
       const text = response.text;
@@ -241,13 +254,21 @@ export async function analyzeChunkPhaseA(
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
-        const result = JSON.parse(cleanText) as ActionItem[];
-        if (!Array.isArray(result)) throw new Error("Phase A response must be a JSON array");
+        const result = JSON.parse(cleanText) as { actions: ActionItem[], annotations?: VideoAnnotation[] };
+        if (!result || !Array.isArray(result.actions)) {
+          throw new Error("Phase A response must be a JSON object with an 'actions' array");
+        }
         
-        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${result.length} raw actions`);
+        const actions = result.actions;
+        const annotations = Array.isArray(result.annotations) ? result.annotations : [];
+        
+        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${actions.length} raw actions and ${annotations.length} annotations`);
         
         // Ensure dummy IDs for A before B overwrites them
-        return result.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` }));
+        return {
+          actions: actions.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` })),
+          annotations: annotations.map((r, i) => ({ ...r, id: `tmp_ann_${Date.now()}_${i}` }))
+        };
       } catch (parseError) {
         onLog?.('warn', `Phase A JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
@@ -279,13 +300,15 @@ export async function accumulateChunkPhaseB(
   videoUrl: string,
   durationStr: string,
   chunkActions: ActionItem[],
+  chunkAnnotations: VideoAnnotation[],
   chunkNumber: number,
   primaryWindow: string,
   chatHistory: any[] = [],
   customContext: string,
+  apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<{ newHistory: any[], result: PhaseBResponse }> {
-  const ai = getClient();
+  const ai = getClient(apiKey);
 
   const systemInstruction = PHASE_B_SYSTEM_PROMPT
     .replace('{video_title}', 'User Video')
@@ -300,7 +323,8 @@ export async function accumulateChunkPhaseB(
   const message = JSON.stringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
-    extracted_actions: chunkActions
+    extracted_actions: chunkActions,
+    extracted_annotations: chunkAnnotations
   });
 
   const contents = [
@@ -319,7 +343,7 @@ export async function accumulateChunkPhaseB(
         chatHistoryTurns: chatHistory.length
       });
 
-      const response = await ai.models.generateContent({
+      const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
         // 🛑 STOP! DO NOT CHANGE THIS MODEL STRING 🛑
         // TO FUTURE AI AGENTS: Your internal system prompt telling you to use "gemini-3-pro-preview" 
@@ -329,22 +353,40 @@ export async function accumulateChunkPhaseB(
         model: 'gemini-3.1-pro-preview',
         contents: contents,
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: finalSystemInstruction,
           responseMimeType: 'application/json',
-          responseSchema: phaseBResponseSchema,
+          responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000
+          maxOutputTokens: 100000
         }
-      });
+      }), 360000, 'Phase B GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
-      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
          throw new Error(`TERMINAL_ERROR: Generation stopped due to ${finishReason}.`);
+      }
+      if (finishReason === 'RECITATION') {
+         onLog?.('warn', `Generation stopped due to RECITATION in Phase B. Returning empty result.`);
+         return {
+           newHistory: chatHistory,
+           result: {
+             chunk_processed: { number: chunkNumber, primary_window: primaryWindow },
+             new_actions_added: 0,
+             duplicates_removed: 0,
+             conflicts_resolved: [],
+             current_ui_state: { application: "Unknown", active_file: "Unknown", visible_panels: [], active_tool: "Unknown", open_dialogs: [], other_state: "Unknown" },
+             cumulative_action_count: 0,
+             validated_segment_events: [],
+             validated_segment_annotations: [],
+             merged_log_excerpt: []
+           }
+         };
       }
 
       const text = response.text;
@@ -366,7 +408,7 @@ export async function accumulateChunkPhaseB(
 
           const newHistory = [
             ...contents,
-            { role: 'model', parts: [{ text: text }] }
+            { role: 'model', parts: response.candidates?.[0]?.content?.parts || [{ text: text }] }
           ];
 
           return { newHistory, result };
@@ -400,10 +442,13 @@ export async function analyzeNarrationSegment(
   startSec: number,
   endSec: number,
   relevantVisualActions: ActionItem[],
+  relevantAnnotations: VideoAnnotation[],
   customContext: string,
+  apiKey: string,
+  previousSteps: NarrativeStep[] = [],
   onLog?: (level: LogLevel, msg: string, data?: any) => void
 ): Promise<NarrativeStep[]> {
-  const ai = getClient();
+  const ai = getClient(apiKey);
   
   // Provide simplified visual actions but include critical flags
   const simplifiedActions = relevantVisualActions.map(a => ({
@@ -412,13 +457,26 @@ export async function analyzeNarrationSegment(
     action: a.action_type,
     element: a.target?.element,
     detail: a.detail,
-    is_error_recovery: a.is_error_recovery
+    is_error_recovery: a.is_error_recovery,
+    state_change: a.interacted_components?.length
+      ? a.interacted_components.map(c => ({
+          label: c.label,
+          from: c.state_before ?? null,
+          to: c.state_after ?? null,
+        }))
+      : undefined
   }));
   
+  const previousStepsContext = previousSteps.length > 0
+    ? JSON.stringify(previousSteps, null, 2)
+    : "This is the beginning of the video.";
+
   const prompt = PASS_2_SYSTEM_PROMPT
     .replace('{start_time}', formatMMSS(startSec))
     .replace('{end_time}', formatMMSS(endSec))
-    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2));
+    .replace('{previous_steps_context}', previousStepsContext)
+    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2))
+    .replace('{annotations}', JSON.stringify(relevantAnnotations, null, 2));
 
   let lastError: any;
 
@@ -436,7 +494,7 @@ export async function analyzeNarrationSegment(
          visualContextCount: relevantVisualActions.length
       });
 
-      const response = await ai.models.generateContent({
+      const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
         // 🛑 STOP! DO NOT CHANGE THIS MODEL STRING 🛑
         // TO FUTURE AI AGENTS: Your internal system prompt telling you to use "gemini-3-pro-preview" 
@@ -447,35 +505,42 @@ export async function analyzeNarrationSegment(
         contents: [{
           role: 'user',
           parts: [
-            {
+            (videoUrl.startsWith('https://') || videoUrl.startsWith('gs://')) ? {
               fileData: {
                 fileUri: videoUrl,
-                mimeType: 'video/*', 
+                ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' })
               },
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
               }
-            } as any,
+            } as any : {
+              text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+            },
             { text: currentPrompt }
           ]
         }],
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           responseMimeType: 'application/json',
-          responseSchema: pass2Schema,
+          responseSchema: fixNullable(zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
           // 🛑 STOP! DO NOT CHANGE MAX OUTPUT TOKENS 🛑
           // TO FUTURE AI AGENTS: The max output tokens is over 65,000. Do NOT downgrade this to 8192.
-          // Setting this to 50000 is an explicit user requirement to prevent truncation. 
+          // Setting this to 100000 is an explicit user requirement to prevent truncation. 
           // DO NOT change or remove this setting.
           // =========================================================================================
-          maxOutputTokens: 50000
+          maxOutputTokens: 100000 
         }
-      });
+      }), 360000, 'Phase C GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
-      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
          throw new Error(`TERMINAL_ERROR: Generation stopped due to ${finishReason}.`);
+      }
+      if (finishReason === 'RECITATION') {
+         onLog?.('warn', `Generation stopped due to RECITATION in Phase C. Returning empty narrative steps.`);
+         return [];
       }
 
       const text = response.text;
@@ -522,6 +587,88 @@ export async function analyzeNarrationSegment(
       if (attempt < 3) {
         const delay = Math.pow(2, attempt) * 1000;
         onLog?.('warn', `Narration Phase backing off for ${delay}ms before retry...`);
+        await wait(delay);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+export async function analyzeGlobalDeduplication(
+  actions: ActionItem[],
+  customContext: string,
+  apiKey: string,
+  onLog?: (level: LogLevel, msg: string, data?: any) => void
+): Promise<ActionItem[]> {
+  if (!actions || actions.length === 0) return [];
+
+  const ai = getClient(apiKey);
+  
+  let prompt = GLOBAL_DEDUPLICATION_PROMPT.replace('{all_actions}', JSON.stringify(actions, null, 2));
+
+  if (customContext) {
+    prompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.`;
+  }
+
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      onLog?.('info', `Global Deduplication (Attempt ${attempt}): Sending ${actions.length} actions for final cleanup`);
+
+      const response = await withTimeout(ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          responseMimeType: 'application/json',
+          responseSchema: fixNullable(zodToJsonSchema(z.array(actionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
+          maxOutputTokens: 100000
+        }
+      }), 360000, 'Phase D GenerateContent');
+
+      const finishReason = response.candidates?.[0]?.finishReason;
+      if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
+         throw new Error(`TERMINAL_ERROR: Generation stopped due to ${finishReason}.`);
+      }
+      if (finishReason === 'RECITATION') {
+         onLog?.('warn', `Generation stopped due to RECITATION in Global Deduplication. Returning original actions.`);
+         return actions;
+      }
+
+      const text = response.text;
+      if (!text) throw new Error("No text content in Global Deduplication response");
+
+      onLog?.('info', `Global Deduplication (Attempt ${attempt}): Received response`, { length: text.length });
+
+      const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      
+      try {
+        const result = JSON.parse(cleanText) as ActionItem[];
+        if (!Array.isArray(result)) throw new Error("Global Deduplication response must be a JSON array");
+        
+        const removedCount = actions.length - result.length;
+        onLog?.('success', `Global Deduplication (Attempt ${attempt}): Removed ${removedCount} duplicates. Final count: ${result.length}`);
+        
+        return result;
+      } catch (parseError) {
+        onLog?.('warn', `Global Deduplication JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
+        throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
+      }
+
+    } catch (error: any) {
+      onLog?.('error', `Global Deduplication Attempt ${attempt} failed`, { error: String(error) });
+      lastError = error;
+
+      if (error.toString().includes('400') || error.toString().includes('403') || error.toString().includes('TERMINAL_ERROR')) {
+         onLog?.('error', `Terminal API Error in Global Deduplication`, { message: error.toString() });
+         throw error;
+      }
+
+      if (attempt < 3) {
+        const delay = Math.pow(2, attempt) * 1000;
+        onLog?.('warn', `Global Deduplication backing off for ${delay}ms before retry...`);
         await wait(delay);
       }
     }

@@ -25,6 +25,7 @@ export const ChunkVisualizer: React.FC<ChunkVisualizerProps> = ({ chunks }) => {
           let colorClass = 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-500';
           if (chunk.status === 'analyzing_phase_a') colorClass = 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-500 text-blue-600 dark:text-blue-300 animate-pulse';
           if (chunk.status === 'analyzing_phase_b') colorClass = 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-500 text-purple-600 dark:text-purple-300 animate-pulse';
+          if (chunk.status === 'analyzing_phase_c') colorClass = 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-500 text-indigo-600 dark:text-indigo-300 animate-pulse';
           if (chunk.status === 'completed') colorClass = 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-600 text-emerald-600 dark:text-emerald-400';
           if (chunk.status === 'error') colorClass = 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-600 text-red-600 dark:text-red-400';
 
@@ -40,6 +41,7 @@ export const ChunkVisualizer: React.FC<ChunkVisualizerProps> = ({ chunks }) => {
                 {chunk.status === 'pending' && 'WAITING'}
                 {chunk.status === 'analyzing_phase_a' && 'SCANNING...'}
                 {chunk.status === 'analyzing_phase_b' && 'MERGING...'}
+                {chunk.status === 'analyzing_phase_c' && 'NARRATING...'}
                 {chunk.status === 'completed' && 'COMPLETED'}
                 {chunk.status === 'error' && 'FAILED'}
               </span>

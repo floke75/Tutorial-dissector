@@ -30,6 +30,8 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   onStart,
   disabled
 }) => {
+  const isDisabled = disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !videoUrl.endsWith('.mp4') && !videoUrl.startsWith('gs://') && !durationInput);
+
   return (
     <div className="bg-white/70 dark:bg-gray-850/70 backdrop-blur-md p-5 rounded-2xl border border-gray-200/50 dark:border-gray-800/50 shadow-md dark:shadow-black/20">
       <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-5 uppercase tracking-wider">Analysis Settings</h3>
@@ -37,7 +39,7 @@ export const InputPanel: React.FC<InputPanelProps> = ({
       <div className="space-y-5">
         {/* Video Input */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Video URL (YouTube or Gemini File URI)</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Video URL (YouTube, Direct .mp4, gs://, or Gemini URI)</label>
           <input 
             type="text" 
             value={videoUrl}
@@ -48,12 +50,12 @@ export const InputPanel: React.FC<InputPanelProps> = ({
           />
         </div>
         <div>
-           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Duration (MM:SS)</label>
+           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Duration (MM:SS) <span className="text-gray-400 font-normal text-xs ml-1">(Optional for YouTube)</span></label>
           <input 
             type="text" 
             value={durationInput}
             onChange={(e) => setDurationInput(e.target.value)}
-            placeholder="10:00"
+            placeholder="Auto-detected for YouTube"
             className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-2.5 text-gray-900 dark:text-white focus:border-blue-500 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-mono"
             disabled={disabled}
           />
@@ -115,9 +117,9 @@ export const InputPanel: React.FC<InputPanelProps> = ({
       <div className="mt-6">
         <button 
           onClick={onStart}
-          disabled={disabled || !videoUrl || !durationInput}
+          disabled={isDisabled}
           className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-            disabled || !videoUrl || !durationInput
+            isDisabled
               ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed' 
               : 'bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-white text-white dark:text-gray-900 shadow-md hover:shadow-lg active:scale-[0.98]'
           }`}
