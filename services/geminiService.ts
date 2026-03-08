@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
-import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel } from '../types.ts';
+import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
 
 // Helper for exponential backoff
@@ -108,7 +108,18 @@ export const actionItemSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low'])
 });
 
-export const phaseASchema = z.array(actionItemSchema);
+export const videoAnnotationSchema = z.object({
+  id: z.string().optional(),
+  timestamp: z.string(),
+  annotation_type: z.string(),
+  content: z.string(),
+  relevance: z.string()
+});
+
+export const phaseASchema = z.object({
+  actions: z.array(actionItemSchema),
+  annotations: z.array(videoAnnotationSchema)
+});
 
 export const uiStateSchema = z.object({
   application: z.string(),
@@ -130,6 +141,7 @@ export const phaseBResponseSchema = z.object({
   current_ui_state: uiStateSchema,
   cumulative_action_count: z.number().int(),
   validated_segment_events: z.array(actionItemSchema),
+  validated_segment_annotations: z.array(videoAnnotationSchema).optional(),
   merged_log_excerpt: z.array(actionItemSchema).optional()
 });
 
@@ -142,7 +154,8 @@ export const narrativeStepSchema = z.object({
   postcondition: z.string(),
   insight_type: z.enum(['explanation', 'rationale', 'tip', 'warning', 'workflow_framing', 'comparison']),
   topics: z.array(z.string()),
-  linked_visual_action_ids: z.array(z.string())
+  linked_visual_action_ids: z.array(z.string()),
+  linked_annotation_ids: z.array(z.string()).optional()
 });
 
 export const pass2Schema = z.array(narrativeStepSchema);
@@ -157,7 +170,7 @@ export async function analyzeChunkPhaseA(
   customContext: string,
   apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
-): Promise<ActionItem[]> {
+): Promise<{ actions: ActionItem[], annotations: VideoAnnotation[] }> {
   const ai = getClient(apiKey);
   
   const basePrompt = PHASE_A_SYSTEM_PROMPT
@@ -234,7 +247,7 @@ export async function analyzeChunkPhaseA(
       }
       if (finishReason === 'RECITATION') {
          onLog?.('warn', `Generation stopped due to RECITATION. Returning empty actions for this chunk.`);
-         return [];
+         return { actions: [], annotations: [] };
       }
 
       const text = response.text;
@@ -246,13 +259,21 @@ export async function analyzeChunkPhaseA(
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
-        const result = JSON.parse(cleanText) as ActionItem[];
-        if (!Array.isArray(result)) throw new Error("Phase A response must be a JSON array");
+        const result = JSON.parse(cleanText) as { actions: ActionItem[], annotations?: VideoAnnotation[] };
+        if (!result || !Array.isArray(result.actions)) {
+          throw new Error("Phase A response must be a JSON object with an 'actions' array");
+        }
         
-        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${result.length} raw actions`);
+        const actions = result.actions;
+        const annotations = Array.isArray(result.annotations) ? result.annotations : [];
+        
+        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${actions.length} raw actions and ${annotations.length} annotations`);
         
         // Ensure dummy IDs for A before B overwrites them
-        return result.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` }));
+        return {
+          actions: actions.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` })),
+          annotations: annotations.map((r, i) => ({ ...r, id: `tmp_ann_${Date.now()}_${i}` }))
+        };
       } catch (parseError) {
         onLog?.('warn', `Phase A JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
@@ -284,6 +305,7 @@ export async function accumulateChunkPhaseB(
   videoUrl: string,
   durationStr: string,
   chunkActions: ActionItem[],
+  chunkAnnotations: VideoAnnotation[],
   chunkNumber: number,
   primaryWindow: string,
   chatHistory: any[] = [],
@@ -306,7 +328,8 @@ export async function accumulateChunkPhaseB(
   const message = JSON.stringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
-    extracted_actions: chunkActions
+    extracted_actions: chunkActions,
+    extracted_annotations: chunkAnnotations
   });
 
   const contents = [
@@ -370,6 +393,7 @@ export async function accumulateChunkPhaseB(
              current_ui_state: { application: "Unknown", active_file: "Unknown", visible_panels: [], active_tool: "Unknown", open_dialogs: [], other_state: "Unknown" },
              cumulative_action_count: 0,
              validated_segment_events: [],
+             validated_segment_annotations: [],
              merged_log_excerpt: []
            }
          };
@@ -428,6 +452,7 @@ export async function analyzeNarrationSegment(
   startSec: number,
   endSec: number,
   relevantVisualActions: ActionItem[],
+  relevantAnnotations: VideoAnnotation[],
   customContext: string,
   apiKey: string,
   previousSteps: NarrativeStep[] = [],
@@ -460,7 +485,8 @@ export async function analyzeNarrationSegment(
     .replace('{start_time}', formatMMSS(startSec))
     .replace('{end_time}', formatMMSS(endSec))
     .replace('{previous_steps_context}', previousStepsContext)
-    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2));
+    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2))
+    .replace('{annotations}', JSON.stringify(relevantAnnotations, null, 2));
 
   let lastError: any;
 

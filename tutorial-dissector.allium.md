@@ -81,6 +81,10 @@ enum ActionType {
     type | keyboard_shortcut | hover | select | menu_navigate | 
     system_event | ui_response | transition
 }
+enum AnnotationType {
+    title_card | lower_third | text_overlay | highlight | zoom |
+    transition | illustration | bullet_points | other
+}
 enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
 enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
 enum LogLevel { info | warn | error | success }
@@ -106,6 +110,7 @@ entity Project {
     -- Relationships
     chunks: Chunk with project = this
     actions: ActionItem with project = this
+    annotations: VideoAnnotation with project = this
     narrative_steps: NarrativeStep with project = this
 
     -- Runtime State
@@ -159,6 +164,18 @@ entity ActionItem {
     is_error_recovery: Boolean?
 }
 
+-- Editorial and contextual overlays
+entity VideoAnnotation {
+    project: Project
+    id: String                    -- Unique string (e.g. ann_a1b2c3d4)
+    chunk_index: Integer?
+    
+    timestamp: String
+    annotation_type: AnnotationType
+    content: String
+    relevance: String
+}
+
 -- High-level BDD grouping
 entity NarrativeStep {
     project: Project
@@ -172,8 +189,9 @@ entity NarrativeStep {
     insight_type: InsightType
     topics: List<String>
     
-    -- Relational mapping to ActionItems
+    -- Relational mapping to ActionItems and VideoAnnotations
     linked_visual_action_ids: List<String>
+    linked_annotation_ids: List<String>?
 }
 
 ------------------------------------------------------------
@@ -211,7 +229,7 @@ rule CompletePhaseA {
 }
 
 rule CompletePhaseB {
-    when: PhaseBCompleted(chunk, merged_actions, ui_state)
+    when: PhaseBCompleted(chunk, merged_actions, merged_annotations, ui_state)
     
     requires: chunk.status = analyzing_phase_b
     
@@ -239,6 +257,19 @@ rule CompletePhaseB {
                 context_note: action.context_note,
                 confidence: action.confidence
             )
+            
+    -- Add Video Annotations (Editorial layer)
+    ensures:
+        for annotation in merged_annotations:
+            VideoAnnotation.created(
+                project: chunk.project,
+                id: annotation.id,
+                chunk_index: chunk.index,
+                timestamp: annotation.timestamp,
+                annotation_type: annotation.annotation_type,
+                content: annotation.content,
+                relevance: annotation.relevance
+            )
 }
 
 rule CompletePhaseC {
@@ -262,7 +293,8 @@ rule CompletePhaseC {
                 postcondition: step.postcondition,
                 insight_type: step.insight_type,
                 topics: step.topics,
-                linked_visual_action_ids: step.linked_visual_action_ids
+                linked_visual_action_ids: step.linked_visual_action_ids,
+                linked_annotation_ids: step.linked_annotation_ids
             )
 }
 
@@ -291,7 +323,8 @@ rule AnalyzeNarrationSegment {
                 postcondition: step.postcondition,
                 insight_type: step.insight_type,
                 topics: step.topics,
-                linked_visual_action_ids: step.linked_visual_action_ids
+                linked_visual_action_ids: step.linked_visual_action_ids,
+                linked_annotation_ids: step.linked_annotation_ids
             )
 }
 
@@ -324,6 +357,7 @@ surface AnalysisDashboard {
         project.custom_context
         project.chunks
         project.actions
+        project.annotations
         project.narrative_steps
         project.proc_state
         project.latest_ui_state

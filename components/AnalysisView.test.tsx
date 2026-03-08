@@ -33,6 +33,7 @@ describe('AnalysisView', () => {
       customContext: '',
       chunks: [],
       actions: [],
+      annotations: [],
       narrativeSteps: [],
       procState: {
         status: 'idle',
