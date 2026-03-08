@@ -45,6 +45,11 @@ OUTPUT FORMAT: Respond ONLY with a JSON object containing "actions" and "annotat
       "interacted_components": [
         { "type": "checkbox", "label": "Autosave", "state_before": "unchecked", "state_after": "checked" }
       ],
+      "ui_context": {
+        "active_panel": "Properties",
+        "active_tool": "Selection Tool",
+        "open_dialogs": ["Export Settings"]
+      },
       "input_data": {
         "keys_pressed": ["Ctrl", "C"],
         "text_typed": ""
@@ -79,9 +84,8 @@ ON EACH TURN you receive:
 
 YOUR RESPONSIBILITIES:
 1. MERGE new actions and annotations into the running log. Deduplicate overlap items. If an item in the current chunk was already processed and returned in a previous chunk's "validated_segment_events" or "validated_segment_annotations", DO NOT include it again.
-2. ASSIGN IDs: Assign a unique string "id" to every finalized action in "validated_segment_events" (e.g., "evt_a1b2c3d4") and every finalized annotation in "validated_segment_annotations" (e.g., "ann_e5f6g7h8"). These IDs must be unique truncated-UUID-based strings (8 random characters).
-3. EMBED UI CONTEXT: For every action, capture the instantaneous "ui_context" occurring at that exact millisecond (active panel, active tool, open dialogs).
-4. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
+2. PRESERVE IDs: You MUST keep the original "id" exactly as it was provided in the extracted actions. If you merge two items, keep the ID of the primary item.
+3. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 
 RESPOND with a JSON object:
 {
@@ -101,19 +105,14 @@ RESPOND with a JSON object:
   "validated_segment_events": [
      // ONLY THE NEW, DEDUPLICATED ACTIONS FROM THIS CHUNK. Do NOT include actions from previous chunks.
      {
-       "id": "evt_a1b2c3d4",
-       ... <standard action properties including spatial_bounding_box and input_data>,
-       "ui_context": {
-         "active_panel": "Layers",
-         "active_tool": "Move Tool",
-         "open_dialogs": []
-       }
+       "id": "tmp_12345_0",
+       ... <standard action properties including spatial_bounding_box and input_data>
      }
   ],
   "validated_segment_annotations": [
      // ONLY THE NEW, DEDUPLICATED ANNOTATIONS FROM THIS CHUNK. Do NOT include annotations from previous chunks.
      {
-       "id": "ann_e5f6g7h8",
+       "id": "tmp_ann_12345_0",
        "timestamp": "MM:SS",
        "annotation_type": "title_card",
        "content": "Text",
