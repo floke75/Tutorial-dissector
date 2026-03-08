@@ -58,6 +58,7 @@ value ProcessingState {
     start_time: Timestamp?
     last_interaction_id: String?
     chat_history: List<String>?
+    learned_context: String?
     job_id: String?
     duration: Duration?
     logs: List<LogMessage>?
@@ -72,7 +73,7 @@ value InputData {
 -- Enumerations
 ------------------------------------------------------------
 
-enum ProcessingStatus { idle | running_visual | paused | completed | error | cancelled }
+enum ProcessingStatus { idle | running_visual | running_narrative | running_dedup | paused | completed | error | cancelled }
 enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | analyzing_phase_c | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
@@ -273,12 +274,25 @@ rule CompletePhaseB {
 }
 
 rule CompletePhaseC {
-    when: PhaseCCompleted(chunk, narrative_steps)
+    when: PhaseCCompleted(chunk, narrative_steps, learned_insights)
     
     requires: chunk.status = analyzing_phase_c
+    requires: chunk.project.status = running_narrative
     
+    let context_window_start = chunk.clip_start - config.narration_context_buffer
+    let context_window_end = chunk.clip_end + config.narration_context_buffer
+    
+    let visual_context = chunk.project.actions where 
+        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
+        
+    let annotation_context = chunk.project.annotations where 
+        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
+
     ensures: chunk.status = completed
     ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    
+    -- Accumulate learned context
+    ensures: chunk.project.proc_state.learned_context = chunk.project.proc_state.learned_context + "\n- " + learned_insights
     
     -- Add Narrative Steps (Intent layer)
     ensures:
@@ -298,43 +312,9 @@ rule CompletePhaseC {
             )
 }
 
--- Narration Loop
-rule AnalyzeNarrationSegment {
-    when: NarrationSegmentAnalyzed(project, start_time, end_time, synthesized_steps)
-
-    requires: project.status = running_visual
-
-    let context_window_start = start_time - config.narration_context_buffer
-    let context_window_end = end_time + config.narration_context_buffer
-    
-    let visual_context = project.actions where 
-        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
-        
-    let annotation_context = project.annotations where 
-        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
-
-    -- Both visual_context and annotation_context are provided as context
-    -- to the External AI Synthesis that produces synthesized_steps
-    ensures:
-        for step in synthesized_steps:
-            NarrativeStep.created(
-                project: project,
-                id: step.id,
-                timestamp: step.timestamp,
-                intent: step.intent,
-                precondition: step.precondition,
-                explanation: step.explanation,
-                postcondition: step.postcondition,
-                insight_type: step.insight_type,
-                topics: step.topics,
-                linked_visual_action_ids: step.linked_visual_action_ids,
-                linked_annotation_ids: step.linked_annotation_ids
-            )
-}
-
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
-    requires: project.status = running_visual
+    requires: project.status = running_dedup
     requires: project.proc_state.current_chunk_index >= count(project.chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links

@@ -44,6 +44,11 @@ Because video analysis takes minutes, the React frontend submits jobs to the Exp
 *   **Viewport Normalization:** The spatial extraction prompts force Gemini to map the screen to a `1000x1000` grid. Therefore, `ResultsTimeline.tsx` hardcodes `page.setViewportSize({ width: 1000, height: 1000 })` so Cartesian coordinates map 1:1.
 *   **Error Exclusion:** The compiler script MUST include `.filter(a => !a.is_error_recovery)`. The bot must not execute human mistakes.
 
+### Rule D: Context Flow & Dynamic Accumulation
+*   **Chat History (Phase B):** The Gemini SDK requires `chatHistory` to strictly alternate between `user` and `model` roles, always starting with `user`. The sliding window in `jobManager.ts` retains 60 items (30 turns) to leverage the large context window while enforcing this rule.
+*   **Dynamic Context (Phase C):** Phase C extracts `learned_insights` (domain terminology, recurring UI patterns) which are appended to a `learnedContext` string. This string is injected into the prompt for all subsequent chunks, allowing the pipeline to "learn" as it processes the video.
+*   **Token Optimization (Phase D):** Global deduplication receives the cumulative narrative to inform its decisions. To prevent token exhaustion, the narrative array is minified (id, description, links) before being passed to the LLM.
+
 ## 4. How to Modify the Extraction Pipeline
 If a user asks you to extract a new type of data (e.g., "Extract cursor shapes"):
 1.  Update `types.ts` (`ActionItem` or `UIContext`).

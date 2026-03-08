@@ -126,25 +126,32 @@ RESPOND with a JSON object:
 
 export const GLOBAL_DEDUPLICATION_PROMPT = `
 You are the final quality assurance controller for a video tutorial analysis pipeline.
-You have been provided with the complete, merged log of all user actions extracted from the video.
+You have been provided with the complete, merged log of all user actions extracted from the video, along with the final UI state and a minified narrative context.
 
 YOUR TASK:
 Perform a final, global pass to identify and remove any remaining duplicate actions, ensure naming consistency, and apply final polishing across the entire timeline.
 
 RULES FOR FINAL POLISHING & DEDUPLICATION:
 1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action. Keep the one with the most detailed "target" and "interacted_components" information, and discard the other.
-2. DO NOT remove actions that are distinct but occur rapidly (e.g., a rapid double-click, or typing multiple characters). Only remove true duplicates.
-3. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name.
-4. NARRATIVE FLOW: Ensure the "detail", "result", and "context_note" fields flow logically from one action to the next. Fix any jarring inconsistencies in tone or terminology.
-5. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
-6. ID PRESERVATION: DO NOT change the "id" field of any action. You MUST keep the original "id" exactly as it was provided. If you remove a duplicate action, simply omit it from the output.
-7. SCHEMA NORMALIZATION: Every action in the output MUST include ALL of the following fields. If a field was not populated during extraction, apply the specified default:
+2. CONTEXT-AWARENESS: Use the provided Narrative Context and Final UI State to differentiate actions. If two identical clicks serve different narrative steps, THEY ARE NOT DUPLICATES. Do not merge them.
+3. DO NOT remove actions that are distinct but occur rapidly (e.g., a rapid double-click, or typing multiple characters). Only remove true duplicates.
+4. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name.
+5. NARRATIVE FLOW: Ensure the "detail", "result", and "context_note" fields flow logically from one action to the next. Fix any jarring inconsistencies in tone or terminology.
+6. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
+7. ID PRESERVATION: DO NOT change the "id" field of any action. You MUST keep the original "id" exactly as it was provided. If you remove a duplicate action, simply omit it from the output.
+8. SCHEMA NORMALIZATION: Every action in the output MUST include ALL of the following fields. If a field was not populated during extraction, apply the specified default:
    - "interacted_components": [] (empty array if no components were interacted with)
    - "input_data": null (null if no keyboard input occurred)
    - "is_error_recovery": false (false unless explicitly flagged)
    - "context_note": "" (empty string if no continuity note applies)
    - "confidence": "high" (default if not set)
 Do NOT omit these fields. Every action object must have an identical set of top-level keys.
+
+NARRATIVE CONTEXT:
+{narrative_context}
+
+FINAL UI STATE:
+{final_ui_state}
 
 INPUT ACTIONS:
 {all_actions}
