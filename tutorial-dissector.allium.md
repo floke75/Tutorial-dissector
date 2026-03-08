@@ -150,7 +150,7 @@ entity ActionItem {
     timestamp: String
     action_type: ActionType
     actor: ActorType
-    target: ActionTarget
+    target: ActionTarget?
     detail: String
     result: String?
     context_note: String?
@@ -234,6 +234,9 @@ rule CompletePhaseB {
     
     requires: chunk.status = analyzing_phase_b
     
+    -- Uses "Zipper" optimization: strips ui_context before LLM processing
+    -- and re-attaches it using a cascading content-similarity fallback 
+    -- to prevent data loss from ID drift.
     ensures: chunk.status = analyzing_phase_c
     ensures: chunk.project.latest_ui_state = ui_state
     ensures: chunk.action_count = count(merged_actions)
@@ -318,7 +321,10 @@ rule GlobalDeduplication {
     requires: project.proc_state.current_chunk_index >= count(project.chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
-    -- This is a complex graph operation, represented here as an atomic state transition
+    -- This is a complex graph operation, represented here as an atomic state transition.
+    -- Uses "Zipper" optimization: strips heavy metadata (ui_context, chunk_index) 
+    -- before LLM processing and re-attaches them using a cascading content-similarity 
+    -- fallback to prevent data loss from ID drift.
     ensures: project.status = completed
     ensures: project.proc_state.status = completed
     ensures: project.action_count = count(deduplicated_actions)

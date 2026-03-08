@@ -364,7 +364,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               progress: state.progress,
               currentChunkIndex: state.currentChunkIndex,
               totalActions: state.actions?.length || 0,
-              duration: state.duration
+              duration: state.duration,
+              learnedContext: state.learnedContext
             }));
             
             if (state.chunks !== undefined) {

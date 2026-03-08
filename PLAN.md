@@ -22,6 +22,7 @@ This pass focuses purely on *deterministic spatial events and state mutations*. 
 *   **Phase B (Stateful Cognition):**
     *   **Input:** The output of Phase A + Chat History of all previous Phase B chunks.
     *   **Action:** Gemini is prompted to deduplicate actions and annotations within the overlap window, assign unique truncated-UUID-based IDs (e.g., `evt_a1b2c3d4`, `ann_e5f6g7h8`), flag `is_error_recovery` mistakes, and snapshot the active `UI_Context`.
+    *   **Optimization ("Zipper"):** Strips `ui_context` before sending to the LLM to save tokens. Re-attaches it afterward using a cascading fallback (strict/moderate content matching) to prevent data loss if the LLM hallucinates or drops IDs.
 
 ### Phase C: Hierarchical BDD Mapping (The Intent Track)
 This phase runs *per chunk*, immediately after Phase B.
@@ -37,6 +38,7 @@ This phase runs *after* all chunks are complete.
 *   **Logic:** A final pass over all accumulated `ActionItems`.
 *   **Input:** The complete array of `ActionItems` and `customContext`.
 *   **Action:** Gemini identifies and removes duplicate actions that may have slipped through the chunk boundaries.
+    *   **Optimization ("Zipper"):** Strips `ui_context` and `chunkIndex` before sending the global action list to the LLM to prevent exceeding the context window. Re-attaches them afterward using the same cascading fallback as Phase B.
 *   **Output:** A finalized, deduplicated array of `ActionItems`, with `NarrativeStep` links remapped for any removed duplicate actions (pointing the orphaned link to the surviving action).
 
 ## 3. Mathematical Chunking Strategy
