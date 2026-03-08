@@ -302,7 +302,7 @@ async function runJob(jobId: string, params: {
       if (nextChatHistory.length > 60) {
         nextChatHistory = nextChatHistory.slice(-60);
         // GUARDRAIL: Ensure strict user/model alternation starting with 'user'
-        if (nextChatHistory[0].role !== 'user') {
+        while (nextChatHistory.length > 0 && nextChatHistory[0].role !== 'user') {
           nextChatHistory = nextChatHistory.slice(1);
         }
       }
@@ -346,7 +346,7 @@ async function runJob(jobId: string, params: {
       
       const relevantAnnotations = nextCumulativeAnnotations.filter(a => {
         const t = parseMMSS(a.timestamp);
-        return t >= (contextStart - 60) && t <= (contextEnd + 60);
+        return t >= contextStart && t <= contextEnd;
       });
 
       const { steps: newNarrativeStepsRaw, learned_insights } = await analyzeNarrationSegment(
