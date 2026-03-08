@@ -58,6 +58,7 @@ value ProcessingState {
     start_time: Timestamp?
     last_interaction_id: String?
     chat_history: List<String>?
+    learned_context: String?
     job_id: String?
     duration: Duration?
     logs: List<LogMessage>?
@@ -72,7 +73,7 @@ value InputData {
 -- Enumerations
 ------------------------------------------------------------
 
-enum ProcessingStatus { idle | running_visual | paused | completed | error | cancelled }
+enum ProcessingStatus { idle | running_visual | running_narrative | running_dedup | paused | completed | error | cancelled }
 enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | analyzing_phase_c | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
@@ -80,6 +81,10 @@ enum ActionType {
     click | double_click | right_click | drag | scroll | 
     type | keyboard_shortcut | hover | select | menu_navigate | 
     system_event | ui_response | transition
+}
+enum AnnotationType {
+    title_card | lower_third | text_overlay | gui_highlight | zoom_in |
+    transition | illustration | bullet_points | other
 }
 enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
 enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
@@ -106,6 +111,7 @@ entity Project {
     -- Relationships
     chunks: Chunk with project = this
     actions: ActionItem with project = this
+    annotations: VideoAnnotation with project = this
     narrative_steps: NarrativeStep with project = this
 
     -- Runtime State
@@ -159,6 +165,18 @@ entity ActionItem {
     is_error_recovery: Boolean?
 }
 
+-- Editorial and contextual overlays
+entity VideoAnnotation {
+    project: Project
+    id: String                    -- Unique string (e.g. ann_a1b2c3d4)
+    chunk_index: Integer?
+    
+    timestamp: String
+    annotation_type: AnnotationType
+    content: String
+    relevance: String
+}
+
 -- High-level BDD grouping
 entity NarrativeStep {
     project: Project
@@ -172,8 +190,9 @@ entity NarrativeStep {
     insight_type: InsightType
     topics: List<String>
     
-    -- Relational mapping to ActionItems
+    -- Relational mapping to ActionItems and VideoAnnotations
     linked_visual_action_ids: List<String>
+    linked_annotation_ids: List<String>?
 }
 
 ------------------------------------------------------------
@@ -211,7 +230,7 @@ rule CompletePhaseA {
 }
 
 rule CompletePhaseB {
-    when: PhaseBCompleted(chunk, merged_actions, ui_state)
+    when: PhaseBCompleted(chunk, merged_actions, merged_annotations, ui_state)
     
     requires: chunk.status = analyzing_phase_b
     
@@ -239,15 +258,41 @@ rule CompletePhaseB {
                 context_note: action.context_note,
                 confidence: action.confidence
             )
+            
+    -- Add Video Annotations (Editorial layer)
+    ensures:
+        for annotation in merged_annotations:
+            VideoAnnotation.created(
+                project: chunk.project,
+                id: annotation.id,
+                chunk_index: chunk.index,
+                timestamp: annotation.timestamp,
+                annotation_type: annotation.annotation_type,
+                content: annotation.content,
+                relevance: annotation.relevance
+            )
 }
 
 rule CompletePhaseC {
-    when: PhaseCCompleted(chunk, narrative_steps)
+    when: PhaseCCompleted(chunk, narrative_steps, learned_insights)
     
     requires: chunk.status = analyzing_phase_c
+    requires: chunk.project.status = running_narrative
     
+    let context_window_start = chunk.clip_start - config.narration_context_buffer
+    let context_window_end = chunk.clip_end + config.narration_context_buffer
+    
+    let visual_context = chunk.project.actions where 
+        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
+        
+    let annotation_context = chunk.project.annotations where 
+        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
+
     ensures: chunk.status = completed
     ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    
+    -- Accumulate learned context
+    ensures: chunk.project.proc_state.learned_context = chunk.project.proc_state.learned_context + "\n- " + learned_insights
     
     -- Add Narrative Steps (Intent layer)
     ensures:
@@ -262,42 +307,14 @@ rule CompletePhaseC {
                 postcondition: step.postcondition,
                 insight_type: step.insight_type,
                 topics: step.topics,
-                linked_visual_action_ids: step.linked_visual_action_ids
-            )
-}
-
--- Narration Loop
-rule AnalyzeNarrationSegment {
-    when: NarrationSegmentAnalyzed(project, start_time, end_time, synthesized_steps)
-
-    requires: project.status = running_visual
-
-    let context_window_start = start_time - config.narration_context_buffer
-    let context_window_end = end_time + config.narration_context_buffer
-    
-    let visual_context = project.actions where 
-        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
-
-    -- External AI Synthesis produces NarrativeSteps that link to ActionItems via ID
-    ensures:
-        for step in synthesized_steps:
-            NarrativeStep.created(
-                project: project,
-                id: step.id,
-                timestamp: step.timestamp,
-                intent: step.intent,
-                precondition: step.precondition,
-                explanation: step.explanation,
-                postcondition: step.postcondition,
-                insight_type: step.insight_type,
-                topics: step.topics,
-                linked_visual_action_ids: step.linked_visual_action_ids
+                linked_visual_action_ids: step.linked_visual_action_ids,
+                linked_annotation_ids: step.linked_annotation_ids
             )
 }
 
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
-    requires: project.status = running_visual
+    requires: project.status = running_dedup
     requires: project.proc_state.current_chunk_index >= count(project.chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
@@ -324,6 +341,7 @@ surface AnalysisDashboard {
         project.custom_context
         project.chunks
         project.actions
+        project.annotations
         project.narrative_steps
         project.proc_state
         project.latest_ui_state

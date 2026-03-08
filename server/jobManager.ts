@@ -1,16 +1,17 @@
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, analyzeGlobalDeduplication } from '../services/geminiService.ts';
-import type { ActionItem, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
+import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
 
 export interface JobState {
   id: string;
   runId: string;
-  status: 'idle' | 'running_visual' | 'completed' | 'error' | 'cancelled';
+  status: 'idle' | 'running_visual' | 'running_narrative' | 'running_dedup' | 'completed' | 'error' | 'cancelled';
   progress: number;
   logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];
+  annotations: VideoAnnotation[];
   narrativeSteps: NarrativeStep[];
   uiState: UIState | null;
   error?: string;
@@ -21,6 +22,8 @@ export interface JobState {
   chatHistory?: any[];
   chunkSize: number;
   overlap: number;
+  ttlTimerId?: ReturnType<typeof setTimeout>;
+  learnedContext?: string;
 }
 
 const jobs = new Map<string, JobState>();
@@ -74,8 +77,53 @@ export async function processVideoJob(params: {
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
+  const existingState = jobs.get(jobId);
+  if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
+    return jobId; // Job is already running, do nothing
+  }
+
+  const isResuming = !!(existingState && 
+                     (existingState.status === 'cancelled' || existingState.status === 'error') &&
+                     existingState.videoUrl === params.videoUrl &&
+                     existingState.chunkSize === params.chunkSize &&
+                     existingState.overlap === params.overlap &&
+                     existingState.chunks.length > 0);
+
+  const runId = uuidv4();
+
+  if (!isResuming) {
+    cancelTokens.delete(jobId);
+    jobs.set(jobId, {
+      id: jobId,
+      runId,
+      status: 'running_visual',
+      progress: 0,
+      logs: [],
+      actions: [],
+      annotations: [],
+      narrativeSteps: [],
+      uiState: null,
+      videoUrl: params.videoUrl,
+      duration: 0,
+      chunks: [],
+      currentChunkIndex: 0,
+      chatHistory: [],
+      chunkSize: params.chunkSize,
+      overlap: params.overlap,
+      learnedContext: ""
+    });
+  } else {
+    if (existingState!.ttlTimerId) {
+      clearTimeout(existingState!.ttlTimerId);
+      existingState!.ttlTimerId = undefined;
+    }
+    existingState!.status = 'running_visual';
+    existingState!.runId = runId;
+    cancelTokens.delete(jobId);
+  }
+
   // Start the job asynchronously
-  runJob(jobId, params).catch(err => {
+  runJob(jobId, params, isResuming).catch(err => {
     console.error(`Job ${jobId} failed:`, err);
     const state = jobs.get(jobId);
     if (state) {
@@ -106,7 +154,7 @@ async function runJob(jobId: string, params: {
   overlap: number;
   customContext: string;
   apiKey: string;
-}) {
+}, isResuming: boolean) {
   const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;
   
   const addLog = (level: LogLevel, message: string, data?: any) => {
@@ -116,43 +164,12 @@ async function runJob(jobId: string, params: {
     }
   };
 
-  const existingState = jobs.get(jobId);
-  const isResuming = existingState && 
-                     (existingState.status === 'cancelled' || existingState.status === 'error') &&
-                     existingState.videoUrl === videoUrl &&
-                     existingState.chunkSize === chunkSize &&
-                     existingState.overlap === overlap &&
-                     existingState.chunks.length > 0; // Ensure chunks were calculated
-
-  const runId = uuidv4();
-
-  if (!isResuming) {
-    cancelTokens.delete(jobId);
-    jobs.set(jobId, {
-      id: jobId,
-      runId,
-      status: 'running_visual',
-      progress: 0,
-      logs: [],
-      actions: [],
-      narrativeSteps: [],
-      uiState: null,
-      videoUrl,
-      duration: 0,
-      chunks: [],
-      currentChunkIndex: 0,
-      chatHistory: [],
-      chunkSize,
-      overlap
-    });
-  } else {
-    existingState.status = 'running_visual';
-    existingState.runId = runId;
-    cancelTokens.delete(jobId);
-    addLog('info', `Resuming job from chunk ${existingState.currentChunkIndex + 1}...`);
-  }
-
   const state = jobs.get(jobId)!;
+  const runId = state.runId;
+
+  if (isResuming) {
+    addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+  }
 
   try {
     let duration = state.duration;
@@ -209,6 +226,7 @@ async function runJob(jobId: string, params: {
 
     let chatHistory: any[] = state.chatHistory || [];
     let cumulativeActions: ActionItem[] = state.actions || [];
+    let cumulativeAnnotations: VideoAnnotation[] = state.annotations || [];
     let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
     let latestUIState: UIState | null = state.uiState || null;
 
@@ -221,24 +239,27 @@ async function runJob(jobId: string, params: {
         return;
       }
 
+      state.status = 'running_visual';
       state.currentChunkIndex = i;
       const chunk = state.chunks[i];
       const progressBase = (i / state.chunks.length) * 100;
       state.progress = progressBase;
 
+      const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+
       chunk.status = 'analyzing_phase_a';
       addLog('info', `--- Starting Chunk ${i + 1}/${state.chunks.length} ---`, { chunk });
 
       // Phase A: Raw Extraction
-      addLog('info', `Phase A: Extracting raw actions...`);
-      const rawActions = await analyzeChunkPhaseA(
+      addLog('info', `Phase A: Extracting raw actions and annotations...`);
+      const { actions: rawActions, annotations: rawAnnotations } = await analyzeChunkPhaseA(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
         chunk.primaryStart,
         chunk.primaryEnd,
         overlap,
-        customContext,
+        dynamicContext,
         apiKey,
         addLog
       );
@@ -261,10 +282,11 @@ async function runJob(jobId: string, params: {
         videoUrl,
         `${duration}s`,
         rawActions,
+        rawAnnotations,
         i + 1,
         primaryWindowStr,
         chatHistory,
-        customContext,
+        dynamicContext,
         apiKey,
         addLog
       );
@@ -276,15 +298,19 @@ async function runJob(jobId: string, params: {
       }
 
       let nextChatHistory = phaseBResult.newHistory;
-      // Sliding window: keep only the last 6 items (3 turns: user + model)
-      if (nextChatHistory.length > 6) {
-        nextChatHistory = nextChatHistory.slice(-6);
+      // Sliding window: keep only the last 60 items (30 turns: user + model) to leverage the large context window
+      if (nextChatHistory.length > 60) {
+        nextChatHistory = nextChatHistory.slice(-60);
+        // GUARDRAIL: Ensure strict user/model alternation starting with 'user'
+        while (nextChatHistory.length > 0 && nextChatHistory[0].role !== 'user') {
+          nextChatHistory = nextChatHistory.slice(1);
+        }
       }
       let nextUIState = phaseBResult.result.current_ui_state;
       
       // Append new validated actions
       const existingIds = new Set(cumulativeActions.map(a => a.id));
-      const newValidatedEvents = phaseBResult.result.validated_segment_events.map(action => {
+      const newValidatedEvents = (phaseBResult.result.validated_segment_events || []).map(action => {
         if (!action.id || existingIds.has(action.id)) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
         }
@@ -292,8 +318,20 @@ async function runJob(jobId: string, params: {
         return action;
       });
       let nextCumulativeActions = [...cumulativeActions, ...newValidatedEvents];
+
+      // Append new validated annotations
+      const existingAnnIds = new Set(cumulativeAnnotations.map(a => a.id));
+      const newValidatedAnnotations = (phaseBResult.result.validated_segment_annotations || []).map(ann => {
+        if (!ann.id || existingAnnIds.has(ann.id)) {
+          ann.id = `ann_${uuidv4().substring(0, 8)}`;
+        }
+        existingAnnIds.add(ann.id);
+        return ann;
+      });
+      let nextCumulativeAnnotations = [...cumulativeAnnotations, ...newValidatedAnnotations];
       
       // Phase C: Narrative Synthesis
+      state.status = 'running_narrative';
       chunk.status = 'analyzing_phase_c';
       addLog('info', `Phase C: Synthesizing narrative steps...`);
       
@@ -305,17 +343,27 @@ async function runJob(jobId: string, params: {
         const t = parseMMSS(a.timestamp);
         return t >= contextStart && t <= contextEnd;
       });
+      
+      const relevantAnnotations = nextCumulativeAnnotations.filter(a => {
+        const t = parseMMSS(a.timestamp);
+        return t >= contextStart && t <= contextEnd;
+      });
 
-      const newNarrativeStepsRaw = await analyzeNarrationSegment(
+      const { steps: newNarrativeStepsRaw, learned_insights } = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
         relevantActions,
-        customContext,
+        relevantAnnotations,
+        dynamicContext,
         apiKey,
-        cumulativeNarrative.slice(-3),
+        cumulativeNarrative.slice(-10),
         addLog
       );
+
+      if (learned_insights) {
+        state.learnedContext = (state.learnedContext ? state.learnedContext + "\n- " : "- ") + learned_insights;
+      }
       
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
@@ -340,6 +388,11 @@ async function runJob(jobId: string, params: {
       for (let j = cumulativeActions.length; j < nextCumulativeActions.length; j++) {
         nextCumulativeActions[j].chunkIndex = i;
       }
+
+      const newAnnotationsCount = nextCumulativeAnnotations.length - cumulativeAnnotations.length;
+      for (let j = cumulativeAnnotations.length; j < nextCumulativeAnnotations.length; j++) {
+        nextCumulativeAnnotations[j].chunkIndex = i;
+      }
       
       chunk.phaseBAddedCount = newActionsCount;
       chunk.actionCount = newActionsCount;
@@ -350,6 +403,9 @@ async function runJob(jobId: string, params: {
       
       cumulativeActions = nextCumulativeActions;
       state.actions = cumulativeActions;
+
+      cumulativeAnnotations = nextCumulativeAnnotations;
+      state.annotations = cumulativeAnnotations;
 
       cumulativeNarrative = [...cumulativeNarrative, ...newNarrativeSteps];
       state.narrativeSteps = cumulativeNarrative;
@@ -363,6 +419,7 @@ async function runJob(jobId: string, params: {
     addLog('info', 'Validating narrative-action link coverage...');
 
     const allActionIds = new Set(cumulativeActions.map(a => a.id));
+    const allAnnotationIds = new Set(cumulativeAnnotations.map(a => a.id));
     let brokenLinks = 0;
     let unlinkedSteps = 0;
 
@@ -373,7 +430,15 @@ async function runJob(jobId: string, params: {
       brokenLinks += broken;
       step.linked_visual_action_ids = validLinks;
 
-      if (validLinks.length === 0 && step.insight_type !== 'rationale') {
+      // Remove references to IDs that don't exist in the annotation set
+      if (step.linked_annotation_ids) {
+        const validAnnotationLinks = step.linked_annotation_ids.filter((id: string) => allAnnotationIds.has(id));
+        const brokenAnnotations = step.linked_annotation_ids.length - validAnnotationLinks.length;
+        brokenLinks += brokenAnnotations;
+        step.linked_annotation_ids = validAnnotationLinks;
+      }
+
+      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && step.insight_type !== 'rationale') {
         unlinkedSteps++;
       }
     }
@@ -396,12 +461,15 @@ async function runJob(jobId: string, params: {
     }
 
     // Final Global Deduplication Pass
+    state.status = 'running_dedup';
     addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
     state.progress = 95;
     
     try {
       const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
         cumulativeActions,
+        cumulativeNarrative,
+        latestUIState,
         customContext,
         apiKey,
         addLog
@@ -423,15 +491,36 @@ async function runJob(jobId: string, params: {
       if (deduplicatedActions.length < cumulativeActions.length) {
         const oldToNew = new Map<string, string>();
         const remainingIds = new Set(deduplicatedActions.map(a => a.id));
+        const remainingOriginalActions = cumulativeActions.filter(a => remainingIds.has(a.id));
         
         for (const oldAction of cumulativeActions) {
           if (!remainingIds.has(oldAction.id)) {
             // This action was removed as a duplicate. Find the action that was kept.
-            const keptAction = deduplicatedActions.find(
-              a => a.timestamp === oldAction.timestamp && 
-                   a.action_type === oldAction.action_type &&
-                   a.detail === oldAction.detail
-            );
+            // We compare against the ORIGINAL versions of the kept actions to avoid 
+            // issues with LLM normalization of detail/target fields.
+            const oldTime = parseMMSS(oldAction.timestamp);
+            
+            // Find candidates within 2 seconds and with the same action_type
+            const candidates = remainingOriginalActions.filter(a => {
+              if (a.action_type !== oldAction.action_type) return false;
+              const aTime = parseMMSS(a.timestamp);
+              return Math.abs(aTime - oldTime) <= 2;
+            });
+            
+            let keptAction = candidates[0];
+            if (candidates.length > 1) {
+              // Tie-breaker: find the most similar original action
+              keptAction = candidates.reduce((best, current) => {
+                const scoreCurrent = (current.target.element === oldAction.target.element ? 2 : 0) + 
+                                     (current.target.panel === oldAction.target.panel ? 1 : 0) +
+                                     (current.detail === oldAction.detail ? 3 : 0);
+                const scoreBest = (best.target.element === oldAction.target.element ? 2 : 0) + 
+                                  (best.target.panel === oldAction.target.panel ? 1 : 0) +
+                                  (best.detail === oldAction.detail ? 3 : 0);
+                return scoreCurrent > scoreBest ? current : best;
+              });
+            }
+            
             if (keptAction) {
               oldToNew.set(oldAction.id, keptAction.id);
             }
@@ -440,10 +529,11 @@ async function runJob(jobId: string, params: {
 
         if (oldToNew.size > 0) {
           addLog('info', `Remapping ${oldToNew.size} narrative links for removed duplicates.`);
+          const finalIds = new Set(deduplicatedActions.map(a => a.id));
           for (const step of cumulativeNarrative) {
-            step.linked_visual_action_ids = step.linked_visual_action_ids.map(
-              (id: string) => oldToNew.get(id) ?? id
-            );
+            step.linked_visual_action_ids = step.linked_visual_action_ids
+              .map((id: string) => oldToNew.get(id) ?? id)
+              .filter((id: string) => finalIds.has(id));
           }
         }
       }
@@ -464,6 +554,16 @@ async function runJob(jobId: string, params: {
   } finally {
     if (jobs.get(jobId) === state && state.runId === runId) {
       cancelTokens.delete(jobId);
+      const JOB_TTL_MS = 60 * 60 * 1000;
+      if (state.ttlTimerId) {
+        clearTimeout(state.ttlTimerId);
+      }
+      state.ttlTimerId = setTimeout(() => {
+        const currentState = jobs.get(jobId);
+        if (currentState && currentState.runId === runId) {
+          jobs.delete(jobId);
+        }
+      }, JOB_TTL_MS);
     }
   }
 }

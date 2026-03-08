@@ -1,7 +1,7 @@
 
-import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
-import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel } from '../types.ts';
+import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
 
 // Helper for exponential backoff
@@ -30,7 +30,8 @@ const getClient = (apiKey: string) => {
     throw new Error("API key must be set when using the Gemini API.");
   }
   return new GoogleGenAI({ 
-    apiKey: apiKey
+    apiKey: apiKey,
+    httpOptions: { timeout: 360000 }
   });
 };
 
@@ -108,7 +109,18 @@ export const actionItemSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low'])
 });
 
-export const phaseASchema = z.array(actionItemSchema);
+export const videoAnnotationSchema = z.object({
+  id: z.string().optional(),
+  timestamp: z.string(),
+  annotation_type: z.string(),
+  content: z.string(),
+  relevance: z.string()
+});
+
+export const phaseASchema = z.object({
+  actions: z.array(actionItemSchema),
+  annotations: z.array(videoAnnotationSchema)
+});
 
 export const uiStateSchema = z.object({
   application: z.string(),
@@ -130,6 +142,7 @@ export const phaseBResponseSchema = z.object({
   current_ui_state: uiStateSchema,
   cumulative_action_count: z.number().int(),
   validated_segment_events: z.array(actionItemSchema),
+  validated_segment_annotations: z.array(videoAnnotationSchema).optional(),
   merged_log_excerpt: z.array(actionItemSchema).optional()
 });
 
@@ -142,10 +155,16 @@ export const narrativeStepSchema = z.object({
   postcondition: z.string(),
   insight_type: z.enum(['explanation', 'rationale', 'tip', 'warning', 'workflow_framing', 'comparison']),
   topics: z.array(z.string()),
-  linked_visual_action_ids: z.array(z.string())
+  linked_visual_action_ids: z.array(z.string()),
+  linked_annotation_ids: z.array(z.string()).optional()
 });
 
-export const pass2Schema = z.array(narrativeStepSchema);
+export const pass2Schema = z.object({
+  steps: z.array(narrativeStepSchema),
+  learned_insights: z.string().optional().describe(
+    "CRITICAL: Extract ONLY factual UI terminology (e.g., 'The left panel is called Workspace') or persistent global state changes. DO NOT guess user intent or assume behavioral patterns. Keep it under 2 sentences."
+  )
+});
 
 export async function analyzeChunkPhaseA(
   videoUrl: string,
@@ -157,7 +176,7 @@ export async function analyzeChunkPhaseA(
   customContext: string,
   apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
-): Promise<ActionItem[]> {
+): Promise<{ actions: ActionItem[], annotations: VideoAnnotation[] }> {
   const ai = getClient(apiKey);
   
   const basePrompt = PHASE_A_SYSTEM_PROMPT
@@ -211,11 +230,6 @@ export async function analyzeChunkPhaseA(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -234,7 +248,7 @@ export async function analyzeChunkPhaseA(
       }
       if (finishReason === 'RECITATION') {
          onLog?.('warn', `Generation stopped due to RECITATION. Returning empty actions for this chunk.`);
-         return [];
+         return { actions: [], annotations: [] };
       }
 
       const text = response.text;
@@ -246,13 +260,21 @@ export async function analyzeChunkPhaseA(
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
-        const result = JSON.parse(cleanText) as ActionItem[];
-        if (!Array.isArray(result)) throw new Error("Phase A response must be a JSON array");
+        const result = JSON.parse(cleanText) as { actions: ActionItem[], annotations?: VideoAnnotation[] };
+        if (!result || !Array.isArray(result.actions)) {
+          throw new Error("Phase A response must be a JSON object with an 'actions' array");
+        }
         
-        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${result.length} raw actions`);
+        const actions = result.actions;
+        const annotations = Array.isArray(result.annotations) ? result.annotations : [];
+        
+        onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${actions.length} raw actions and ${annotations.length} annotations`);
         
         // Ensure dummy IDs for A before B overwrites them
-        return result.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` }));
+        return {
+          actions: actions.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` })),
+          annotations: annotations.map((r, i) => ({ ...r, id: `tmp_ann_${Date.now()}_${i}` }))
+        };
       } catch (parseError) {
         onLog?.('warn', `Phase A JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
@@ -284,6 +306,7 @@ export async function accumulateChunkPhaseB(
   videoUrl: string,
   durationStr: string,
   chunkActions: ActionItem[],
+  chunkAnnotations: VideoAnnotation[],
   chunkNumber: number,
   primaryWindow: string,
   chatHistory: any[] = [],
@@ -306,7 +329,8 @@ export async function accumulateChunkPhaseB(
   const message = JSON.stringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
-    extracted_actions: chunkActions
+    extracted_actions: chunkActions,
+    extracted_annotations: chunkAnnotations
   });
 
   const contents = [
@@ -336,11 +360,6 @@ export async function accumulateChunkPhaseB(
         contents: contents,
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           systemInstruction: finalSystemInstruction,
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
@@ -370,6 +389,7 @@ export async function accumulateChunkPhaseB(
              current_ui_state: { application: "Unknown", active_file: "Unknown", visible_panels: [], active_tool: "Unknown", open_dialogs: [], other_state: "Unknown" },
              cumulative_action_count: 0,
              validated_segment_events: [],
+             validated_segment_annotations: [],
              merged_log_excerpt: []
            }
          };
@@ -428,11 +448,12 @@ export async function analyzeNarrationSegment(
   startSec: number,
   endSec: number,
   relevantVisualActions: ActionItem[],
+  relevantAnnotations: VideoAnnotation[],
   customContext: string,
   apiKey: string,
   previousSteps: NarrativeStep[] = [],
   onLog?: (level: LogLevel, msg: string, data?: any) => void
-): Promise<NarrativeStep[]> {
+): Promise<{ steps: NarrativeStep[], learned_insights?: string }> {
   const ai = getClient(apiKey);
   
   // Provide simplified visual actions but include critical flags
@@ -460,7 +481,8 @@ export async function analyzeNarrationSegment(
     .replace('{start_time}', formatMMSS(startSec))
     .replace('{end_time}', formatMMSS(endSec))
     .replace('{previous_steps_context}', previousStepsContext)
-    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2));
+    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2))
+    .replace('{annotations}', JSON.stringify(relevantAnnotations, null, 2));
 
   let lastError: any;
 
@@ -506,11 +528,6 @@ export async function analyzeNarrationSegment(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -529,14 +546,14 @@ export async function analyzeNarrationSegment(
       }
       if (finishReason === 'RECITATION') {
          onLog?.('warn', `Generation stopped due to RECITATION in Phase C. Returning empty narrative steps.`);
-         return [];
+         return { steps: [] };
       }
 
       const text = response.text;
       
       if (!text) {
          onLog?.('warn', `Narration Phase (Attempt ${attempt}): Empty response received.`);
-         return [];
+         return { steps: [] };
       }
 
       onLog?.('info', `Narration Phase (Attempt ${attempt}): Received response`, { length: text.length });
@@ -544,22 +561,21 @@ export async function analyzeNarrationSegment(
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
-        let parsed: unknown = JSON.parse(cleanText);
+        let parsed: any = JSON.parse(cleanText);
         
-        if (!Array.isArray(parsed)) {
-           if (typeof parsed === 'object' && parsed !== null) {
-              parsed = [parsed];
-           } else {
-              onLog?.('warn', `Narration Phase parsing anomaly: Expected array, got other type.`);
-              return [];
-           }
+        if (Array.isArray(parsed)) {
+           // Fallback if model returns array instead of object
+           parsed = { steps: parsed };
+        } else if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.steps)) {
+           onLog?.('warn', `Narration Phase parsing anomaly: Expected object with steps array.`);
+           return { steps: [] };
         }
         
-        onLog?.('success', `Narration Phase (Attempt ${attempt}): Parsed ${(parsed as NarrativeStep[]).length} steps successfully.`);
-        return parsed as NarrativeStep[];
+        onLog?.('success', `Narration Phase (Attempt ${attempt}): Parsed ${(parsed.steps as NarrativeStep[]).length} steps successfully.`);
+        return parsed as { steps: NarrativeStep[], learned_insights?: string };
       } catch (parseError) {
         onLog?.('error', `Narration Phase JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
-        if (cleanText === '{}') return [];
+        if (cleanText === '{}') return { steps: [] };
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
       }
 
@@ -586,6 +602,8 @@ export async function analyzeNarrationSegment(
 
 export async function analyzeGlobalDeduplication(
   actions: ActionItem[],
+  cumulativeNarrative: NarrativeStep[],
+  finalUiState: any,
   customContext: string,
   apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
@@ -594,7 +612,16 @@ export async function analyzeGlobalDeduplication(
 
   const ai = getClient(apiKey);
   
-  let prompt = GLOBAL_DEDUPLICATION_PROMPT.replace('{all_actions}', JSON.stringify(actions, null, 2));
+  const minifiedNarrative = cumulativeNarrative.map(n => ({
+    id: n.id,
+    desc: n.explanation,
+    links: n.linked_visual_action_ids
+  }));
+
+  let prompt = GLOBAL_DEDUPLICATION_PROMPT
+    .replace('{all_actions}', JSON.stringify(actions, null, 2))
+    .replace('{narrative_context}', JSON.stringify(minifiedNarrative, null, 2))
+    .replace('{final_ui_state}', JSON.stringify(finalUiState, null, 2));
 
   if (customContext) {
     prompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.`;
@@ -611,13 +638,8 @@ export async function analyzeGlobalDeduplication(
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          httpOptions: {
-            headers: {
-              'x-goog-api-key': apiKey
-            }
-          },
           responseMimeType: 'application/json',
-          responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
+          responseSchema: fixNullable(zodToJsonSchema(z.array(actionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
       }), 360000, 'Phase D GenerateContent');

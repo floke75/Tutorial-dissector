@@ -33,6 +33,7 @@ export const createProject = async (): Promise<string> => {
     customContext: '',
     chunks: [],
     actions: [],
+    annotations: [],
     narrativeSteps: [],
     procState: {
       status: 'idle',

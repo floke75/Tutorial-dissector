@@ -153,6 +153,9 @@ async function startServer() {
     const __dirname = path.dirname(__filename);
     
     app.use((req, res) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: `Unknown API route: ${req.method} ${req.path}` });
+      }
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
   }

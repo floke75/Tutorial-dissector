@@ -8,7 +8,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { ArrowLeft, LayoutPanelLeft, Activity, Clock, Loader2 } from 'lucide-react';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
 import { getProject, saveProject } from '../services/storage';
-import { Chunk, ProcessingState, ActionItem, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
+import { Chunk, ProcessingState, ActionItem, VideoAnnotation, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
 import ReactPlayer from 'react-player';
 
 interface AnalysisViewProps {
@@ -29,6 +29,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Runtime State
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
@@ -113,6 +114,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         });
         setActions(sanitizedActions);
 
+        // Sanitize loaded annotations to ensure unique IDs
+        const seenAnnotationIds = new Set<string>();
+        const sanitizedAnnotations = (data.annotations || []).map((a, idx) => {
+          let id = a.id || `ann_missing_${idx}`;
+          if (seenAnnotationIds.has(id)) {
+            id = `${id}_dup_${idx}`;
+          }
+          seenAnnotationIds.add(id);
+          return { ...a, id };
+        });
+        setAnnotations(sanitizedAnnotations);
+
         // Sanitize loaded narrative steps to ensure unique IDs
         const seenStepIds = new Set<string>();
         const sanitizedSteps = (data.narrativeSteps || []).map((s, idx) => {
@@ -161,6 +174,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       customContext,
       chunks,
       actions,
+      annotations,
       narrativeSteps,
       procState,
       latestUIState,
@@ -168,12 +182,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       actionCount: actions.length
     };
     saveProject(saveData);
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
   // Local chunk computation removed as it's now handled by the server
 
   useEffect(() => {
-    const isRunning = procState.status === 'running_visual';
+    const isRunning = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
     if (isRunning) {
       timerRef.current = setInterval(() => {
         if (stateRef.current.startTime) {
@@ -186,9 +200,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
     return () => { 
       if (timerRef.current) clearInterval(timerRef.current); 
-      if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [procState.status]);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
 
   // System Logger
   const handleLog = (level: LogLevel, message: string, data?: any) => {
@@ -217,6 +237,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
        
        if (!isResuming) {
          setActions([]);
+         setAnnotations([]);
          setNarrativeSteps([]);
          setChunks([]);
        }
@@ -346,15 +367,19 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               duration: state.duration
             }));
             
-            if (state.chunks && state.chunks.length > 0) {
+            if (state.chunks !== undefined) {
               setChunks(state.chunks);
             }
             
-            if (state.actions && state.actions.length > 0) {
+            if (state.actions !== undefined) {
               setActions(state.actions);
             }
             
-            if (state.narrativeSteps && state.narrativeSteps.length > 0) {
+            if (state.annotations !== undefined) {
+              setAnnotations(state.annotations);
+            }
+
+            if (state.narrativeSteps !== undefined) {
               setNarrativeSteps(state.narrativeSteps);
             }
             
@@ -411,7 +436,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     return `${h > 0 ? h + ':' : ''}${m % 60}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
-  const isVisualRunning = procState.status === 'running_visual';
+  const isProcessingActive = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
 
   // Auto-hide sidebar when completed
   useEffect(() => {
@@ -584,7 +609,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               customContext={customContext}
               setCustomContext={setCustomContext}
               onStart={handleStart}
-              disabled={isVisualRunning}
+              disabled={isProcessingActive}
             />
             
             {procState.status !== 'idle' && (
@@ -594,11 +619,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-500">Status</span>
                     <span className={`font-mono font-medium ${
-                        isVisualRunning ? 'text-blue-600 dark:text-blue-400 animate-pulse' :
+                        isProcessingActive ? 'text-blue-600 dark:text-blue-400 animate-pulse' :
                         procState.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
                         'text-gray-500 dark:text-gray-400'
                     }`}>
                       {procState.status === 'running_visual' ? 'VISUAL ANALYSIS' :
+                       procState.status === 'running_narrative' ? 'NARRATIVE SYNTHESIS' :
+                       procState.status === 'running_dedup' ? 'GLOBAL DEDUPLICATION' :
                        procState.status.toUpperCase()}
                     </span>
                   </div>
@@ -618,7 +645,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   </div>
                 </div>
                 
-                {isVisualRunning && (
+                {isProcessingActive && (
                   <button
                     onClick={handleCancelAndSave}
                     className="mt-5 w-full py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
@@ -738,6 +765,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           <div className="flex-1 min-h-0">
             <ResultsTimeline 
               actions={actions} 
+              annotations={annotations}
               narrativeSteps={narrativeSteps} 
               currentTime={currentTime}
               onSeek={handleSeek}
