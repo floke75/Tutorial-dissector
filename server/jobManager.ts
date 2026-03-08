@@ -516,10 +516,11 @@ async function runJob(jobId: string, params: {
 
         if (oldToNew.size > 0) {
           addLog('info', `Remapping ${oldToNew.size} narrative links for removed duplicates.`);
+          const finalIds = new Set(deduplicatedActions.map(a => a.id));
           for (const step of cumulativeNarrative) {
-            step.linked_visual_action_ids = step.linked_visual_action_ids.map(
-              (id: string) => oldToNew.get(id) ?? id
-            );
+            step.linked_visual_action_ids = step.linked_visual_action_ids
+              .map((id: string) => oldToNew.get(id) ?? id)
+              .filter((id: string) => finalIds.has(id));
           }
         }
       }

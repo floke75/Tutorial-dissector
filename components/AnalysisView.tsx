@@ -200,9 +200,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
     return () => { 
       if (timerRef.current) clearInterval(timerRef.current); 
-      if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [procState.status]);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
 
   // System Logger
   const handleLog = (level: LogLevel, message: string, data?: any) => {
@@ -430,7 +436,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     return `${h > 0 ? h + ':' : ''}${m % 60}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
-  const isVisualRunning = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
+  const isProcessingActive = procState.status === 'running_visual' || procState.status === 'running_narrative' || procState.status === 'running_dedup';
 
   // Auto-hide sidebar when completed
   useEffect(() => {
@@ -603,7 +609,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               customContext={customContext}
               setCustomContext={setCustomContext}
               onStart={handleStart}
-              disabled={isVisualRunning}
+              disabled={isProcessingActive}
             />
             
             {procState.status !== 'idle' && (
@@ -613,7 +619,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-500">Status</span>
                     <span className={`font-mono font-medium ${
-                        isVisualRunning ? 'text-blue-600 dark:text-blue-400 animate-pulse' :
+                        isProcessingActive ? 'text-blue-600 dark:text-blue-400 animate-pulse' :
                         procState.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
                         'text-gray-500 dark:text-gray-400'
                     }`}>
@@ -639,7 +645,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                   </div>
                 </div>
                 
-                {isVisualRunning && (
+                {isProcessingActive && (
                   <button
                     onClick={handleCancelAndSave}
                     className="mt-5 w-full py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2"
