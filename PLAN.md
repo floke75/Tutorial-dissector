@@ -29,7 +29,7 @@ This phase runs *per chunk*, immediately after Phase B.
 *   **Logic:** Iterates through the video using the same chunks as Phase A.
 *   **Input:** Video audio + The finalized array of `ActionItems` (filtered to the current timeframe with a 15-second buffer).
 *   **Action:** Gemini maps spoken audio to the mechanical actions.
-*   **Output:** Generates `NarrativeStep` objects containing BDD `precondition` / `postcondition` strings, and a `linked_visual_action_ids` array that acts as a Foreign Key to the `ActionItems`.
+*   **Output:** Generates `NarrativeStep` objects containing `intent`, `explanation`, `insight_type`, `topics`, BDD `precondition` / `postcondition` strings, and a `linked_visual_action_ids` array that acts as a Foreign Key to the `ActionItems`.
 
 ### Phase D: Global Deduplication
 This phase runs *after* all chunks are complete.
