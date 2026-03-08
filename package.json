@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:integration": "vitest run services/geminiService.integration.test.ts"
+    "test:integration": "vitest run services/geminiService.integration.test.ts",
+    "test:narrative": "vitest run services/narrativeLinking.integration.test.ts",
+    "test:verify": "tsx run-verification-tests.ts"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

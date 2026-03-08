@@ -19,6 +19,8 @@ The core architecture for the **Verifiable Execution Graph** is fully implemente
 | **Error Path Filtering** | ✅ | Compiler strictly filters out actions flagged as `is_error_recovery`. |
 | **Session Persistence** | ✅ | State autosaved to `IndexedDB` via `services/storage.ts`. |
 | **Video Synchronization** | ✅ | Two-way sync between ReactPlayer and ResultsTimeline with auto-scrolling and active state highlighting. |
+| **Dynamic Context Accumulation** | ✅ | Phase C extracts `learned_insights` which are appended to a `learnedContext` string and injected into subsequent chunks. |
+| **Context-Aware Deduplication** | ✅ | Phase D uses minified narrative and UI state to differentiate identical actions serving different narrative steps. |
 
 ---
 
@@ -38,7 +40,7 @@ If you are a coding agent tasked with upgrading this application, pay attention 
 
 ### ⚠️ C. Token Cost & Context Window Limits
 *   **Issue:** The "Chat History" array in Phase B grows continuously. For a 30-minute video, the accumulated JSON context injected into the Phase B prompt becomes massive, potentially hitting output/input token limits.
-*   **Workaround Implemented:** Implemented a "sliding window" for the Phase B chat history (keeps only the last 3 turns) instead of the entire array.
+*   **Workaround Implemented:** Implemented a "sliding window" for the Phase B chat history (keeps only the last 30 turns/60 items) instead of the entire array, leveraging the large context window while preventing infinite growth. For Phase D (Global Deduplication), the narrative array is minified to just `id`, `desc`, and `links` to prevent token exhaustion.
 
 ### ⚠️ D. Local Storage Quotas
 *   **Issue:** Browsers limit `localStorage` to ~5MB. Storing massive arrays of detailed ActionItems and chat history strings will eventually crash the storage service (`QuotaExceededError`).

@@ -23,6 +23,7 @@ export interface JobState {
   chunkSize: number;
   overlap: number;
   ttlTimerId?: ReturnType<typeof setTimeout>;
+  learnedContext?: string;
 }
 
 const jobs = new Map<string, JobState>();
@@ -81,8 +82,48 @@ export async function processVideoJob(params: {
     return jobId; // Job is already running, do nothing
   }
 
+  const isResuming = !!(existingState && 
+                     (existingState.status === 'cancelled' || existingState.status === 'error') &&
+                     existingState.videoUrl === params.videoUrl &&
+                     existingState.chunkSize === params.chunkSize &&
+                     existingState.overlap === params.overlap &&
+                     existingState.chunks.length > 0);
+
+  const runId = uuidv4();
+
+  if (!isResuming) {
+    cancelTokens.delete(jobId);
+    jobs.set(jobId, {
+      id: jobId,
+      runId,
+      status: 'running_visual',
+      progress: 0,
+      logs: [],
+      actions: [],
+      annotations: [],
+      narrativeSteps: [],
+      uiState: null,
+      videoUrl: params.videoUrl,
+      duration: 0,
+      chunks: [],
+      currentChunkIndex: 0,
+      chatHistory: [],
+      chunkSize: params.chunkSize,
+      overlap: params.overlap,
+      learnedContext: ""
+    });
+  } else {
+    if (existingState!.ttlTimerId) {
+      clearTimeout(existingState!.ttlTimerId);
+      existingState!.ttlTimerId = undefined;
+    }
+    existingState!.status = 'running_visual';
+    existingState!.runId = runId;
+    cancelTokens.delete(jobId);
+  }
+
   // Start the job asynchronously
-  runJob(jobId, params).catch(err => {
+  runJob(jobId, params, isResuming).catch(err => {
     console.error(`Job ${jobId} failed:`, err);
     const state = jobs.get(jobId);
     if (state) {
@@ -113,7 +154,7 @@ async function runJob(jobId: string, params: {
   overlap: number;
   customContext: string;
   apiKey: string;
-}) {
+}, isResuming: boolean) {
   const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;
   
   const addLog = (level: LogLevel, message: string, data?: any) => {
@@ -123,52 +164,12 @@ async function runJob(jobId: string, params: {
     }
   };
 
-  const existingState = jobs.get(jobId);
-  if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
-    throw new Error(`Job ${jobId} is already running.`);
-  }
-
-  const isResuming = existingState && 
-                     (existingState.status === 'cancelled' || existingState.status === 'error') &&
-                     existingState.videoUrl === videoUrl &&
-                     existingState.chunkSize === chunkSize &&
-                     existingState.overlap === overlap &&
-                     existingState.chunks.length > 0; // Ensure chunks were calculated
-
-  const runId = uuidv4();
-
-  if (!isResuming) {
-    cancelTokens.delete(jobId);
-    jobs.set(jobId, {
-      id: jobId,
-      runId,
-      status: 'running_visual',
-      progress: 0,
-      logs: [],
-      actions: [],
-      annotations: [],
-      narrativeSteps: [],
-      uiState: null,
-      videoUrl,
-      duration: 0,
-      chunks: [],
-      currentChunkIndex: 0,
-      chatHistory: [],
-      chunkSize,
-      overlap
-    });
-  } else {
-    if (existingState.ttlTimerId) {
-      clearTimeout(existingState.ttlTimerId);
-      existingState.ttlTimerId = undefined;
-    }
-    existingState.status = 'running_visual';
-    existingState.runId = runId;
-    cancelTokens.delete(jobId);
-    addLog('info', `Resuming job from chunk ${existingState.currentChunkIndex + 1}...`);
-  }
-
   const state = jobs.get(jobId)!;
+  const runId = state.runId;
+
+  if (isResuming) {
+    addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+  }
 
   try {
     let duration = state.duration;
@@ -244,6 +245,8 @@ async function runJob(jobId: string, params: {
       const progressBase = (i / state.chunks.length) * 100;
       state.progress = progressBase;
 
+      const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+
       chunk.status = 'analyzing_phase_a';
       addLog('info', `--- Starting Chunk ${i + 1}/${state.chunks.length} ---`, { chunk });
 
@@ -256,7 +259,7 @@ async function runJob(jobId: string, params: {
         chunk.primaryStart,
         chunk.primaryEnd,
         overlap,
-        customContext,
+        dynamicContext,
         apiKey,
         addLog
       );
@@ -283,7 +286,7 @@ async function runJob(jobId: string, params: {
         i + 1,
         primaryWindowStr,
         chatHistory,
-        customContext,
+        dynamicContext,
         apiKey,
         addLog
       );
@@ -295,9 +298,13 @@ async function runJob(jobId: string, params: {
       }
 
       let nextChatHistory = phaseBResult.newHistory;
-      // Sliding window: keep only the last 6 items (3 turns: user + model)
-      if (nextChatHistory.length > 6) {
-        nextChatHistory = nextChatHistory.slice(-6);
+      // Sliding window: keep only the last 60 items (30 turns: user + model) to leverage the large context window
+      if (nextChatHistory.length > 60) {
+        nextChatHistory = nextChatHistory.slice(-60);
+        // GUARDRAIL: Ensure strict user/model alternation starting with 'user'
+        if (nextChatHistory[0].role !== 'user') {
+          nextChatHistory = nextChatHistory.slice(1);
+        }
       }
       let nextUIState = phaseBResult.result.current_ui_state;
       
@@ -339,20 +346,24 @@ async function runJob(jobId: string, params: {
       
       const relevantAnnotations = nextCumulativeAnnotations.filter(a => {
         const t = parseMMSS(a.timestamp);
-        return t >= contextStart && t <= contextEnd;
+        return t >= (contextStart - 60) && t <= (contextEnd + 60);
       });
 
-      const newNarrativeStepsRaw = await analyzeNarrationSegment(
+      const { steps: newNarrativeStepsRaw, learned_insights } = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
         relevantActions,
         relevantAnnotations,
-        customContext,
+        dynamicContext,
         apiKey,
-        cumulativeNarrative.slice(-3),
+        cumulativeNarrative.slice(-10),
         addLog
       );
+
+      if (learned_insights) {
+        state.learnedContext = (state.learnedContext ? state.learnedContext + "\n- " : "- ") + learned_insights;
+      }
       
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
@@ -457,6 +468,8 @@ async function runJob(jobId: string, params: {
     try {
       const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
         cumulativeActions,
+        cumulativeNarrative,
+        latestUIState,
         customContext,
         apiKey,
         addLog

@@ -30,7 +30,8 @@ const getClient = (apiKey: string) => {
     throw new Error("API key must be set when using the Gemini API.");
   }
   return new GoogleGenAI({ 
-    apiKey: apiKey
+    apiKey: apiKey,
+    httpOptions: { timeout: 360000 }
   });
 };
 
@@ -158,7 +159,12 @@ export const narrativeStepSchema = z.object({
   linked_annotation_ids: z.array(z.string()).optional()
 });
 
-export const pass2Schema = z.array(narrativeStepSchema);
+export const pass2Schema = z.object({
+  steps: z.array(narrativeStepSchema),
+  learned_insights: z.string().optional().describe(
+    "CRITICAL: Extract ONLY factual UI terminology (e.g., 'The left panel is called Workspace') or persistent global state changes. DO NOT guess user intent or assume behavioral patterns. Keep it under 2 sentences."
+  )
+});
 
 export async function analyzeChunkPhaseA(
   videoUrl: string,
@@ -447,7 +453,7 @@ export async function analyzeNarrationSegment(
   apiKey: string,
   previousSteps: NarrativeStep[] = [],
   onLog?: (level: LogLevel, msg: string, data?: any) => void
-): Promise<NarrativeStep[]> {
+): Promise<{ steps: NarrativeStep[], learned_insights?: string }> {
   const ai = getClient(apiKey);
   
   // Provide simplified visual actions but include critical flags
@@ -540,14 +546,14 @@ export async function analyzeNarrationSegment(
       }
       if (finishReason === 'RECITATION') {
          onLog?.('warn', `Generation stopped due to RECITATION in Phase C. Returning empty narrative steps.`);
-         return [];
+         return { steps: [] };
       }
 
       const text = response.text;
       
       if (!text) {
          onLog?.('warn', `Narration Phase (Attempt ${attempt}): Empty response received.`);
-         return [];
+         return { steps: [] };
       }
 
       onLog?.('info', `Narration Phase (Attempt ${attempt}): Received response`, { length: text.length });
@@ -555,22 +561,21 @@ export async function analyzeNarrationSegment(
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
-        let parsed: unknown = JSON.parse(cleanText);
+        let parsed: any = JSON.parse(cleanText);
         
-        if (!Array.isArray(parsed)) {
-           if (typeof parsed === 'object' && parsed !== null) {
-              parsed = [parsed];
-           } else {
-              onLog?.('warn', `Narration Phase parsing anomaly: Expected array, got other type.`);
-              return [];
-           }
+        if (Array.isArray(parsed)) {
+           // Fallback if model returns array instead of object
+           parsed = { steps: parsed };
+        } else if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed.steps)) {
+           onLog?.('warn', `Narration Phase parsing anomaly: Expected object with steps array.`);
+           return { steps: [] };
         }
         
-        onLog?.('success', `Narration Phase (Attempt ${attempt}): Parsed ${(parsed as NarrativeStep[]).length} steps successfully.`);
-        return parsed as NarrativeStep[];
+        onLog?.('success', `Narration Phase (Attempt ${attempt}): Parsed ${(parsed.steps as NarrativeStep[]).length} steps successfully.`);
+        return parsed as { steps: NarrativeStep[], learned_insights?: string };
       } catch (parseError) {
         onLog?.('error', `Narration Phase JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
-        if (cleanText === '{}') return [];
+        if (cleanText === '{}') return { steps: [] };
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
       }
 
@@ -597,6 +602,8 @@ export async function analyzeNarrationSegment(
 
 export async function analyzeGlobalDeduplication(
   actions: ActionItem[],
+  cumulativeNarrative: NarrativeStep[],
+  finalUiState: any,
   customContext: string,
   apiKey: string,
   onLog?: (level: LogLevel, msg: string, data?: any) => void
@@ -605,7 +612,16 @@ export async function analyzeGlobalDeduplication(
 
   const ai = getClient(apiKey);
   
-  let prompt = GLOBAL_DEDUPLICATION_PROMPT.replace('{all_actions}', JSON.stringify(actions, null, 2));
+  const minifiedNarrative = cumulativeNarrative.map(n => ({
+    id: n.id,
+    desc: n.explanation,
+    links: n.linked_visual_action_ids
+  }));
+
+  let prompt = GLOBAL_DEDUPLICATION_PROMPT
+    .replace('{all_actions}', JSON.stringify(actions, null, 2))
+    .replace('{narrative_context}', JSON.stringify(minifiedNarrative, null, 2))
+    .replace('{final_ui_state}', JSON.stringify(finalUiState, null, 2));
 
   if (customContext) {
     prompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.`;
