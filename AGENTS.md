@@ -46,7 +46,7 @@ Because video analysis takes minutes, the React frontend submits jobs to the Exp
 
 ### Rule D: Context Flow & Dynamic Accumulation
 *   **Chat History (Phase B):** The Gemini SDK requires `chatHistory` to strictly alternate between `user` and `model` roles, always starting with `user`. The sliding window in `jobManager.ts` retains up to 60 items (30 turns) to leverage the large context window while enforcing this rule.
-*   **"Zipper" Optimization:** To prevent token exhaustion in Phase B and Phase D, heavy metadata (`ui_context`, `chunkIndex`) is stripped from actions before sending them to the LLM, and re-attached afterward using a cascading content-similarity fallback to handle ID drift.
+*   **"Zipper" Optimization:** To prevent token exhaustion, `ui_context` is stripped from actions before sending them to the LLM in Phase B, and both `ui_context` and `chunkIndex` are stripped in Phase D. They are re-attached afterward using a cascading content-similarity fallback to handle ID drift.
 *   **Dynamic Context (Phase C):** Phase C extracts `learned_insights` (factual UI terminology only, e.g., panel names and persistent global state changes) which are appended to a `learnedContext` string. This string is injected into the prompt for all subsequent chunks, allowing the pipeline to accumulate stable domain vocabulary as it processes the video.
 *   **Token Optimization (Phase D):** Global deduplication receives the cumulative narrative to inform its decisions. To prevent token exhaustion, the narrative array is minified (id, description, links) before being passed to the LLM.
 

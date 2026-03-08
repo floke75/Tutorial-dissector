@@ -42,7 +42,7 @@ If you are a coding agent tasked with upgrading this application, pay attention 
 *   **Issue:** The "Chat History" array in Phase B grows continuously. For a 30-minute video, the accumulated JSON context injected into the Phase B prompt becomes massive, potentially hitting output/input token limits. Additionally, Phase D sends the entire video's action log at once, which can exceed the model's context window.
 *   **Workaround Implemented:** 
     *   **Sliding Window:** Implemented a "sliding window" for the Phase B chat history (keeps only the last 30 turns/60 items) instead of the entire array.
-    *   **"Zipper" Optimization:** Strips heavy, non-essential metadata (`ui_context`, `chunkIndex`) from actions *before* sending them to the LLM in Phase B and Phase D, and re-attaches them afterward.
+    *   **"Zipper" Optimization:** Strips `ui_context` from actions *before* sending them to the LLM in Phase B, and strips both `ui_context` and `chunkIndex` in Phase D. Re-attaches them afterward.
     *   **ID-Drift Fallback:** To prevent metadata loss when the LLM hallucinates or drops action IDs during deduplication, a cascading fallback (strict match -> moderate match) is used to reliably map the stripped metadata back onto the action using its timestamp, type, and description.
 
 ### ⚠️ D. Local Storage Quotas
