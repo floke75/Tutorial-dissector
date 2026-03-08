@@ -566,7 +566,7 @@ export async function analyzeNarrationSegment(
         if (Array.isArray(parsed)) {
            // Fallback if model returns array instead of object
            parsed = { steps: parsed };
-        } else if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed.steps)) {
+        } else if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.steps)) {
            onLog?.('warn', `Narration Phase parsing anomaly: Expected object with steps array.`);
            return { steps: [] };
         }

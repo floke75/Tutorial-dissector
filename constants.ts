@@ -192,19 +192,22 @@ INPUT CONTEXT (Visual Actions and Annotations occurring nearby):
 {visual_actions}
 {annotations}
 
-OUTPUT FORMAT: Respond ONLY with a JSON array. No markdown. Do not include any internal reasoning or conversational text inside the JSON values.
-[
-  {
-    "id": "step_a1b2c3d4",
-    "timestamp": "04:21",
-    "intent": "Configure Autosave Settings",
-    "precondition": "Settings modal is closed and user is on the main canvas.",
-    "explanation": "Enable autosave to ensure constraints are preserved during edits. This prevents data loss when switching between complex component states.",
-    "postcondition": "Autosave toggle is visually checked and Settings modal remains open.",
-    "insight_type": "rationale",
-    "topics": ["constraints", "configuration", "data preservation"],
-    "linked_visual_action_ids": ["evt_a1b2c3d4", "evt_e5f6g7h8", "evt_i9j0k1l2"],
-    "linked_annotation_ids": ["ann_e5f6g7h8"]
-  }
-]
+OUTPUT FORMAT: Respond ONLY with a JSON object containing "steps" and an optional "learned_insights" string. No markdown. Do not include any internal reasoning or conversational text inside the JSON values.
+{
+  "steps": [
+    {
+      "id": "step_a1b2c3d4",
+      "timestamp": "04:21",
+      "intent": "Configure Autosave Settings",
+      "precondition": "Settings modal is closed and user is on the main canvas.",
+      "explanation": "Enable autosave to ensure constraints are preserved during edits. This prevents data loss when switching between complex component states.",
+      "postcondition": "Autosave toggle is visually checked and Settings modal remains open.",
+      "insight_type": "rationale",
+      "topics": ["constraints", "configuration", "data preservation"],
+      "linked_visual_action_ids": ["evt_a1b2c3d4", "evt_e5f6g7h8", "evt_i9j0k1l2"],
+      "linked_annotation_ids": ["ann_e5f6g7h8"]
+    }
+  ],
+  "learned_insights": "The left panel is called the 'Layers Panel'. The top bar is the 'Toolbar'."
+}
 `;
