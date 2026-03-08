@@ -91,7 +91,10 @@ async function startServer() {
     if (!state) {
       return res.status(404).json({ error: "Job not found" });
     }
-    res.json(state);
+    
+    // Strip chatHistory and ttlTimerId to prevent serialization errors
+    const { chatHistory, ttlTimerId, ...safeState } = state;
+    res.json(safeState);
   });
 
   app.post("/api/process/:jobId/cancel", (req, res) => {
