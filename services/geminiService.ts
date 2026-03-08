@@ -109,6 +109,8 @@ export const actionItemSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low'])
 });
 
+export const phaseBActionItemSchema = actionItemSchema.omit({ ui_context: true });
+
 export const videoAnnotationSchema = z.object({
   id: z.string().optional(),
   timestamp: z.string(),
@@ -141,9 +143,9 @@ export const phaseBResponseSchema = z.object({
   conflicts_resolved: z.array(z.string()).optional(),
   current_ui_state: uiStateSchema,
   cumulative_action_count: z.number().int(),
-  validated_segment_events: z.array(actionItemSchema),
+  validated_segment_events: z.array(phaseBActionItemSchema),
   validated_segment_annotations: z.array(videoAnnotationSchema).optional(),
-  merged_log_excerpt: z.array(actionItemSchema).optional()
+  merged_log_excerpt: z.array(phaseBActionItemSchema).optional()
 });
 
 export const narrativeStepSchema = z.object({
@@ -326,10 +328,16 @@ export async function accumulateChunkPhaseB(
     finalSystemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
   }
 
+  // Strip ui_context to save tokens in Phase B (and in chat history)
+  const simplifiedChunkActions = chunkActions.map(a => {
+    const { ui_context, ...rest } = a;
+    return rest;
+  });
+
   const message = JSON.stringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
-    extracted_actions: chunkActions,
+    extracted_actions: simplifiedChunkActions,
     extracted_annotations: chunkAnnotations
   });
 
@@ -405,6 +413,30 @@ export async function accumulateChunkPhaseB(
       try {
           const result = JSON.parse(cleanText) as PhaseBResponse;
           
+          // Re-attach stripped ui_context
+          if (result.validated_segment_events) {
+            const originalActionMap = new Map(chunkActions.map(a => [a.id, a]));
+            (result as any).validated_segment_events = result.validated_segment_events.map(action => {
+              let original = action.id ? originalActionMap.get(action.id) : undefined;
+              
+              // Fallback: if ID drifted or was dropped, try to match by content similarity
+              if (!original) {
+                original = chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail) ||
+                           chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type) ||
+                           chunkActions.find(a => a.timestamp === action.timestamp);
+              }
+
+              if (original) {
+                return {
+                  ...action,
+                  ui_context: original.ui_context
+                };
+              }
+              onLog?.('warn', `Phase B Deduplication: action id "${action.id}" not found in original chunk map even with fallback; ui_context will be missing`);
+              return action;
+            });
+          }
+
           onLog?.('success', `Phase B (Attempt ${attempt}): Deduplicated chunk successfully`, {
             added: result.new_actions_added,
             removed: result.duplicates_removed,
@@ -682,7 +714,15 @@ export async function analyzeGlobalDeduplication(
         // Re-attach stripped fields (ui_context, chunkIndex)
         const originalActionMap = new Map(actions.map(a => [a.id, a]));
         const enrichedResult = result.map(action => {
-          const original = originalActionMap.get(action.id);
+          let original = action.id ? originalActionMap.get(action.id) : undefined;
+          
+          // Fallback: if ID drifted or was dropped, try to match by content similarity
+          if (!original) {
+            original = actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail) ||
+                       actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type) ||
+                       actions.find(a => a.timestamp === action.timestamp);
+          }
+
           if (original) {
             return {
               ...action,
@@ -690,6 +730,7 @@ export async function analyzeGlobalDeduplication(
               chunkIndex: original.chunkIndex
             };
           }
+          onLog?.('warn', `Global Deduplication: action id "${action.id}" not found in original map even with fallback; ui_context/chunkIndex will be missing`);
           return action;
         });
 
