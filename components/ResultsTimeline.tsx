@@ -92,7 +92,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     if (activeNodeRef.current && currentTime > 0) {
       activeNodeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [activeState.activeActionId]);
+  }, [activeState.activeActionId, activeState.activeAnnotationId]);
 
   const getTypeColor = (type: string) => {
     switch(type) {
