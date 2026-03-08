@@ -7,7 +7,7 @@ import type { Chunk } from '../types.ts';
 export interface JobState {
   id: string;
   runId: string;
-  status: 'idle' | 'running_visual' | 'completed' | 'error' | 'cancelled';
+  status: 'idle' | 'running_visual' | 'running_narrative' | 'running_dedup' | 'completed' | 'error' | 'cancelled';
   progress: number;
   logs: { id: string; timestamp: number; level: LogLevel; message: string; data?: any }[];
   actions: ActionItem[];
@@ -22,6 +22,7 @@ export interface JobState {
   chatHistory?: any[];
   chunkSize: number;
   overlap: number;
+  ttlTimerId?: ReturnType<typeof setTimeout>;
 }
 
 const jobs = new Map<string, JobState>();
@@ -157,6 +158,10 @@ async function runJob(jobId: string, params: {
       overlap
     });
   } else {
+    if (existingState.ttlTimerId) {
+      clearTimeout(existingState.ttlTimerId);
+      existingState.ttlTimerId = undefined;
+    }
     existingState.status = 'running_visual';
     existingState.runId = runId;
     cancelTokens.delete(jobId);
@@ -233,6 +238,7 @@ async function runJob(jobId: string, params: {
         return;
       }
 
+      state.status = 'running_visual';
       state.currentChunkIndex = i;
       const chunk = state.chunks[i];
       const progressBase = (i / state.chunks.length) * 100;
@@ -318,6 +324,7 @@ async function runJob(jobId: string, params: {
       let nextCumulativeAnnotations = [...cumulativeAnnotations, ...newValidatedAnnotations];
       
       // Phase C: Narrative Synthesis
+      state.status = 'running_narrative';
       chunk.status = 'analyzing_phase_c';
       addLog('info', `Phase C: Synthesizing narrative steps...`);
       
@@ -443,6 +450,7 @@ async function runJob(jobId: string, params: {
     }
 
     // Final Global Deduplication Pass
+    state.status = 'running_dedup';
     addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
     state.progress = 95;
     
@@ -470,16 +478,36 @@ async function runJob(jobId: string, params: {
       if (deduplicatedActions.length < cumulativeActions.length) {
         const oldToNew = new Map<string, string>();
         const remainingIds = new Set(deduplicatedActions.map(a => a.id));
+        const remainingOriginalActions = cumulativeActions.filter(a => remainingIds.has(a.id));
         
         for (const oldAction of cumulativeActions) {
           if (!remainingIds.has(oldAction.id)) {
             // This action was removed as a duplicate. Find the action that was kept.
-            // We use timestamp and action_type as the primary matching criteria,
-            // since detail might have been normalized by the LLM.
-            const keptAction = deduplicatedActions.find(
-              a => a.timestamp === oldAction.timestamp && 
-                   a.action_type === oldAction.action_type
-            );
+            // We compare against the ORIGINAL versions of the kept actions to avoid 
+            // issues with LLM normalization of detail/target fields.
+            const oldTime = parseMMSS(oldAction.timestamp);
+            
+            // Find candidates within 2 seconds and with the same action_type
+            const candidates = remainingOriginalActions.filter(a => {
+              if (a.action_type !== oldAction.action_type) return false;
+              const aTime = parseMMSS(a.timestamp);
+              return Math.abs(aTime - oldTime) <= 2;
+            });
+            
+            let keptAction = candidates[0];
+            if (candidates.length > 1) {
+              // Tie-breaker: find the most similar original action
+              keptAction = candidates.reduce((best, current) => {
+                const scoreCurrent = (current.target.element === oldAction.target.element ? 2 : 0) + 
+                                     (current.target.panel === oldAction.target.panel ? 1 : 0) +
+                                     (current.detail === oldAction.detail ? 3 : 0);
+                const scoreBest = (best.target.element === oldAction.target.element ? 2 : 0) + 
+                                  (best.target.panel === oldAction.target.panel ? 1 : 0) +
+                                  (best.detail === oldAction.detail ? 3 : 0);
+                return scoreCurrent > scoreBest ? current : best;
+              });
+            }
+            
             if (keptAction) {
               oldToNew.set(oldAction.id, keptAction.id);
             }
@@ -512,8 +540,16 @@ async function runJob(jobId: string, params: {
   } finally {
     if (jobs.get(jobId) === state && state.runId === runId) {
       cancelTokens.delete(jobId);
+      const JOB_TTL_MS = 60 * 60 * 1000;
+      if (state.ttlTimerId) {
+        clearTimeout(state.ttlTimerId);
+      }
+      state.ttlTimerId = setTimeout(() => {
+        const currentState = jobs.get(jobId);
+        if (currentState && currentState.runId === runId) {
+          jobs.delete(jobId);
+        }
+      }, JOB_TTL_MS);
     }
-    const JOB_TTL_MS = 60 * 60 * 1000;
-    setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
   }
 }
