@@ -82,7 +82,7 @@ enum ActionType {
     system_event | ui_response | transition
 }
 enum AnnotationType {
-    title_card | lower_third | text_overlay | highlight | zoom |
+    title_card | lower_third | text_overlay | gui_highlight | zoom_in |
     transition | illustration | bullet_points | other
 }
 enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
@@ -308,6 +308,9 @@ rule AnalyzeNarrationSegment {
     let context_window_end = end_time + config.narration_context_buffer
     
     let visual_context = project.actions where 
+        parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
+        
+    let annotation_context = project.annotations where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
 
     -- External AI Synthesis produces NarrativeSteps that link to ActionItems via ID

@@ -643,7 +643,7 @@ export async function analyzeGlobalDeduplication(
             }
           },
           responseMimeType: 'application/json',
-          responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
+          responseSchema: fixNullable(zodToJsonSchema(z.array(actionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
       }), 360000, 'Phase D GenerateContent');

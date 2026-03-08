@@ -231,6 +231,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
        
        if (!isResuming) {
          setActions([]);
+         setAnnotations([]);
          setNarrativeSteps([]);
          setChunks([]);
        }
@@ -360,19 +361,19 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               duration: state.duration
             }));
             
-            if (state.chunks && state.chunks.length > 0) {
+            if (state.chunks !== undefined) {
               setChunks(state.chunks);
             }
             
-            if (state.actions && state.actions.length > 0) {
+            if (state.actions !== undefined) {
               setActions(state.actions);
             }
             
-            if (state.annotations && state.annotations.length > 0) {
+            if (state.annotations !== undefined) {
               setAnnotations(state.annotations);
             }
 
-            if (state.narrativeSteps && state.narrativeSteps.length > 0) {
+            if (state.narrativeSteps !== undefined) {
               setNarrativeSteps(state.narrativeSteps);
             }
             
