@@ -416,14 +416,19 @@ export async function accumulateChunkPhaseB(
           // Re-attach stripped ui_context
           if (result.validated_segment_events) {
             const originalActionMap = new Map(chunkActions.map(a => [a.id, a]));
-            (result as any).validated_segment_events = result.validated_segment_events.map(action => {
+            result.validated_segment_events = result.validated_segment_events.map(action => {
               let original = action.id ? originalActionMap.get(action.id) : undefined;
               
               // Fallback: if ID drifted or was dropped, try to match by content similarity
               if (!original) {
-                original = chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail) ||
-                           chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type) ||
-                           chunkActions.find(a => a.timestamp === action.timestamp);
+                const strictMatch = chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail);
+                const moderateMatch = !strictMatch && chunkActions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type);
+                const looseMatch = !strictMatch && !moderateMatch && chunkActions.find(a => a.timestamp === action.timestamp);
+
+                if (looseMatch) {
+                  onLog?.('warn', `Phase B: loose timestamp-only fallback used for action "${action.id}" at ${action.timestamp}; ui_context may be from wrong source action`);
+                }
+                original = strictMatch || moderateMatch || looseMatch;
               }
 
               if (original) {
@@ -686,7 +691,7 @@ export async function analyzeGlobalDeduplication(
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           responseMimeType: 'application/json',
-          responseSchema: fixNullable(zodToJsonSchema(z.array(actionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
+          responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
       }), 360000, 'Phase D GenerateContent');
@@ -718,9 +723,14 @@ export async function analyzeGlobalDeduplication(
           
           // Fallback: if ID drifted or was dropped, try to match by content similarity
           if (!original) {
-            original = actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail) ||
-                       actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type) ||
-                       actions.find(a => a.timestamp === action.timestamp);
+            const strictMatch = actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail);
+            const moderateMatch = !strictMatch && actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type);
+            const looseMatch = !strictMatch && !moderateMatch && actions.find(a => a.timestamp === action.timestamp);
+
+            if (looseMatch) {
+              onLog?.('warn', `Phase D: loose timestamp-only fallback used for action "${action.id}" at ${action.timestamp}; ui_context/chunkIndex may be from wrong source action`);
+            }
+            original = strictMatch || moderateMatch || looseMatch;
           }
 
           if (original) {
