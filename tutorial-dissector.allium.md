@@ -138,7 +138,7 @@ entity Chunk {
 -- Low-level mechanical action
 entity ActionItem {
     project: Project
-    id: String                    -- Unique string (e.g. evt_001)
+    id: String                    -- Unique string (e.g. evt_a1b2c3d4)
     chunk_index: Integer?
     
     timestamp: String
@@ -255,13 +255,14 @@ rule CompletePhaseC {
             NarrativeStep.created(
                 project: chunk.project,
                 id: step.id,
-                chunk_index: chunk.index,
                 timestamp: step.timestamp,
-                description: step.description,
+                intent: step.intent,
                 precondition: step.precondition,
+                explanation: step.explanation,
                 postcondition: step.postcondition,
-                linked_visual_action_ids: step.linked_visual_action_ids,
-                insights: step.insights
+                insight_type: step.insight_type,
+                topics: step.topics,
+                linked_visual_action_ids: step.linked_visual_action_ids
             )
 }
 
