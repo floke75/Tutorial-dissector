@@ -206,7 +206,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   // Clean up polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, []);
 
@@ -349,9 +349,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setProcState(prev => ({ ...prev, jobId }));
         
         // Start polling
-        if (pollingRef.current) clearInterval(pollingRef.current);
+        if (pollingRef.current) clearTimeout(pollingRef.current);
         
-        pollingRef.current = setInterval(async () => {
+        const poll = async () => {
           try {
             const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { cache: 'no-store' });
             if (!pollRes.ok) throw new Error("Failed to fetch job state");
@@ -410,17 +410,22 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             }
             
             if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
-              if (pollingRef.current) clearInterval(pollingRef.current);
+              if (pollingRef.current) clearTimeout(pollingRef.current);
               if (state.status === 'error') {
                 handleLog('error', `Server job failed: ${state.error}`);
               } else if (state.status === 'completed') {
                 handleLog('success', 'Workflow analysis completed successfully!');
               }
+              return; // Stop polling
             }
           } catch (e) {
             console.error("Polling error:", e);
           }
-        }, 2000);
+          
+          pollingRef.current = setTimeout(poll, 2000);
+        };
+        
+        pollingRef.current = setTimeout(poll, 2000);
         
       } catch (err: any) {
         console.error("Job failed to start:", err);
@@ -462,7 +467,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       handleLog('warn', 'Sending cancel request to server...');
       await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
       
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (pollingRef.current) clearTimeout(pollingRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       
       setProcState(prev => ({
