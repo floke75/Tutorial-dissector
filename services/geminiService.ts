@@ -618,8 +618,23 @@ export async function analyzeGlobalDeduplication(
     links: n.linked_visual_action_ids
   }));
 
+  const simplifiedActions = actions.map(a => ({
+    id: a.id,
+    timestamp: a.timestamp,
+    action_type: a.action_type,
+    actor: a.actor,
+    target: a.target,
+    detail: a.detail,
+    result: a.result,
+    interacted_components: a.interacted_components,
+    input_data: a.input_data,
+    is_error_recovery: a.is_error_recovery,
+    context_note: a.context_note,
+    confidence: a.confidence
+  }));
+
   let prompt = GLOBAL_DEDUPLICATION_PROMPT
-    .replace('{all_actions}', JSON.stringify(actions, null, 2))
+    .replace('{all_actions}', JSON.stringify(simplifiedActions, null, 2))
     .replace('{narrative_context}', JSON.stringify(minifiedNarrative, null, 2))
     .replace('{final_ui_state}', JSON.stringify(finalUiState, null, 2));
 
@@ -664,10 +679,24 @@ export async function analyzeGlobalDeduplication(
         const result = JSON.parse(cleanText) as ActionItem[];
         if (!Array.isArray(result)) throw new Error("Global Deduplication response must be a JSON array");
         
-        const removedCount = actions.length - result.length;
-        onLog?.('success', `Global Deduplication (Attempt ${attempt}): Removed ${removedCount} duplicates. Final count: ${result.length}`);
+        // Re-attach stripped fields (ui_context, chunkIndex)
+        const originalActionMap = new Map(actions.map(a => [a.id, a]));
+        const enrichedResult = result.map(action => {
+          const original = originalActionMap.get(action.id);
+          if (original) {
+            return {
+              ...action,
+              ui_context: original.ui_context,
+              chunkIndex: original.chunkIndex
+            };
+          }
+          return action;
+        });
+
+        const removedCount = actions.length - enrichedResult.length;
+        onLog?.('success', `Global Deduplication (Attempt ${attempt}): Removed ${removedCount} duplicates. Final count: ${enrichedResult.length}`);
         
-        return result;
+        return enrichedResult;
       } catch (parseError) {
         onLog?.('warn', `Global Deduplication JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
