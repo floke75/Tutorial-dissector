@@ -31,7 +31,7 @@ const getClient = (apiKey: string) => {
   }
   return new GoogleGenAI({ 
     apiKey: apiKey,
-    httpOptions: { timeout: 360000 }
+    httpOptions: { timeout: 480000 }
   });
 };
 
@@ -242,7 +242,7 @@ export async function analyzeChunkPhaseA(
           // =========================================================================================
           maxOutputTokens: 100000 
         }
-      }), 360000, 'Phase A GenerateContent');
+      }), 480000, 'Phase A GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
@@ -379,7 +379,7 @@ export async function accumulateChunkPhaseB(
           // =========================================================================================
           maxOutputTokens: 100000
         }
-      }), 360000, 'Phase B GenerateContent');
+      }), 480000, 'Phase B GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
@@ -571,7 +571,7 @@ export async function analyzeNarrationSegment(
           // =========================================================================================
           maxOutputTokens: 100000 
         }
-      }), 360000, 'Phase C GenerateContent');
+      }), 480000, 'Phase C GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
@@ -690,7 +690,7 @@ export async function analyzeGlobalDeduplication(
           responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
-      }), 360000, 'Phase D GenerateContent');
+      }), 480000, 'Phase D GenerateContent');
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {

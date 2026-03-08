@@ -11,7 +11,10 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
+  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
+    console.warn("WARNING: CORS_ORIGIN is not set in production. Cross-origin requests may be rejected.");
+  }
+  app.use(cors({ origin: process.env.CORS_ORIGIN || (process.env.NODE_ENV !== 'production' ? 'http://localhost:3000' : undefined) }));
   app.use(express.json());
 
   // API Routes
@@ -91,7 +94,10 @@ async function startServer() {
     if (!state) {
       return res.status(404).json({ error: "Job not found" });
     }
-    res.json(state);
+    
+    // Strip chatHistory and ttlTimerId to prevent serialization errors
+    const { chatHistory, ttlTimerId, ...safeState } = state;
+    res.json(safeState);
   });
 
   app.post("/api/process/:jobId/cancel", (req, res) => {
