@@ -144,16 +144,34 @@ if (data) {
 
   // After all setState calls: if server is still running, reconnect polling
   if (needsReconnectPolling && data.procState.jobId) {
-    // Must start polling since there's no useEffect that auto-starts it.
-    // Reuse the same poll setup logic from handleStart().
-    activePollingJobRef.current = data.procState.jobId;
-    // Schedule first poll tick (the poll function must be defined or extracted
-    // to be callable from both handleStart and this reconnect path)
+    startPollingRef.current?.(data.procState.jobId);
   }
 }
 ```
 
-> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling when server reports job still running. (5) Use a local `needsReconnectPolling` boolean — do NOT add `_needsReconnectPolling` to the typed `Project` object (TypeScript will reject it).
+### Prerequisite: Extract poll launcher into a ref
+
+The `poll` function is a closure defined inside `handleStart` (line 360) that captures `jobId` and `consecutiveErrors`. It cannot be called from `loadData` without refactoring. Add a ref that stores the poll launcher:
+
+```typescript
+// Add near other refs (line ~60):
+const startPollingRef = useRef<((jobId: string) => void) | null>(null);
+
+// Inside handleStart, after defining poll() and setting up the polling loop:
+startPollingRef.current = (id: string) => {
+  activePollingJobRef.current = id;
+  pollingRef.current = setTimeout(poll, 2000);
+};
+
+// In loadData reconnect block (shown above):
+if (needsReconnectPolling && data.procState.jobId) {
+  startPollingRef.current?.(data.procState.jobId);
+}
+```
+
+This requires `poll` to use `activePollingJobRef.current` instead of the closed-over `jobId` for the job identifier (it already does this at line 361: `if (activePollingJobRef.current !== jobId) return`). The `consecutiveErrors` counter should be reset to 0 when reconnecting.
+
+> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling via `startPollingRef`. (5) Use a local `needsReconnectPolling` boolean — do NOT add `_needsReconnectPolling` to the typed `Project` object (TypeScript will reject it).
 
 2. **Poll 404 handling** (in the poll catch, line ~376): Add specific 404 detection before the generic error path:
 
@@ -461,9 +479,12 @@ if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
 
 **Frontend-side** (in Step 3's unchanged handler):
 ```typescript
-if (state.logCapOccurred) {
-  lastLogIndex = 0;  // Re-sync from start of trimmed array
-}
+// logCapOccurred is handled server-side (sends all logs on next poll).
+// lastLogIndex is already correctly set from state.logIndex above
+// (= post-cap array length, e.g., 200), so subsequent polls send
+// logSince=200 and new entries are delivered via state.logs.slice(200).
+// Do NOT reset lastLogIndex to 0 — that causes sinceLogIndex > 0 to be
+// false, which makes the server return [] for all subsequent unchanged polls.
 ```
 
 > **Correction from original plan:** Uses `uuidv4()` (not `.substring(0, 8)`). Does NOT bump `stateVersion` here — that's handled by `bumpVersion()` at structural transition points only.
@@ -711,6 +732,8 @@ if (emergencySave) {
 | Steps 3+7 log cap | `logSince` absolute index used with capped array | After cap, `state.logs.slice(247)` returns `[]` — need `logCapOccurred` flag to re-sync |
 | Step 7 `logCapOccurred` reset | Flag reset before serialization | Must capture flag value before resetting: `const capOccurred = state.logCapOccurred` |
 | Step 7 `logCapOccurred` type | Used without declaring on `JobState` | Must add `logCapOccurred?: boolean` to `JobState` interface in Step 1 |
+| Step 7 `lastLogIndex = 0` | Reset to 0 after cap | Causes blackout: `sinceLogIndex > 0` is false, server returns `[]`. Remove the reset — `state.logIndex` already provides the correct value |
+| Step 2 reconnect stub | "poll function must be extracted" | Incomplete — `poll` is a closure inside `handleStart`. Must store poll launcher in `startPollingRef` so `loadData` can call it |
 
 ---
 
