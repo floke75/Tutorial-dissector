@@ -236,6 +236,9 @@ app.get("/api/process/:jobId", (req, res) => {
     });
   }
 
+  // Reset logCapOccurred on full-state response too — otherwise it persists
+  // and the next unchanged poll redundantly sends all 200 logs again.
+  if (state.logCapOccurred) state.logCapOccurred = false;
   res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
 });
 ```
@@ -734,6 +737,7 @@ if (emergencySave) {
 | Step 7 `logCapOccurred` type | Used without declaring on `JobState` | Must add `logCapOccurred?: boolean` to `JobState` interface in Step 1 |
 | Step 7 `lastLogIndex = 0` | Reset to 0 after cap | Causes blackout: `sinceLogIndex > 0` is false, server returns `[]`. Remove the reset — `state.logIndex` already provides the correct value |
 | Step 2 reconnect stub | "poll function must be extracted" | Incomplete — `poll` is a closure inside `handleStart`. Must store poll launcher in `startPollingRef` so `loadData` can call it |
+| Step 3 `logCapOccurred` full-state | Only reset in unchanged path | Full-state response also spreads the flag but never resets it — causes redundant 200-log payload on next unchanged poll |
 
 ---
 
