@@ -225,8 +225,7 @@ export async function analyzeChunkPhaseA(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              },
-              mediaResolution: { level: "media_resolution_high" }
+              }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -234,6 +233,7 @@ export async function analyzeChunkPhaseA(
           ]
         }],
         config: {
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH' as any,
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json',
@@ -458,11 +458,11 @@ export async function accumulateChunkPhaseB(
             }
           ];
 
-          // Ensure thoughtSignatures are preserved if present in the response
+          // Verify thoughtSignatures are present in the response
           if (response.candidates?.[0]?.content?.parts) {
             const partsWithSignatures = response.candidates[0].content.parts.filter((p: any) => p.thoughtSignature);
             if (partsWithSignatures.length > 0) {
-              onLog?.('info', `Phase B (Attempt ${attempt}): Preserved ${partsWithSignatures.length} thought signatures for next turn`);
+              onLog?.('info', `Phase B (Attempt ${attempt}): Verified ${partsWithSignatures.length} thought signatures are present in history for next turn`);
             }
           }
 
@@ -569,8 +569,7 @@ export async function analyzeNarrationSegment(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              },
-              mediaResolution: { level: "media_resolution_high" }
+              }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -578,6 +577,7 @@ export async function analyzeNarrationSegment(
           ]
         }],
         config: {
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH' as any,
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json',

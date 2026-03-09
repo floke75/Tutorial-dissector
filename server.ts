@@ -103,10 +103,9 @@ async function startServer() {
   app.post("/api/process/:jobId/cancel", (req, res) => {
     const success = cancelJob(req.params.jobId);
     if (success) {
-      res.json({ success: true });
+      res.json({ success: true, found: true });
     } else {
-      // Return 200 even if not found, as the desired state (cancelled/stopped) is effectively achieved
-      res.json({ success: true, message: "Job not found or already completed" });
+      res.json({ success: true, found: false });
     }
   });
 

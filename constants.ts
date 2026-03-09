@@ -24,8 +24,8 @@ RULES FOR ACTIONS:
 
 RULES FOR ANNOTATIONS:
 1. Extract editorial elements added in post-production that are relevant for workflow extraction.
-2. INCLUDED TYPES: segment title cards, lower thirds, text overlays, GUI highlights and zoom-ins not part of the actual application UX, segment transitions (if they signal a clear topic change), flowchart illustrations, bullet points.
-3. EXCLUDED TYPES: intro animations without useful information, wipes and bumpers that don't signal a clear topic change, cuts to full camera views of the tutor, descriptions of the color and style of any graphics added in post.
+2. INCLUDED TYPES: segment title cards, lower thirds, text overlays, GUI highlights and zoom-ins not part of the actual application UX, flowchart illustrations, bullet points.
+3. EXCLUDED TYPES: purely visual transitions (swipes, fades, geometric shapes), intro animations without useful information, cuts to full camera views of the tutor, descriptions of the color and style of any graphics added in post. DO NOT log a transition unless it contains readable text that introduces a new topic. NEVER describe the visual appearance of a transition (e.g., "orange and purple geometric shapes").
 4. Keep annotations strictly separated from user interaction events. Use free-form strings for annotation_type if the provided options don't fit, but the element is still notable.
 
 OUTPUT FORMAT: Respond ONLY with a JSON object containing "actions" and "annotations" arrays. No markdown, no commentary outside the JSON. Do not include any internal reasoning or conversational text inside the JSON values. All fields must be clean, direct, and strictly follow the schema.
