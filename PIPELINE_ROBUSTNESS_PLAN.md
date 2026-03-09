@@ -80,47 +80,64 @@ const bumpVersion = () => {
 
 ## Step 2 — Frontend stale job detection and recovery (B1, B9)
 
-**File:** `components/AnalysisView.tsx`
+**Files:** `components/AnalysisView.tsx`, `types.ts`
 
-### Changes
+### Prerequisite: Add `error` to `ProcessingState`
 
-1. **On load** (in the `loadData` useEffect, lines 94-162): After loading from IndexedDB, if `procState.status` is a running state, check the server:
-
+`ProcessingState` (types.ts:136-148) has no `error` field, but it's already used at AnalysisView.tsx:344. Add it:
 ```typescript
-// After setting all state from IndexedDB...
-if (data.procState.status === 'running_visual' ||
-    data.procState.status === 'running_narrative' ||
-    data.procState.status === 'running_dedup') {
-  try {
-    const res = await fetch(`/api/process/${projectId}?t=${Date.now()}`, { cache: 'no-store' });
-    if (res.ok) {
-      const serverState = await res.json();
-      if (serverState.status === 'completed' || serverState.status === 'error' || serverState.status === 'cancelled') {
-        // Server finished while we were away — apply final state
-        // Use the same field mapping as the existing poll function (lines 385-413)
-        data.procState.status = serverState.status;
-        if (serverState.actions) data.actions = serverState.actions;
-        if (serverState.annotations) data.annotations = serverState.annotations;
-        if (serverState.narrativeSteps) data.narrativeSteps = serverState.narrativeSteps;
-        if (serverState.chunks) data.chunks = serverState.chunks;
-        if (serverState.uiState) data.latestUIState = serverState.uiState;  // Note: server field is "uiState"
-      }
-      // else: still running — the existing polling useEffect will pick it up
-    } else if (res.status === 404) {
-      // Server lost this job (restart/TTL expiry)
-      data.procState.status = (data.actions?.length > 0) ? 'completed' : 'error';
-      if (!data.actions?.length) {
-        data.procState.error = 'Server connection lost. Partial results may be available.';
-      }
-    }
-  } catch (e) {
-    data.procState.status = 'error';
-    data.procState.error = 'Could not reach server. Data loaded from local storage.';
-  }
+export interface ProcessingState {
+  // ... existing fields ...
+  error?: string;  // NEW — fixes pre-existing type gap
 }
 ```
 
-> **Correction from original plan:** Server returns `uiState`, not `latestUIState`. Must map field names correctly. Also, don't try to construct a `Project` from server response — just patch the loaded `data` object using the same field mapping the poll function already uses.
+### Changes
+
+1. **On load** (in the `loadData` useEffect, lines 94-162): **BEFORE the existing setState calls** (i.e., after `const data = await getProject(projectId)` at line 96, but before `setProjectName(data.name)` at line 98), insert the recovery check. This is critical — the `data` object must be patched before the setState calls consume it:
+
+```typescript
+const data = await getProject(projectId);
+if (data) {
+  // Recovery check: if IndexedDB shows a running state, verify with server
+  if (data.procState.status === 'running_visual' ||
+      data.procState.status === 'running_narrative' ||
+      data.procState.status === 'running_dedup') {
+    try {
+      const res = await fetch(`/api/process/${projectId}?t=${Date.now()}`, { cache: 'no-store' });
+      if (res.ok) {
+        const serverState = await res.json();
+        if (serverState.status === 'completed' || serverState.status === 'error' || serverState.status === 'cancelled') {
+          // Server finished while we were away — patch data before setState
+          data.procState.status = serverState.status;
+          if (serverState.actions) data.actions = serverState.actions;
+          if (serverState.annotations) data.annotations = serverState.annotations;
+          if (serverState.narrativeSteps) data.narrativeSteps = serverState.narrativeSteps;
+          if (serverState.chunks) data.chunks = serverState.chunks;
+          if (serverState.uiState) data.latestUIState = serverState.uiState;  // server field is "uiState"
+        }
+        // else: still running — the existing polling useEffect will pick it up
+      } else if (res.status === 404) {
+        // Server lost this job (restart/TTL expiry)
+        data.procState.status = (data.actions?.length > 0) ? 'completed' : 'error';
+        if (!data.actions?.length) {
+          data.procState.error = 'Server connection lost. Partial results may be available.';
+        }
+      }
+    } catch (e) {
+      data.procState.status = 'error';
+      data.procState.error = 'Could not reach server. Data loaded from local storage.';
+    }
+  }
+
+  // ... existing setState calls (setProjectName, setVideoUrl, etc.) follow here,
+  // now consuming the (possibly patched) data object ...
+  setProjectName(data.name);
+  // ...
+}
+```
+
+> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap).
 
 2. **Poll 404 handling** (in the poll catch, line ~376): Add specific 404 detection before the generic error path:
 
@@ -186,7 +203,13 @@ app.get("/api/process/:jobId", (req, res) => {
 // Outside the poll closure (in the useEffect):
 let lastVersion = 0;
 
-// Inside poll(), after parsing response:
+// Inside poll(), update the fetch URL to include both cache-buster and version:
+const pollRes = await fetch(
+  `/api/process/${jobId}?t=${Date.now()}&since=${lastVersion}`,
+  { cache: 'no-store', signal: controller.signal }
+);
+
+// After parsing response:
 if (state.unchanged) {
   setProcState(prev => ({ ...prev, status: state.status, progress: state.progress }));
   // Skip setActions, setChunks, setNarrativeSteps, etc.
@@ -244,13 +267,13 @@ useEffect(() => {
 
 ## Step 5 — Set chunk status to `'error'` on failure (B5)
 
-**File:** `server/jobManager.ts` — outer catch block (lines 547-551)
+**File:** `server/jobManager.ts` — TWO error paths need fixing
 
 > **Correction from original plan:** `chunk.errorMsg` and `ChunkStatus = 'error'` already exist in the type system (`types.ts` lines 48, 117). No type changes needed.
 
 ### Changes
 
-Add to the outer catch block:
+**Error path 1:** `runJob`'s outer catch block (lines 547-551):
 
 ```typescript
 } catch (error: any) {
@@ -266,6 +289,26 @@ Add to the outer catch block:
     currentChunk.errorMsg = state.error;
   }
 } finally {
+```
+
+**Error path 2:** `processVideoJob`'s `.catch` on `runJob()` (lines 126-133). This catches errors that escape `runJob`'s own try/catch:
+
+```typescript
+runJob(jobId, params, isResuming).catch(err => {
+  console.error(`Job ${jobId} failed:`, err);
+  const state = jobs.get(jobId);
+  if (state) {
+    state.status = 'error';
+    state.error = err.message || 'Unknown error';
+
+    // Mark the current chunk as errored
+    const currentChunk = state.chunks[state.currentChunkIndex];
+    if (currentChunk && currentChunk.status !== 'completed') {
+      currentChunk.status = 'error';
+      currentChunk.errorMsg = state.error;
+    }
+  }
+});
 ```
 
 The `ChunkVisualizer` already renders `'error'` status as red "FAILED" (confirmed in `ChunkVisualizer.tsx`).
@@ -293,7 +336,13 @@ export async function analyzeGlobalDeduplication(
 ): Promise<ActionItem[]>
 ```
 
-2. Call `onProgress` before each retry attempt inside the function.
+2. Call `onProgress` at structural milestones within `analyzeGlobalDeduplication`:
+   - `onProgress?.(93)` — before the API call (start of each attempt)
+   - `onProgress?.(96)` — after the API response is parsed successfully
+   - `onProgress?.(98)` — after link remapping / `ui_context` re-attachment
+   - Progress reaches 100 on completion back in `runJob`
+
+   This provides 3-4 meaningful progress updates per attempt, not just 1.
 
 3. Update call site in `jobManager.ts` (line 467):
 ```typescript
@@ -532,6 +581,7 @@ if (emergencySave) {
 | `server.ts` | 3 |
 | `components/AnalysisView.tsx` | 2, 3, 4, 9, 12 |
 | `services/geminiService.ts` | 6, 8 |
+| `types.ts` | 2 (add `error?: string` to `ProcessingState`) |
 
 ---
 
@@ -564,6 +614,11 @@ if (emergencySave) {
 | `stateVersion` increment location | Inside `addLog` | Separate `bumpVersion()` at structural transitions only |
 | Phase C destructuring | Change `const` to `let` on destructuring | Use intermediate `narrationResult` variable instead |
 | `ProcessingStatus` type | Lists 7 values | Has 8 values (includes `'paused'`) |
+| `ProcessingState.error` | Used but not declared | Must add `error?: string` to interface (pre-existing gap at AnalysisView.tsx:344) |
+| Step 2 code placement | "After setting all state" | Must go BEFORE setState calls or mutations are no-ops |
+| Step 5 error paths | Only inner catch | Must also fix outer `.catch` at `processVideoJob` (lines 126-133) |
+| Step 6 progress granularity | "Before each retry attempt" | Must fire at milestones within each attempt (before API, after parse, after remap) |
+| Step 3 poll URL | Missing cache-buster combo | Must combine `?t=${Date.now()}&since=${lastVersion}` |
 
 ---
 
@@ -573,7 +628,7 @@ if (emergencySave) {
 - **B3:** Monitor Network tab during run. Between chunk completions, responses should be <200 bytes.
 - **B4:** Monitor IndexedDB writes — at most once per 5 seconds during processing.
 - **B5:** Trigger failure (bad API key). ChunkVisualizer should show red "FAILED", not blue "SCANNING...".
-- **B6:** During Phase D, progress should move through 92→93→95→97→100.
+- **B6:** During Phase D, progress should move through 92→93→96→98→100 (3-4 visible increments).
 - **B7:** After long video, `state.logs.length <= 200`.
 - **B14:** Cancel mid-chunk. Frontend should continue polling until server confirms cancellation.
 
