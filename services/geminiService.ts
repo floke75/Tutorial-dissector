@@ -11,14 +11,21 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Helper to prevent stalled API calls from hanging the job indefinitely
 function withTimeout<T>(promise: Promise<T>, ms: number, operationName: string): Promise<T> {
   let timeoutId: NodeJS.Timeout;
+  let timedOut = false;
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => {
+      timedOut = true;
       reject(new Error(`Operation '${operationName}' timed out after ${ms / 1000}s`));
     }, ms);
   });
 
   return Promise.race([
-    promise,
+    promise.then((res) => {
+      if (timedOut) {
+        console.warn(`[ZOMBIE RESPONSE] ${operationName} returned after timeout of ${ms}ms`);
+      }
+      return res;
+    }),
     timeoutPromise
   ]).finally(() => {
     clearTimeout(timeoutId);
@@ -373,7 +380,6 @@ export async function accumulateChunkPhaseB(
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: finalSystemInstruction,
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -658,7 +664,8 @@ export async function analyzeGlobalDeduplication(
   finalUiState: any,
   customContext: string,
   apiKey: string,
-  onLog?: (level: LogLevel, msg: string, data?: any) => void
+  onLog?: (level: LogLevel, msg: string, data?: any) => void,
+  onProgress?: (pct: number) => void
 ): Promise<ActionItem[]> {
   if (!actions || actions.length === 0) return [];
 
@@ -699,18 +706,20 @@ export async function analyzeGlobalDeduplication(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       onLog?.('info', `Global Deduplication (Attempt ${attempt}): Sending ${actions.length} actions for final cleanup`);
+      onProgress?.(93);
 
       const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
       }), 480000, 'Phase D GenerateContent');
+
+      onProgress?.(96);
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
@@ -732,6 +741,8 @@ export async function analyzeGlobalDeduplication(
         const result = JSON.parse(cleanText) as ActionItem[];
         if (!Array.isArray(result)) throw new Error("Global Deduplication response must be a JSON array");
         
+        onProgress?.(98);
+
         // Re-attach stripped fields (ui_context, chunkIndex)
         const originalActionMap = new Map(actions.map(a => [a.id, a]));
         const enrichedResult = result.map(action => {

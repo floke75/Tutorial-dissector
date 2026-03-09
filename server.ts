@@ -97,7 +97,32 @@ async function startServer() {
     
     // Strip chatHistory and ttlTimerId to prevent serialization errors
     const { chatHistory, ttlTimerId, ...safeState } = state;
-    res.json(safeState);
+    const sinceVersion = parseInt(req.query.since as string) || 0;
+    const sinceLogIndex = parseInt(req.query.logSince as string) || 0;
+
+    if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
+      let newLogs: any[];
+      const capOccurred = state.logCapOccurred || false;
+      if (capOccurred) {
+        newLogs = state.logs;
+        state.logCapOccurred = false;
+      } else {
+        newLogs = sinceLogIndex > 0 ? state.logs.slice(sinceLogIndex) : [];
+      }
+      return res.json({
+        status: state.status,
+        progress: state.progress,
+        stateVersion: state.stateVersion,
+        lastUpdatedAt: state.lastUpdatedAt,
+        logs: newLogs.length > 0 ? newLogs : undefined,
+        logIndex: state.logs.length,
+        logCapOccurred: capOccurred,
+        unchanged: true
+      });
+    }
+
+    if (state.logCapOccurred) state.logCapOccurred = false;
+    res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
   });
 
   app.post("/api/process/:jobId/cancel", (req, res) => {
