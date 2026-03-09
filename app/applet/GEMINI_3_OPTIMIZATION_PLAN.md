@@ -42,9 +42,9 @@
 ## Step 4: Code Execution Tool Integration (Visual Investigation)
 **Description:** Gemini 3 Flash/Pro can use Python code execution to actively investigate images (zooming, cropping, calculating spatial bounding boxes). We will add the `codeExecution` tool to the `config.tools` array in Phase A and the Narration Phase to allow the model to perform high-precision spatial analysis of the UI.
 **Target Files:** `services/geminiService.ts`
-**Status:** ✅ Completed
+**Status:** ✅ Completed (with modifications)
 **Completion Details:** 
-- Enabled `tools: [{ codeExecution: {} }]` in `analyzeChunkPhaseA` (Phase A) to allow the model to use Python for bounding box normalization and spatial math.
 - Enabled `tools: [{ codeExecution: {} }]` in `accumulateChunkPhaseB` (Phase B) to allow the model to deterministically calculate cumulative action counts and manage array deduplication.
 - Enabled `tools: [{ codeExecution: {} }]` in `analyzeGlobalDeduplication` (Final Refinement) to allow the model to use algorithmic filtering for deduplication.
+- ⚠️ **Rollback:** Removed from `analyzeChunkPhaseA` (Phase A) due to a Gemini API limitation where `codeExecution` is incompatible with video inputs (`The mime type: video/text/timestamp is not supported for code execution`).
 - Intentionally omitted from `analyzeNarrationSegment` (Narration Phase) to prevent regressions in story/narrative generation, per Gemini API documentation warnings.

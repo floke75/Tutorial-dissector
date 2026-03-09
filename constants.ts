@@ -105,14 +105,14 @@ RESPOND with a JSON object:
   "validated_segment_events": [
      // ONLY THE NEW, DEDUPLICATED ACTIONS FROM THIS CHUNK. Do NOT include actions from previous chunks.
      {
-       "id": "tmp_12345_0",
+       "id": "evt_12345678",
        ... <standard action properties including spatial_bounding_box and input_data>
      }
   ],
   "validated_segment_annotations": [
      // ONLY THE NEW, DEDUPLICATED ANNOTATIONS FROM THIS CHUNK. Do NOT include annotations from previous chunks.
      {
-       "id": "tmp_ann_12345_0",
+       "id": "ann_12345678",
        "timestamp": "MM:SS",
        "annotation_type": "title_card",
        "content": "Text",

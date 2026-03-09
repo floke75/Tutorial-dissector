@@ -367,9 +367,8 @@ async function runJob(jobId: string, params: {
       
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
-        if (!step.id || existingStepIds.has(step.id)) {
-          step.id = `step_${uuidv4().substring(0, 8)}`;
-        }
+        // Unconditionally assign a consistent hex ID to avoid mixed formats from the model
+        step.id = `step_${uuidv4().substring(0, 8)}`;
         existingStepIds.add(step.id);
         return step;
       });

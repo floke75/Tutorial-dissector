@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { v4 as uuidv4 } from 'uuid';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
 import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
@@ -192,7 +193,7 @@ export async function analyzeChunkPhaseA(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       let currentPrompt = `Analyze this video segment.`;
-      currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
+      currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
 
       let systemInstruction = basePrompt;
       if (customContext) {
@@ -235,7 +236,6 @@ export async function analyzeChunkPhaseA(
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: systemInstruction,
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -276,10 +276,10 @@ export async function analyzeChunkPhaseA(
         
         onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${actions.length} raw actions and ${annotations.length} annotations`);
         
-        // Ensure dummy IDs for A before B overwrites them
+        // Ensure consistent IDs for A before B processes them
         return {
-          actions: actions.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` })),
-          annotations: annotations.map((r, i) => ({ ...r, id: `tmp_ann_${Date.now()}_${i}` }))
+          actions: actions.map((r) => ({ ...r, id: r.id || `evt_${uuidv4().substring(0, 8)}` })),
+          annotations: annotations.map((r) => ({ ...r, id: r.id || `ann_${uuidv4().substring(0, 8)}` }))
         };
       } catch (parseError) {
         onLog?.('warn', `Phase A JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
