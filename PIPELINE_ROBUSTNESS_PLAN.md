@@ -97,7 +97,7 @@ export interface ProcessingState {
 1. **On load** (in the `loadData` useEffect, lines 94-162): **BEFORE the existing setState calls** (i.e., after `const data = await getProject(projectId)` at line 96, but before `setProjectName(data.name)` at line 98), insert the recovery check. This is critical — the `data` object must be patched before the setState calls consume it:
 
 ```typescript
-const data = await getProject(projectId);
+let data = await getProject(projectId);  // let, not const — Step 12 needs reassignment for emergency save
 if (data) {
   // Recovery check: if IndexedDB shows a running state, verify with server
   if (data.procState.status === 'running_visual' ||
@@ -116,7 +116,11 @@ if (data) {
           if (serverState.chunks) data.chunks = serverState.chunks;
           if (serverState.uiState) data.latestUIState = serverState.uiState;  // server field is "uiState"
         }
-        // else: still running — the existing polling useEffect will pick it up
+        // else: still running on server — need to reconnect polling
+        // NOTE: There is NO useEffect that auto-starts polling on mount.
+        // Polling is only started inside handleStart() (line 354).
+        // We must explicitly restart polling here.
+        data._needsReconnectPolling = true;
       } else if (res.status === 404) {
         // Server lost this job (restart/TTL expiry)
         data.procState.status = (data.actions?.length > 0) ? 'completed' : 'error';
@@ -133,11 +137,20 @@ if (data) {
   // ... existing setState calls (setProjectName, setVideoUrl, etc.) follow here,
   // now consuming the (possibly patched) data object ...
   setProjectName(data.name);
-  // ...
+  // ... all other setState calls ...
+
+  // After all setState calls: if server is still running, reconnect polling
+  if (data._needsReconnectPolling && data.procState.jobId) {
+    // Must start polling since there's no useEffect that auto-starts it.
+    // Reuse the same poll setup logic from handleStart().
+    activePollingJobRef.current = data.procState.jobId;
+    // Schedule first poll tick (the poll function must be defined or extracted
+    // to be callable from both handleStart and this reconnect path)
+  }
 }
 ```
 
-> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap).
+> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling when server reports job still running.
 
 2. **Poll 404 handling** (in the poll catch, line ~376): Add specific 404 detection before the generic error path:
 
@@ -182,42 +195,65 @@ app.get("/api/process/:jobId", (req, res) => {
   const { chatHistory, ttlTimerId, ...safeState } = state;
   const sinceVersion = parseInt(req.query.since as string) || 0;
 
+  const sinceLogIndex = parseInt(req.query.logSince as string) || 0;
+
   if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
-    // Nothing changed — return minimal response
+    // No structural change — but still deliver new logs so the Dev Console
+    // isn't silent between chunk completions. stateVersion is NOT bumped in
+    // addLog, so logs can accumulate between structural transitions.
+    const newLogs = sinceLogIndex > 0
+      ? state.logs.slice(sinceLogIndex)
+      : [];
     return res.json({
       status: state.status,
       progress: state.progress,
       stateVersion: state.stateVersion,
       lastUpdatedAt: state.lastUpdatedAt,
+      logs: newLogs.length > 0 ? newLogs : undefined,
+      logIndex: state.logs.length,
       unchanged: true
     });
   }
 
-  res.json({ ...safeState, unchanged: false });
+  res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
 });
 ```
 
-2. Update frontend poll to track version and skip heavy updates when unchanged:
+2. Update frontend poll to track version + log index and skip heavy updates when unchanged:
 
 ```typescript
 // Outside the poll closure (in the useEffect):
 let lastVersion = 0;
+let lastLogIndex = 0;
 
-// Inside poll(), update the fetch URL to include both cache-buster and version:
+// Inside poll(), update the fetch URL to include cache-buster, version, and log index:
 const pollRes = await fetch(
-  `/api/process/${jobId}?t=${Date.now()}&since=${lastVersion}`,
+  `/api/process/${jobId}?t=${Date.now()}&since=${lastVersion}&logSince=${lastLogIndex}`,
   { cache: 'no-store', signal: controller.signal }
 );
 
 // After parsing response:
+if (state.logIndex !== undefined) lastLogIndex = state.logIndex;
+
 if (state.unchanged) {
   setProcState(prev => ({ ...prev, status: state.status, progress: state.progress }));
+  // Still append any new logs delivered in the unchanged response
+  if (state.logs && state.logs.length > 0) {
+    // Use existing log-append logic (lines 416-434)
+    setProcState(prev => {
+      const existingLogIds = new Set((prev.logs || []).map(l => l.id));
+      const newLogs = state.logs.filter((l: any) => !existingLogIds.has(l.id));
+      return { ...prev, logs: [...(prev.logs || []), ...newLogs] };
+    });
+  }
   // Skip setActions, setChunks, setNarrativeSteps, etc.
 } else {
   lastVersion = state.stateVersion || 0;
   // ... existing full state update logic (lines 385-434) ...
 }
 ```
+
+> **Correction from round 2 review:** The `unchanged` response originally omitted logs entirely. Since `stateVersion` is NOT bumped in `addLog`, logs can accumulate between structural transitions — causing the Dev Console to appear silent for 30+ seconds during dense phases. The fix includes new logs in the unchanged response via `logSince` tracking.
 
 ---
 
@@ -556,8 +592,10 @@ useEffect(() => {
 }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
 ```
 
-On load (in the `loadData` function, before line 97):
+On load (in the `loadData` function, before line 97). **Important:** Line 96 must change from `const data` to `let data` to allow emergency save override (also needed by Step 2's recovery logic):
 ```typescript
+let data = await getProject(projectId);  // Changed from const to let
+
 const emergencyKey = `td_emergency_save_${projectId}`;
 const emergencySave = localStorage.getItem(emergencyKey);
 if (emergencySave) {
@@ -619,6 +657,9 @@ if (emergencySave) {
 | Step 5 error paths | Only inner catch | Must also fix outer `.catch` at `processVideoJob` (lines 126-133) |
 | Step 6 progress granularity | "Before each retry attempt" | Must fire at milestones within each attempt (before API, after parse, after remap) |
 | Step 3 poll URL | Missing cache-buster combo | Must combine `?t=${Date.now()}&since=${lastVersion}` |
+| Step 3 log delivery | Logs omitted from unchanged response | Must include new logs via `logSince` tracking — Dev Console goes silent otherwise |
+| Step 2 reconnect | "Polling useEffect will pick it up" | No such useEffect exists — must explicitly restart polling from `loadData` |
+| Step 12 `const data` | `data = emergencyData` reassignment | `const data` at line 96 prevents this — must change to `let` |
 
 ---
 
