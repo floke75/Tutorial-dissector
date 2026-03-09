@@ -93,8 +93,55 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   useEffect(() => {
     const loadData = async () => {
-      const data = await getProject(projectId);
+      let data = await getProject(projectId);
+      
+      const emergencyKey = `td_emergency_save_${projectId}`;
+      const emergencySave = localStorage.getItem(emergencyKey);
+      if (emergencySave) {
+        try {
+          const emergencyData = JSON.parse(emergencySave);
+          if (!data || emergencyData.updatedAt > (data.updatedAt || 0)) {
+            data = emergencyData;
+          }
+        } catch (e) { /* ignore corrupt data */ }
+        localStorage.removeItem(emergencyKey);
+      }
+
+      let needsReconnectPolling = false;
       if (data) {
+        // Recovery check: if IndexedDB shows a running state, verify with server
+        if (data.procState.status === 'running_visual' ||
+            data.procState.status === 'running_narrative' ||
+            data.procState.status === 'running_dedup') {
+          try {
+            const res = await fetch(`/api/process/${projectId}?t=${Date.now()}`, { cache: 'no-store' });
+            if (res.ok) {
+              const serverState = await res.json();
+              if (serverState.status === 'completed' || serverState.status === 'error' || serverState.status === 'cancelled') {
+                // Server finished while we were away — patch data before setState
+                data.procState.status = serverState.status;
+                if (serverState.actions) data.actions = serverState.actions;
+                if (serverState.annotations) data.annotations = serverState.annotations;
+                if (serverState.narrativeSteps) data.narrativeSteps = serverState.narrativeSteps;
+                if (serverState.chunks) data.chunks = serverState.chunks;
+                if (serverState.uiState) data.latestUIState = serverState.uiState;
+              } else {
+                // Still running on server — need to reconnect polling
+                needsReconnectPolling = true;
+              }
+            } else if (res.status === 404) {
+              // Server lost this job (restart/TTL expiry)
+              data.procState.status = (data.actions?.length > 0) ? 'completed' : 'error';
+              if (!data.actions?.length) {
+                data.procState.error = 'Server connection lost. Partial results may be available.';
+              }
+            }
+          } catch (e) {
+            data.procState.status = 'error';
+            data.procState.error = 'Could not reach server. Data loaded from local storage.';
+          }
+        }
+
         setProjectName(data.name);
         setVideoUrl(data.videoUrl);
         setDurationInput(data.durationInput);
@@ -157,33 +204,78 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setLatestUIState(data.latestUIState);
       }
       setIsLoaded(true);
+
+      if (needsReconnectPolling && data?.procState?.jobId) {
+        startPollingRef.current?.(data.procState.jobId);
+      }
     };
     loadData();
   }, [projectId]);
 
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!isLoaded) return;
     
-    const saveData: Project = {
-      id: projectId,
-      name: projectName,
-      updatedAt: Date.now(),
-      videoUrl,
-      durationInput,
-      chunkSize,
-      overlap,
-      customContext,
-      chunks,
-      actions,
-      annotations,
-      narrativeSteps,
-      procState,
-      latestUIState,
-      status: procState.status, 
-      actionCount: actions.length
+    const isActive = procState.status === 'running_visual' ||
+                     procState.status === 'running_narrative' ||
+                     procState.status === 'running_dedup';
+
+    const doSave = () => {
+      const saveData: Project = {
+        id: projectId,
+        name: projectName,
+        updatedAt: Date.now(),
+        videoUrl,
+        durationInput,
+        chunkSize,
+        overlap,
+        customContext,
+        chunks,
+        actions,
+        annotations,
+        narrativeSteps,
+        procState,
+        latestUIState,
+        status: procState.status, 
+        actionCount: actions.length
+      };
+      saveProject(saveData);
     };
-    saveProject(saveData);
+
+    if (isActive) {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(doSave, 5000);
+    } else {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      doSave();
+    }
+
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isLoaded) return;
+      const isActive = procState.status === 'running_visual' ||
+                       procState.status === 'running_narrative' ||
+                       procState.status === 'running_dedup';
+      if (!isActive) return; // Only emergency-save during active processing
+
+      try {
+        const saveData: Project = {
+          id: projectId, name: projectName, updatedAt: Date.now(),
+          videoUrl, durationInput, chunkSize, overlap, customContext,
+          chunks, actions, annotations, narrativeSteps, procState, latestUIState,
+          status: procState.status, actionCount: actions.length
+        };
+        localStorage.setItem(`td_emergency_save_${projectId}`, JSON.stringify(saveData));
+      } catch (e) { /* localStorage might be full */ }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
 
   // Local chunk computation removed as it's now handled by the server
 
@@ -213,7 +305,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   }, []);
 
   // System Logger
-  const handleLog = (level: LogLevel, message: string, data?: any) => {
+  const handleLog = useCallback((level: LogLevel, message: string, data?: any) => {
     setProcState(prev => {
       const newLog = {
         id: Math.random().toString(36).substring(2, 9),
@@ -224,7 +316,190 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       };
       return { ...prev, logs: [...(prev.logs || []), newLog] };
     });
-  };
+  }, []);
+
+  const startPolling = useCallback((jobId: string) => {
+    if (pollingRef.current) clearTimeout(pollingRef.current);
+    activePollingJobRef.current = jobId;
+
+    let consecutiveErrors = 0;
+    const MAX_ERRORS = 15;
+    let lastVersion = 0;
+    let lastLogIndex = 0;
+
+    const poll = async () => {
+      if (activePollingJobRef.current !== jobId) return;
+      
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}&since=${lastVersion}&logSince=${lastLogIndex}`, { 
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (activePollingJobRef.current !== jobId) return;
+        
+        if (!pollRes.ok) {
+          if (pollRes.status === 404) {
+            // Job gone from server — check if we have usable results
+            if (actionsRef.current.length > 0 || stateRef.current.status === 'running_dedup') {
+              handleLog('warn', 'Server lost job state (possible restart). Using last known results.');
+              setProcState(prev => ({ ...prev, status: 'completed' }));
+            } else {
+              handleLog('error', 'Server lost job state. No results available.');
+              setProcState(prev => ({ ...prev, status: 'error' }));
+            }
+            if (pollingRef.current) clearTimeout(pollingRef.current);
+            return;
+          }
+          throw new Error(`HTTP error! status: ${pollRes.status}`);
+        }
+        const state = await pollRes.json();
+        
+        if (activePollingJobRef.current !== jobId) return;
+        
+        // Success! Reset error counter
+        consecutiveErrors = 0;
+        
+        if (state.logIndex !== undefined) lastLogIndex = state.logIndex;
+
+        if (state.unchanged) {
+          setProcState(prev => ({ ...prev, status: state.status, progress: state.progress }));
+          // Still append any new logs delivered in the unchanged response
+          if (state.logs && state.logs.length > 0) {
+            setProcState(prev => {
+              const existingLogIds = new Set((prev.logs || []).map(l => l.id));
+              const newLogs = state.logs
+                .filter((l: any) => !existingLogIds.has(l.id))
+                .map((l: any, idx: number) => {
+                  let id = l.id || `log_${l.timestamp}_${idx}`;
+                  if (existingLogIds.has(id)) {
+                    id = `${id}_dup_${idx}`;
+                  }
+                  existingLogIds.add(id);
+                  return { ...l, id };
+                });
+              return {
+                ...prev,
+                logs: [...(prev.logs || []), ...newLogs]
+              };
+            });
+          }
+        } else {
+          lastVersion = state.stateVersion || 0;
+          // Update local state with server state
+          setProcState(prev => ({
+            ...prev,
+            status: state.status,
+            progress: state.progress,
+            currentChunkIndex: state.currentChunkIndex,
+            totalActions: state.actions?.length || 0,
+            duration: state.duration,
+            learnedContext: state.learnedContext
+          }));
+          
+          if (state.chunks !== undefined) {
+            setChunks(state.chunks);
+          }
+          
+          if (state.actions !== undefined) {
+            setActions(state.actions);
+          }
+          
+          if (state.annotations !== undefined) {
+            setAnnotations(state.annotations);
+          }
+
+          if (state.narrativeSteps !== undefined) {
+            setNarrativeSteps(state.narrativeSteps);
+          }
+          
+          if (state.uiState) {
+            setLatestUIState(state.uiState);
+          }
+          
+          // Append new logs
+          if (state.logs && state.logs.length > 0) {
+            setProcState(prev => {
+              const existingLogIds = new Set((prev.logs || []).map(l => l.id));
+              const newLogs = state.logs
+                .filter((l: any) => !existingLogIds.has(l.id))
+                .map((l: any, idx: number) => {
+                  let id = l.id || `log_${l.timestamp}_${idx}`;
+                  if (existingLogIds.has(id)) {
+                    id = `${id}_dup_${idx}`;
+                  }
+                  existingLogIds.add(id);
+                  return { ...l, id };
+                });
+              return {
+                ...prev,
+                logs: [...(prev.logs || []), ...newLogs]
+              };
+            });
+          }
+        }
+        
+        if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
+          if (pollingRef.current) clearTimeout(pollingRef.current);
+          if (state.status === 'error') {
+            handleLog('error', `Server job failed: ${state.error}`);
+          } else if (state.status === 'completed') {
+            handleLog('success', 'Workflow analysis completed successfully!');
+          }
+          return; // Stop polling
+        }
+      } catch (e: any) {
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        // Only retry on network-level failures
+        if (e instanceof SyntaxError) {
+          handleLog('error', 'Received malformed response from server. Stopping poll.');
+          setProcState(prev => ({ ...prev, status: 'error' }));
+          return;
+        }
+        
+        consecutiveErrors++;
+        
+        if (e.name === 'AbortError') {
+          console.warn(`Polling request timed out (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
+          handleLog('warn', `Network timeout while fetching progress (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
+        } else {
+          console.error(`Polling error (attempt ${consecutiveErrors}/${MAX_ERRORS}):`, e);
+          // Only log to UI every 3 errors to avoid spamming the log
+          if (consecutiveErrors % 3 === 1) {
+            handleLog('warn', `Network error while fetching progress. Retrying...`);
+          }
+        }
+        
+        if (consecutiveErrors >= MAX_ERRORS) {
+          handleLog('error', 'Lost connection to server after multiple attempts. Please check your network or restart the job.');
+          setProcState(prev => ({ ...prev, status: 'error' }));
+          return; // Stop polling
+        }
+      }
+      
+      // Exponential backoff for errors, standard 2000ms for success
+      const nextDelay = consecutiveErrors > 0 
+        ? Math.min(2000 * Math.pow(1.5, consecutiveErrors), 15000) 
+        : 2000;
+        
+      if (activePollingJobRef.current === jobId) {
+        pollingRef.current = setTimeout(poll, nextDelay);
+      }
+    };
+    
+    if (activePollingJobRef.current === jobId) {
+      pollingRef.current = setTimeout(poll, 2000);
+    }
+  }, [handleLog]);
+
+  const startPollingRef = useRef(startPolling);
+  useEffect(() => { startPollingRef.current = startPolling; }, [startPolling]);
 
   const handleStart = async () => {
     if (!videoUrl) {
@@ -351,140 +626,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setProcState(prev => ({ ...prev, jobId }));
         
         // Start polling
-        if (pollingRef.current) clearTimeout(pollingRef.current);
-        activePollingJobRef.current = jobId;
-        
-        let consecutiveErrors = 0;
-        const MAX_ERRORS = 15; // Allow for ~3-5 minutes of network interruption (exponential backoff up to 15s/retry + 10s request timeout) before failing
-
-        const poll = async () => {
-          if (activePollingJobRef.current !== jobId) return;
-          
-          let timeoutId: ReturnType<typeof setTimeout> | undefined;
-          try {
-            const controller = new AbortController();
-            timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout per request
-            
-            const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}`, { 
-              cache: 'no-store',
-              signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-            
-            if (activePollingJobRef.current !== jobId) return;
-            
-            if (!pollRes.ok) throw new Error(`HTTP error! status: ${pollRes.status}`);
-            const state = await pollRes.json();
-            
-            if (activePollingJobRef.current !== jobId) return;
-            
-            // Success! Reset error counter
-            consecutiveErrors = 0;
-            
-            // Update local state with server state
-            setProcState(prev => ({
-              ...prev,
-              status: state.status,
-              progress: state.progress,
-              currentChunkIndex: state.currentChunkIndex,
-              totalActions: state.actions?.length || 0,
-              duration: state.duration,
-              learnedContext: state.learnedContext
-            }));
-            
-            if (state.chunks !== undefined) {
-              setChunks(state.chunks);
-            }
-            
-            if (state.actions !== undefined) {
-              setActions(state.actions);
-            }
-            
-            if (state.annotations !== undefined) {
-              setAnnotations(state.annotations);
-            }
-
-            if (state.narrativeSteps !== undefined) {
-              setNarrativeSteps(state.narrativeSteps);
-            }
-            
-            if (state.uiState) {
-              setLatestUIState(state.uiState);
-            }
-            
-            // Append new logs
-            if (state.logs && state.logs.length > 0) {
-              setProcState(prev => {
-                const existingLogIds = new Set((prev.logs || []).map(l => l.id));
-                const newLogs = state.logs
-                  .filter((l: any) => !existingLogIds.has(l.id))
-                  .map((l: any, idx: number) => {
-                    let id = l.id || `log_${l.timestamp}_${idx}`;
-                    if (existingLogIds.has(id)) {
-                      id = `${id}_dup_${idx}`;
-                    }
-                    existingLogIds.add(id);
-                    return { ...l, id };
-                  });
-                return {
-                  ...prev,
-                  logs: [...(prev.logs || []), ...newLogs]
-                };
-              });
-            }
-            
-            if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
-              if (pollingRef.current) clearTimeout(pollingRef.current);
-              if (state.status === 'error') {
-                handleLog('error', `Server job failed: ${state.error}`);
-              } else if (state.status === 'completed') {
-                handleLog('success', 'Workflow analysis completed successfully!');
-              }
-              return; // Stop polling
-            }
-          } catch (e: any) {
-            if (timeoutId) clearTimeout(timeoutId);
-            
-            // Only retry on network-level failures
-            if (e instanceof SyntaxError) {
-              handleLog('error', 'Received malformed response from server. Stopping poll.');
-              setProcState(prev => ({ ...prev, status: 'error' }));
-              return;
-            }
-            
-            consecutiveErrors++;
-            
-            if (e.name === 'AbortError') {
-              console.warn(`Polling request timed out (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
-              handleLog('warn', `Network timeout while fetching progress (attempt ${consecutiveErrors}/${MAX_ERRORS}). Retrying...`);
-            } else {
-              console.error(`Polling error (attempt ${consecutiveErrors}/${MAX_ERRORS}):`, e);
-              // Only log to UI every 3 errors to avoid spamming the log
-              if (consecutiveErrors % 3 === 1) {
-                handleLog('warn', `Network error while fetching progress. Retrying...`);
-              }
-            }
-            
-            if (consecutiveErrors >= MAX_ERRORS) {
-              handleLog('error', 'Lost connection to server after multiple attempts. Please check your network or restart the job.');
-              setProcState(prev => ({ ...prev, status: 'error' }));
-              return; // Stop polling
-            }
-          }
-          
-          // Exponential backoff for errors, standard 2000ms for success
-          const nextDelay = consecutiveErrors > 0 
-            ? Math.min(2000 * Math.pow(1.5, consecutiveErrors), 15000) 
-            : 2000;
-            
-          if (activePollingJobRef.current === jobId) {
-            pollingRef.current = setTimeout(poll, nextDelay);
-          }
-        };
-        
-        if (activePollingJobRef.current === jobId) {
-          pollingRef.current = setTimeout(poll, 2000);
-        }
+        startPollingRef.current(jobId);
         
       } catch (err: any) {
         console.error("Job failed to start:", err);
@@ -525,19 +667,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     try {
       handleLog('warn', 'Sending cancel request to server...');
       await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
-      
+      handleLog('info', 'Cancel request sent. Waiting for server to finish current operation...');
+      // Don't clear polling — let it detect 'cancelled' status on next tick
+    } catch (e) {
+      console.error("Failed to cancel job:", e);
+      handleLog('error', 'Failed to send cancel request. Stopping locally.');
       if (pollingRef.current) clearTimeout(pollingRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       activePollingJobRef.current = null;
-      
-      setProcState(prev => ({
-        ...prev,
-        status: 'cancelled'
-      }));
-      handleLog('success', 'Job cancelled. Partial results saved and available for download.');
-    } catch (e) {
-      console.error("Failed to cancel job:", e);
-      handleLog('error', 'Failed to cancel job on server.');
+      setProcState(prev => ({ ...prev, status: 'cancelled' }));
     }
   };
 

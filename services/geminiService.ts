@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { v4 as uuidv4 } from 'uuid';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
 import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
@@ -10,14 +11,21 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Helper to prevent stalled API calls from hanging the job indefinitely
 function withTimeout<T>(promise: Promise<T>, ms: number, operationName: string): Promise<T> {
   let timeoutId: NodeJS.Timeout;
+  let timedOut = false;
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => {
+      timedOut = true;
       reject(new Error(`Operation '${operationName}' timed out after ${ms / 1000}s`));
     }, ms);
   });
 
   return Promise.race([
-    promise,
+    promise.then((res) => {
+      if (timedOut) {
+        console.warn(`[ZOMBIE RESPONSE] ${operationName} returned after timeout of ${ms}ms`);
+      }
+      return res;
+    }),
     timeoutPromise
   ]).finally(() => {
     clearTimeout(timeoutId);
@@ -192,7 +200,7 @@ export async function analyzeChunkPhaseA(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       let currentPrompt = `Analyze this video segment.`;
-      currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
+      currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
 
       let systemInstruction = basePrompt;
       if (customContext) {
@@ -224,8 +232,7 @@ export async function analyzeChunkPhaseA(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              },
-              mediaResolution: { level: "media_resolution_high" }
+              }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -233,9 +240,9 @@ export async function analyzeChunkPhaseA(
           ]
         }],
         config: {
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH' as any,
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: systemInstruction,
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -276,10 +283,10 @@ export async function analyzeChunkPhaseA(
         
         onLog?.('success', `Phase A (Attempt ${attempt}): Successfully parsed ${actions.length} raw actions and ${annotations.length} annotations`);
         
-        // Ensure dummy IDs for A before B overwrites them
+        // Ensure consistent IDs for A before B processes them
         return {
-          actions: actions.map((r, i) => ({ ...r, id: `tmp_${Date.now()}_${i}` })),
-          annotations: annotations.map((r, i) => ({ ...r, id: `tmp_ann_${Date.now()}_${i}` }))
+          actions: actions.map((r) => ({ ...r, id: r.id || `evt_${uuidv4().substring(0, 8)}` })),
+          annotations: annotations.map((r) => ({ ...r, id: r.id || `ann_${uuidv4().substring(0, 8)}` }))
         };
       } catch (parseError) {
         onLog?.('warn', `Phase A JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
@@ -373,7 +380,6 @@ export async function accumulateChunkPhaseB(
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: finalSystemInstruction,
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -458,11 +464,11 @@ export async function accumulateChunkPhaseB(
             }
           ];
 
-          // Ensure thoughtSignatures are preserved if present in the response
+          // Verify thoughtSignatures are present in the response
           if (response.candidates?.[0]?.content?.parts) {
             const partsWithSignatures = response.candidates[0].content.parts.filter((p: any) => p.thoughtSignature);
             if (partsWithSignatures.length > 0) {
-              onLog?.('info', `Phase B (Attempt ${attempt}): Preserved ${partsWithSignatures.length} thought signatures for next turn`);
+              onLog?.('info', `Phase B (Attempt ${attempt}): Verified ${partsWithSignatures.length} thought signatures are present in history for next turn`);
             }
           }
 
@@ -569,8 +575,7 @@ export async function analyzeNarrationSegment(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              },
-              mediaResolution: { level: "media_resolution_high" }
+              }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -578,6 +583,7 @@ export async function analyzeNarrationSegment(
           ]
         }],
         config: {
+          mediaResolution: 'MEDIA_RESOLUTION_HIGH' as any,
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: systemInstruction,
           responseMimeType: 'application/json',
@@ -658,7 +664,8 @@ export async function analyzeGlobalDeduplication(
   finalUiState: any,
   customContext: string,
   apiKey: string,
-  onLog?: (level: LogLevel, msg: string, data?: any) => void
+  onLog?: (level: LogLevel, msg: string, data?: any) => void,
+  onProgress?: (pct: number) => void
 ): Promise<ActionItem[]> {
   if (!actions || actions.length === 0) return [];
 
@@ -699,18 +706,20 @@ export async function analyzeGlobalDeduplication(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       onLog?.('info', `Global Deduplication (Attempt ${attempt}): Sending ${actions.length} actions for final cleanup`);
+      onProgress?.(93);
 
       const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000
         }
       }), 480000, 'Phase D GenerateContent');
+
+      onProgress?.(96);
 
       const finishReason = response.candidates?.[0]?.finishReason;
       if (finishReason === 'MAX_TOKENS' || finishReason === 'SAFETY') {
@@ -732,6 +741,8 @@ export async function analyzeGlobalDeduplication(
         const result = JSON.parse(cleanText) as ActionItem[];
         if (!Array.isArray(result)) throw new Error("Global Deduplication response must be a JSON array");
         
+        onProgress?.(98);
+
         // Re-attach stripped fields (ui_context, chunkIndex)
         const originalActionMap = new Map(actions.map(a => [a.id, a]));
         const enrichedResult = result.map(action => {

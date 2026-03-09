@@ -24,10 +24,20 @@ export interface JobState {
   overlap: number;
   ttlTimerId?: ReturnType<typeof setTimeout>;
   learnedContext?: string;
+  lastUpdatedAt: number;
+  stateVersion: number;
+  logCapOccurred?: boolean;
 }
 
 const jobs = new Map<string, JobState>();
 const cancelTokens = new Set<string>();
+
+const MAX_LOGS = 500;
+
+function bumpVersion(state: JobState) {
+  state.stateVersion++;
+  state.lastUpdatedAt = Date.now();
+}
 
 export async function fetchYouTubeDuration(url: string): Promise<number> {
   try {
@@ -110,7 +120,10 @@ export async function processVideoJob(params: {
       chatHistory: [],
       chunkSize: params.chunkSize,
       overlap: params.overlap,
-      learnedContext: ""
+      learnedContext: "",
+      lastUpdatedAt: Date.now(),
+      stateVersion: 1,
+      logCapOccurred: false
     });
   } else {
     if (existingState!.ttlTimerId) {
@@ -129,6 +142,14 @@ export async function processVideoJob(params: {
     if (state) {
       state.status = 'error';
       state.error = err.message || 'Unknown error';
+
+      // Mark the current chunk as errored
+      const currentChunk = state.chunks[state.currentChunkIndex];
+      if (currentChunk && currentChunk.status !== 'completed') {
+        currentChunk.status = 'error';
+        currentChunk.errorMsg = state.error;
+      }
+      bumpVersion(state);
     }
   });
 
@@ -147,7 +168,7 @@ export function cancelJob(jobId: string): boolean {
   return false;
 }
 
-async function runJob(jobId: string, params: {
+  async function runJob(jobId: string, params: {
   videoUrl: string;
   durationInput?: string;
   chunkSize: number;
@@ -161,6 +182,10 @@ async function runJob(jobId: string, params: {
     const state = jobs.get(jobId);
     if (state) {
       state.logs.push({ id: uuidv4(), timestamp: Date.now(), level, message, data });
+      if (state.logs.length > MAX_LOGS) {
+        state.logs = state.logs.slice(-MAX_LOGS);
+        state.logCapOccurred = true;
+      }
     }
   };
 
@@ -235,6 +260,7 @@ async function runJob(jobId: string, params: {
     for (let i = startIndex; i < state.chunks.length; i++) {
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
+        bumpVersion(state);
         addLog('warn', 'Job cancelled by user');
         return;
       }
@@ -248,6 +274,7 @@ async function runJob(jobId: string, params: {
       const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 
       chunk.status = 'analyzing_phase_a';
+      bumpVersion(state);
       addLog('info', `--- Starting Chunk ${i + 1}/${state.chunks.length} ---`, { chunk });
 
       // Phase A: Raw Extraction
@@ -268,6 +295,7 @@ async function runJob(jobId: string, params: {
 
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
+        bumpVersion(state);
         addLog('warn', 'Job cancelled by user after Phase A');
         return;
       }
@@ -276,6 +304,7 @@ async function runJob(jobId: string, params: {
 
       // Phase B: Validation & State
       chunk.status = 'analyzing_phase_b';
+      bumpVersion(state);
       addLog('info', `Phase B: Validating and merging state...`);
       const primaryWindowStr = `${chunk.primaryStart}s-${chunk.primaryEnd}s`;
       const phaseBResult = await accumulateChunkPhaseB(
@@ -293,6 +322,7 @@ async function runJob(jobId: string, params: {
 
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
+        bumpVersion(state);
         addLog('warn', 'Job cancelled by user after Phase B');
         return;
       }
@@ -333,6 +363,7 @@ async function runJob(jobId: string, params: {
       // Phase C: Narrative Synthesis
       state.status = 'running_narrative';
       chunk.status = 'analyzing_phase_c';
+      bumpVersion(state);
       addLog('info', `Phase C: Synthesizing narrative steps...`);
       
       const CONTEXT_BUFFER_SEC = 15;
@@ -349,7 +380,7 @@ async function runJob(jobId: string, params: {
         return t >= contextStart && t <= contextEnd;
       });
 
-      const { steps: newNarrativeStepsRaw, learned_insights } = await analyzeNarrationSegment(
+      let narrationResult = await analyzeNarrationSegment(
         videoUrl,
         chunk.clipStart,
         chunk.clipEnd,
@@ -361,21 +392,49 @@ async function runJob(jobId: string, params: {
         addLog
       );
 
+      // Retry once if empty steps but we had relevant actions
+      if (narrationResult.steps.length === 0 && relevantActions.length > 0) {
+        addLog('warn', `Phase C returned 0 steps despite having ${relevantActions.length} actions. Retrying...`);
+        narrationResult = await analyzeNarrationSegment(
+          videoUrl,
+          chunk.clipStart,
+          chunk.clipEnd,
+          relevantActions,
+          relevantAnnotations,
+          dynamicContext,
+          apiKey,
+          cumulativeNarrative.slice(-10),
+          addLog
+        );
+      }
+
+      const { steps: newNarrativeStepsRaw, learned_insights } = narrationResult;
+
       if (learned_insights) {
-        state.learnedContext = (state.learnedContext ? state.learnedContext + "\n- " : "- ") + learned_insights;
+        const currentInsights = state.learnedContext ? state.learnedContext.split('\n- ').map(i => i.replace(/^- /, '').trim().toLowerCase()) : [];
+        const newInsights = learned_insights.split('\n- ').map(i => i.replace(/^- /, '').trim());
+        
+        let insightsAdded = false;
+        for (const insight of newInsights) {
+          if (insight && !currentInsights.includes(insight.toLowerCase())) {
+            state.learnedContext = (state.learnedContext ? state.learnedContext + "\n- " : "- ") + insight;
+            insightsAdded = true;
+          }
+        }
+        if (insightsAdded) bumpVersion(state);
       }
       
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
-        if (!step.id || existingStepIds.has(step.id)) {
-          step.id = `step_${uuidv4().substring(0, 8)}`;
-        }
+        // Unconditionally assign a consistent hex ID to avoid mixed formats from the model
+        step.id = `step_${uuidv4().substring(0, 8)}`;
         existingStepIds.add(step.id);
         return step;
       });
 
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
+        bumpVersion(state);
         addLog('warn', 'Job cancelled by user after Phase C');
         return;
       }
@@ -412,6 +471,7 @@ async function runJob(jobId: string, params: {
       state.progress = progressBase + (100 / state.chunks.length);
       addLog('success', `Chunk ${i + 1} completed successfully.`);
       state.currentChunkIndex = i + 1;
+      bumpVersion(state);
     }
 
     // After all chunks are processed, before global dedup
@@ -455,14 +515,16 @@ async function runJob(jobId: string, params: {
 
     if (cancelTokens.has(jobId)) {
       state.status = 'cancelled';
+      bumpVersion(state);
       addLog('warn', 'Job cancelled by user before global deduplication');
       return;
     }
 
     // Final Global Deduplication Pass
     state.status = 'running_dedup';
+    state.progress = 92;
+    bumpVersion(state);
     addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
-    state.progress = 95;
     
     try {
       const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
@@ -471,7 +533,11 @@ async function runJob(jobId: string, params: {
         latestUIState,
         customContext,
         apiKey,
-        addLog
+        addLog,
+        (pct) => {
+          state.progress = pct;
+          bumpVersion(state);
+        }
       );
       
       const seenDedupIds = new Set<string>();
@@ -543,6 +609,7 @@ async function runJob(jobId: string, params: {
 
     state.progress = 100;
     state.status = 'completed';
+    bumpVersion(state);
     addLog('success', 'Workflow analysis completed successfully!');
 
   } catch (error: any) {
@@ -550,6 +617,14 @@ async function runJob(jobId: string, params: {
     state.status = 'error';
     state.error = error.message || 'Unknown error occurred';
     addLog('error', `Fatal error: ${state.error}`);
+
+    // Mark the current chunk as errored
+    const currentChunk = state.chunks[state.currentChunkIndex];
+    if (currentChunk && currentChunk.status !== 'completed') {
+      currentChunk.status = 'error';
+      currentChunk.errorMsg = state.error;
+    }
+    bumpVersion(state);
   } finally {
     if (jobs.get(jobId) === state && state.runId === runId) {
       cancelTokens.delete(jobId);
