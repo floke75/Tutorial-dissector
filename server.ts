@@ -105,7 +105,8 @@ async function startServer() {
     if (success) {
       res.json({ success: true });
     } else {
-      res.status(404).json({ error: "Job not found or already completed" });
+      // Return 200 even if not found, as the desired state (cancelled/stopped) is effectively achieved
+      res.json({ success: true, message: "Job not found or already completed" });
     }
   });
 
