@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { InputPanel } from './InputPanel';
 import { ChunkVisualizer } from './ChunkVisualizer';
 import { ResultsTimeline } from './ResultsTimeline';
