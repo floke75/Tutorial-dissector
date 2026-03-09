@@ -170,7 +170,7 @@ const startPolling = useCallback((jobId: string) => {
   };
 
   pollingRef.current = setTimeout(poll, 2000);
-}, []);  // All non-stable values accessed via refs (e.g. startPollingRef, activePollingJobRef) to keep deps empty
+}, []);  // All non-stable values accessed via refs (e.g. pollingRef, activePollingJobRef, actionsRef, stateRef) to keep deps empty
 
 // Store in ref for loadData access (avoids stale closure issues):
 const startPollingRef = useRef(startPolling);
