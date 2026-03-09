@@ -170,7 +170,7 @@ const startPolling = useCallback((jobId: string) => {
   };
 
   pollingRef.current = setTimeout(poll, 2000);
-}, [/* stable deps: handleLog, setProcState, etc. */]);
+}, []);  // All non-stable values accessed via refs (e.g. pollingRef, activePollingJobRef, actionsRef, stateRef) to keep deps empty
 
 // Store in ref for loadData access (avoids stale closure issues):
 const startPollingRef = useRef(startPolling);
@@ -265,7 +265,7 @@ app.get("/api/process/:jobId", (req, res) => {
 2. Update frontend poll to track version + log index and skip heavy updates when unchanged:
 
 ```typescript
-// Outside the poll closure (in the useEffect):
+// Inside startPolling useCallback, before the poll closure:
 let lastVersion = 0;
 let lastLogIndex = 0;
 
@@ -434,7 +434,7 @@ const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
   customContext,
   apiKey,
   addLog,
-  (pct) => { state.progress = pct; bumpVersion(); }  // 7th arg
+  (pct) => { state.progress = pct; }  // No bumpVersion — progress is always delivered in unchanged responses
 );
 ```
 

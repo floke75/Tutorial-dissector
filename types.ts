@@ -145,6 +145,7 @@ export interface ProcessingState {
   logs?: LogMessage[]; // Added logs array for Dev Console
   jobId?: string;
   duration?: number;
+  error?: string;
 }
 
 export interface UIState {
