@@ -50,6 +50,7 @@ The Tutorial Dissector pipeline processes videos over 5–30+ minutes, with mult
 ```typescript
 lastUpdatedAt: number;
 stateVersion: number;
+logCapOccurred?: boolean;  // needed by Step 7 — signals frontend to re-sync after log cap
 ```
 
 2. Initialize when creating job state:
@@ -301,6 +302,8 @@ useEffect(() => {
 
 > Same dependency array as the existing effect (line 186). No change needed there.
 
+> **Debounce behavior note:** During active processing, continuous re-renders from 2-second polling reset the 5-second timeout on every tick, so `doSave()` effectively never fires until processing stops (status transitions to non-running). This is intentional — it prevents a burst of IndexedDB writes during long runs. Data protection during active processing is provided by Step 12's `beforeunload` emergency save.
+
 ---
 
 ## Step 5 — Set chunk status to `'error'` on failure (B5)
@@ -435,10 +438,11 @@ Step 3 uses `logSince` as an absolute index into `state.logs`. After Step 7 caps
 ```typescript
 if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
   let newLogs: any[];
-  if (state.logCapOccurred) {
+  const capOccurred = state.logCapOccurred || false;  // Capture BEFORE resetting
+  if (capOccurred) {
     // After cap, send all logs so the frontend can re-sync
     newLogs = state.logs;
-    state.logCapOccurred = false;  // Reset after delivering
+    state.logCapOccurred = false;  // Reset after capturing
   } else {
     newLogs = sinceLogIndex > 0 ? state.logs.slice(sinceLogIndex) : [];
   }
@@ -449,7 +453,7 @@ if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
     lastUpdatedAt: state.lastUpdatedAt,
     logs: newLogs.length > 0 ? newLogs : undefined,
     logIndex: state.logs.length,
-    logCapOccurred: state.logCapOccurred,
+    logCapOccurred: capOccurred,  // Use captured value, not the reset one
     unchanged: true
   });
 }
@@ -705,6 +709,8 @@ if (emergencySave) {
 | Step 12 `const data` | `data = emergencyData` reassignment | `const data` at line 96 prevents this — must change to `let` |
 | Step 2 `_needsReconnectPolling` | Added as property on `data` (Project) | TypeScript rejects ad-hoc properties — use local `let needsReconnectPolling` boolean |
 | Steps 3+7 log cap | `logSince` absolute index used with capped array | After cap, `state.logs.slice(247)` returns `[]` — need `logCapOccurred` flag to re-sync |
+| Step 7 `logCapOccurred` reset | Flag reset before serialization | Must capture flag value before resetting: `const capOccurred = state.logCapOccurred` |
+| Step 7 `logCapOccurred` type | Used without declaring on `JobState` | Must add `logCapOccurred?: boolean` to `JobState` interface in Step 1 |
 
 ---
 
