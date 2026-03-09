@@ -1,6 +1,6 @@
 # Refined Plan: Pipeline Robustness & Frontend-Backend Reliability
 
-> **Status:** Ready for implementation
+> **Status:** ✅ Implemented — see PR #44
 > **Scope:** `server/jobManager.ts`, `server.ts`, `components/AnalysisView.tsx`, `services/geminiService.ts`
 
 ---

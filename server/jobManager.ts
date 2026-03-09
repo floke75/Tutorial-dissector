@@ -32,7 +32,7 @@ export interface JobState {
 const jobs = new Map<string, JobState>();
 const cancelTokens = new Set<string>();
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 200;
 
 function bumpVersion(state: JobState) {
   state.stateVersion++;
@@ -536,7 +536,6 @@ export function cancelJob(jobId: string): boolean {
         addLog,
         (pct) => {
           state.progress = pct;
-          bumpVersion(state);
         }
       );
       
