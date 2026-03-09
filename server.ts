@@ -105,6 +105,10 @@ async function startServer() {
       const capOccurred = state.logCapOccurred || false;
       if (capOccurred) {
         newLogs = state.logs;
+        // Note: Mutating state on a GET request is a side-effect-on-read pattern.
+        // This is functionally correct for a single-client polling scenario,
+        // but if multiple clients poll simultaneously, only the first will receive
+        // the logCapOccurred flag.
         state.logCapOccurred = false;
       } else {
         newLogs = sinceLogIndex > 0 ? state.logs.slice(sinceLogIndex) : [];
@@ -121,6 +125,7 @@ async function startServer() {
       });
     }
 
+    // Note: Mutating state on a GET request is a side-effect-on-read pattern.
     if (state.logCapOccurred) state.logCapOccurred = false;
     res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
   });

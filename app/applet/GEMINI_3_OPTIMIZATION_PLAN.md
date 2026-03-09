@@ -44,7 +44,6 @@
 **Target Files:** `services/geminiService.ts`
 **Status:** ✅ Completed (with modifications)
 **Completion Details:** 
-- Enabled `tools: [{ codeExecution: {} }]` in `accumulateChunkPhaseB` (Phase B) to allow the model to deterministically calculate cumulative action counts and manage array deduplication.
-- Enabled `tools: [{ codeExecution: {} }]` in `analyzeGlobalDeduplication` (Final Refinement) to allow the model to use algorithmic filtering for deduplication.
-- ⚠️ **Rollback:** Removed from `analyzeChunkPhaseA` (Phase A) due to a Gemini API limitation where `codeExecution` is incompatible with video inputs (`The mime type: video/text/timestamp is not supported for code execution`).
+- ⚠️ **Rollback:** Removed `codeExecution` from all phases (`analyzeChunkPhaseA`, `accumulateChunkPhaseB`, `analyzeGlobalDeduplication`, `analyzeNarrationSegment`).
+- Initially attempted to enable `tools: [{ codeExecution: {} }]` in Phase B and Phase D, but it was ultimately removed from the codebase because it caused issues or wasn't fully supported across all required input types (e.g., video inputs).
 - Intentionally omitted from `analyzeNarrationSegment` (Narration Phase) to prevent regressions in story/narrative generation, per Gemini API documentation warnings.
