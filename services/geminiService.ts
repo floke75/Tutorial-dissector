@@ -31,8 +31,8 @@ const getClient = (apiKey: string) => {
   }
   return new GoogleGenAI({ 
     apiKey: apiKey,
-    httpOptions: { timeout: 480000 }
-  });
+    httpOptions: { timeout: 480000, apiVersion: 'v1alpha' } as any
+  } as any);
 };
 
 import { z } from 'zod';
@@ -191,11 +191,12 @@ export async function analyzeChunkPhaseA(
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      let currentPrompt = `Analyze this video segment. ${basePrompt}`;
+      let currentPrompt = `Analyze this video segment.`;
       currentPrompt += `\n\nTIMING CONTEXT: The video clip you are watching is a segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)} of the full video. The 00:00 mark in this clip equals ${formatMMSS(startSec)} in the full video. You MUST offset your timestamps by +${formatMMSS(startSec)} to match the full video time.`;
 
+      let systemInstruction = basePrompt;
       if (customContext) {
-        currentPrompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+        systemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
       }
 
       onLog?.('info', `Phase A (Attempt ${attempt}): Sending GenerateContent request to Gemini 3.1 Pro Preview`, { 
@@ -223,7 +224,8 @@ export async function analyzeChunkPhaseA(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              }
+              },
+              mediaResolution: { level: "media_resolution_high" }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -232,6 +234,8 @@ export async function analyzeChunkPhaseA(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          systemInstruction: systemInstruction,
+          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseASchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -369,6 +373,7 @@ export async function accumulateChunkPhaseB(
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
           systemInstruction: finalSystemInstruction,
+          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(phaseBResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -447,8 +452,19 @@ export async function accumulateChunkPhaseB(
 
           const newHistory = [
             ...contents,
-            { role: 'model', parts: response.candidates?.[0]?.content?.parts || [{ text: text }] }
+            { 
+              role: 'model', 
+              parts: response.candidates?.[0]?.content?.parts || [{ text: text }] 
+            }
           ];
+
+          // Ensure thoughtSignatures are preserved if present in the response
+          if (response.candidates?.[0]?.content?.parts) {
+            const partsWithSignatures = response.candidates[0].content.parts.filter((p: any) => p.thoughtSignature);
+            if (partsWithSignatures.length > 0) {
+              onLog?.('info', `Phase B (Attempt ${attempt}): Preserved ${partsWithSignatures.length} thought signatures for next turn`);
+            }
+          }
 
           return { newHistory, result };
       } catch (parseError) {
@@ -521,11 +537,12 @@ export async function analyzeNarrationSegment(
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      let currentPrompt = prompt;
+      let currentPrompt = `Analyze this video segment.`;
       currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
 
+      let systemInstruction = prompt;
       if (customContext) {
-        currentPrompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+        systemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
       }
 
       onLog?.('info', `Narration Phase (Attempt ${attempt}): Analyzing audio segment`, {
@@ -552,7 +569,8 @@ export async function analyzeNarrationSegment(
               videoMetadata: {
                 startOffset: `${startSec}s`,
                 endOffset: `${endSec}s`,
-              }
+              },
+              mediaResolution: { level: "media_resolution_high" }
             } as any : {
               text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
             },
@@ -561,6 +579,7 @@ export async function analyzeNarrationSegment(
         }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          systemInstruction: systemInstruction,
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(pass2Schema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
           // =========================================================================================
@@ -686,6 +705,7 @@ export async function analyzeGlobalDeduplication(
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          tools: [{ codeExecution: {} }],
           responseMimeType: 'application/json',
           responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
           maxOutputTokens: 100000

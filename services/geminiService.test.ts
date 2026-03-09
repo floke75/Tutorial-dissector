@@ -43,9 +43,10 @@ describe('Gemini Schema Validation', () => {
     const fixedSchema = fixNullable(rawSchema);
     
     expect(fixedSchema).not.toHaveProperty('$schema');
-    expect(fixedSchema.type).toBe('array');
-    expect(fixedSchema.items.type).toBe('object');
-    expect(fixedSchema.items.properties.target.type).toEqual(['object', 'null']);
+    expect(fixedSchema.type).toBe('object');
+    expect(fixedSchema.properties.actions.type).toBe('array');
+    expect(fixedSchema.properties.actions.items.type).toBe('object');
+    expect(fixedSchema.properties.actions.items.properties.target.type).toEqual(['object', 'null']);
   });
 
   it('should successfully format Phase B schema for Gemini', () => {
@@ -62,9 +63,10 @@ describe('Gemini Schema Validation', () => {
     const fixedSchema = fixNullable(rawSchema);
     
     expect(fixedSchema).not.toHaveProperty('$schema');
-    expect(fixedSchema.type).toBe('array');
-    expect(fixedSchema.items.type).toBe('object');
-    expect(fixedSchema.items.properties.insight_type.enum).toContain('explanation');
+    expect(fixedSchema.type).toBe('object');
+    expect(fixedSchema.properties.steps.type).toBe('array');
+    expect(fixedSchema.properties.steps.items.type).toBe('object');
+    expect(fixedSchema.properties.steps.items.properties.insight_type.enum).toContain('explanation');
   });
 });
 
