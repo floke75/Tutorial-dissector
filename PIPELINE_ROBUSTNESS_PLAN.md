@@ -98,6 +98,7 @@ export interface ProcessingState {
 
 ```typescript
 let data = await getProject(projectId);  // let, not const — Step 12 needs reassignment for emergency save
+let needsReconnectPolling = false;  // local flag — don't mutate typed Project object
 if (data) {
   // Recovery check: if IndexedDB shows a running state, verify with server
   if (data.procState.status === 'running_visual' ||
@@ -115,12 +116,13 @@ if (data) {
           if (serverState.narrativeSteps) data.narrativeSteps = serverState.narrativeSteps;
           if (serverState.chunks) data.chunks = serverState.chunks;
           if (serverState.uiState) data.latestUIState = serverState.uiState;  // server field is "uiState"
+        } else {
+          // Still running on server — need to reconnect polling
+          // NOTE: There is NO useEffect that auto-starts polling on mount.
+          // Polling is only started inside handleStart() (line 354).
+          // We must explicitly restart polling here.
+          needsReconnectPolling = true;
         }
-        // else: still running on server — need to reconnect polling
-        // NOTE: There is NO useEffect that auto-starts polling on mount.
-        // Polling is only started inside handleStart() (line 354).
-        // We must explicitly restart polling here.
-        data._needsReconnectPolling = true;
       } else if (res.status === 404) {
         // Server lost this job (restart/TTL expiry)
         data.procState.status = (data.actions?.length > 0) ? 'completed' : 'error';
@@ -140,7 +142,7 @@ if (data) {
   // ... all other setState calls ...
 
   // After all setState calls: if server is still running, reconnect polling
-  if (data._needsReconnectPolling && data.procState.jobId) {
+  if (needsReconnectPolling && data.procState.jobId) {
     // Must start polling since there's no useEffect that auto-starts it.
     // Reuse the same poll setup logic from handleStart().
     activePollingJobRef.current = data.procState.jobId;
@@ -150,7 +152,7 @@ if (data) {
 }
 ```
 
-> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling when server reports job still running.
+> **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling when server reports job still running. (5) Use a local `needsReconnectPolling` boolean — do NOT add `_needsReconnectPolling` to the typed `Project` object (TypeScript will reject it).
 
 2. **Poll 404 handling** (in the poll catch, line ~376): Add specific 404 detection before the generic error path:
 
@@ -414,9 +416,50 @@ const addLog = (level: LogLevel, message: string, data?: any) => {
     state.logs.push({ id: uuidv4(), timestamp: Date.now(), level, message, data });
     if (state.logs.length > MAX_LOGS) {
       state.logs = state.logs.slice(-MAX_LOGS);
+      // Reset logIndex to 0 so the next poll re-syncs from the start of the
+      // trimmed array. Without this, the frontend's lastLogIndex (e.g., 247)
+      // becomes stale after capping and state.logs.slice(247) returns [].
+      state.logCapOccurred = true;
     }
   }
 };
+```
+
+### Interaction with Step 3 (incremental log delivery)
+
+Step 3 uses `logSince` as an absolute index into `state.logs`. After Step 7 caps the array (e.g., from 210 entries to 200), the frontend's `lastLogIndex` (e.g., 210) becomes stale — `state.logs.slice(210)` returns `[]`, silently dropping all subsequent log entries.
+
+**Fix:** Add `logCapOccurred: boolean` to `JobState`. When the unchanged poll detects it, send all current logs and reset the flag:
+
+**Server-side** (in Step 3's unchanged response):
+```typescript
+if (sinceVersion > 0 && sinceVersion === state.stateVersion) {
+  let newLogs: any[];
+  if (state.logCapOccurred) {
+    // After cap, send all logs so the frontend can re-sync
+    newLogs = state.logs;
+    state.logCapOccurred = false;  // Reset after delivering
+  } else {
+    newLogs = sinceLogIndex > 0 ? state.logs.slice(sinceLogIndex) : [];
+  }
+  return res.json({
+    status: state.status,
+    progress: state.progress,
+    stateVersion: state.stateVersion,
+    lastUpdatedAt: state.lastUpdatedAt,
+    logs: newLogs.length > 0 ? newLogs : undefined,
+    logIndex: state.logs.length,
+    logCapOccurred: state.logCapOccurred,
+    unchanged: true
+  });
+}
+```
+
+**Frontend-side** (in Step 3's unchanged handler):
+```typescript
+if (state.logCapOccurred) {
+  lastLogIndex = 0;  // Re-sync from start of trimmed array
+}
 ```
 
 > **Correction from original plan:** Uses `uuidv4()` (not `.substring(0, 8)`). Does NOT bump `stateVersion` here — that's handled by `bumpVersion()` at structural transition points only.
@@ -660,6 +703,8 @@ if (emergencySave) {
 | Step 3 log delivery | Logs omitted from unchanged response | Must include new logs via `logSince` tracking — Dev Console goes silent otherwise |
 | Step 2 reconnect | "Polling useEffect will pick it up" | No such useEffect exists — must explicitly restart polling from `loadData` |
 | Step 12 `const data` | `data = emergencyData` reassignment | `const data` at line 96 prevents this — must change to `let` |
+| Step 2 `_needsReconnectPolling` | Added as property on `data` (Project) | TypeScript rejects ad-hoc properties — use local `let needsReconnectPolling` boolean |
+| Steps 3+7 log cap | `logSince` absolute index used with capped array | After cap, `state.logs.slice(247)` returns `[]` — need `logCapOccurred` flag to re-sync |
 
 ---
 
