@@ -149,27 +149,46 @@ if (data) {
 }
 ```
 
-### Prerequisite: Extract poll launcher into a ref
+### Prerequisite: Extract poll launcher to component scope
 
-The `poll` function is a closure defined inside `handleStart` (line 360) that captures `jobId` and `consecutiveErrors`. It cannot be called from `loadData` without refactoring. Add a ref that stores the poll launcher:
+The `poll` function is currently a closure defined inside `handleStart` (line 360) that captures `jobId` and `consecutiveErrors`. Since `handleStart` only runs on button click, a ref populated inside it would be `null` when `loadData` runs on mount — the optional chaining `startPollingRef.current?.(...)` would silently no-op.
+
+**Fix:** Extract the poll launcher into a `useCallback` at component scope so it's available on mount:
 
 ```typescript
-// Add near other refs (line ~60):
-const startPollingRef = useRef<((jobId: string) => void) | null>(null);
+// At component scope (NOT inside handleStart):
+const startPolling = useCallback((jobId: string) => {
+  if (pollingRef.current) clearTimeout(pollingRef.current);
+  activePollingJobRef.current = jobId;
 
-// Inside handleStart, after defining poll() and setting up the polling loop:
-startPollingRef.current = (id: string) => {
-  activePollingJobRef.current = id;
+  let consecutiveErrors = 0;
+  const MAX_ERRORS = 15;
+
+  const poll = async () => {
+    if (activePollingJobRef.current !== jobId) return;
+    // ... same poll body as currently in handleStart (lines 360-480) ...
+  };
+
   pollingRef.current = setTimeout(poll, 2000);
-};
+}, [/* stable deps: handleLog, setProcState, etc. */]);
 
-// In loadData reconnect block (shown above):
+// Store in ref for loadData access (avoids stale closure issues):
+const startPollingRef = useRef(startPolling);
+useEffect(() => { startPollingRef.current = startPolling; }, [startPolling]);
+```
+
+Then both `handleStart` and `loadData` call the same function:
+```typescript
+// In handleStart (after getting jobId from server):
+startPollingRef.current(jobId);
+
+// In loadData reconnect block:
 if (needsReconnectPolling && data.procState.jobId) {
-  startPollingRef.current?.(data.procState.jobId);
+  startPollingRef.current(data.procState.jobId);
 }
 ```
 
-This requires `poll` to use `activePollingJobRef.current` instead of the closed-over `jobId` for the job identifier (it already does this at line 361: `if (activePollingJobRef.current !== jobId) return`). The `consecutiveErrors` counter should be reset to 0 when reconnecting.
+This refactoring moves the `poll` closure and `consecutiveErrors` counter out of `handleStart` into a reusable `useCallback`. The `poll` function already uses `activePollingJobRef.current` for job identity (line 361), so no changes to the poll body are needed.
 
 > **Correction from original plan:** (1) Recovery code MUST go before setState calls, not after — otherwise mutations to `data.*` are no-ops since React state has already been set. (2) Server returns `uiState`, not `latestUIState`. (3) `ProcessingState` needs `error?: string` added to the interface (pre-existing type gap). (4) There is NO useEffect that auto-starts polling on mount — polling is only started inside `handleStart()`. Must explicitly reconnect polling via `startPollingRef`. (5) Use a local `needsReconnectPolling` boolean — do NOT add `_needsReconnectPolling` to the typed `Project` object (TypeScript will reject it).
 
@@ -736,7 +755,8 @@ if (emergencySave) {
 | Step 7 `logCapOccurred` reset | Flag reset before serialization | Must capture flag value before resetting: `const capOccurred = state.logCapOccurred` |
 | Step 7 `logCapOccurred` type | Used without declaring on `JobState` | Must add `logCapOccurred?: boolean` to `JobState` interface in Step 1 |
 | Step 7 `lastLogIndex = 0` | Reset to 0 after cap | Causes blackout: `sinceLogIndex > 0` is false, server returns `[]`. Remove the reset — `state.logIndex` already provides the correct value |
-| Step 2 reconnect stub | "poll function must be extracted" | Incomplete — `poll` is a closure inside `handleStart`. Must store poll launcher in `startPollingRef` so `loadData` can call it |
+| Step 2 reconnect stub | "poll function must be extracted" | Incomplete — `poll` is a closure inside `handleStart`. Must extract to component-scope `useCallback` so it's available on mount |
+| Step 2 `startPollingRef` timing | Ref populated inside `handleStart` | `handleStart` only runs on click — ref is `null` on mount when `loadData` needs it. Must use `useCallback` + `useEffect` to keep ref current |
 | Step 3 `logCapOccurred` full-state | Only reset in unchanged path | Full-state response also spreads the flag but never resets it — causes redundant 200-log payload on next unchanged poll |
 
 ---
