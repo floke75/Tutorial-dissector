@@ -57,7 +57,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - **Strips:** Cross-reference IDs (`id` on inlined actions/annotations, `linked_*_ids` on steps), extraction metadata (`confidence`, `chunkIndex`, `spatial_bounding_box`), empty/null/default fields.
 - **Compacts:** `interacted_components` from objects to pipe-delimited strings (`"type|label[|state]"`). Safe here because this output is for human/LLM tutorial-writing consumption, not for pipeline reasoning or automation compilation.
 - **Preserves:** Unlinked actions/annotations in separate top-level arrays for review (indicates extraction gaps or broken ID links).
-- Returns `{ metadata, steps, unlinked_actions?, unlinked_annotations? }`.
+- Returns `{ result: { metadata, steps, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. The `serializedSize` is computed once during denormalization (the function internally serializes to measure size), avoiding redundant `JSON.stringify` calls at the logging callsite.
 - **Important:** This output is NOT suitable for the AutomationCompiler (Playwright export) because: (a) it strips `is_error_recovery` on false-valued actions, which the compiler needs to filter on; (b) it strips `spatial_bounding_box`, which the Playwright compiler uses for coordinate-based clicks; (c) it removes cross-reference IDs, making relational queries impossible. It must be offered as a separate export alongside the raw relational format.
 
 #### `extractSkeleton(cleanedData: object): object`
@@ -74,6 +74,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 #### `detectRedundantSteps(steps: NarrativeStep[]): {index: number, duplicateOf: number}[]`
 - Port of Python `detect_redundancy` — flags narrative steps with high topic/intent overlap using Jaccard similarity on non-stopword tokens.
 - Threshold: `topic_overlap >= 0.6 OR intent_overlap >= 0.6 OR (both >= 0.3)`.
+- **Edge case:** If either token set is empty after stopword removal (e.g., intent is all stopwords, or topics array is empty), treat Jaccard similarity as `0.0` for that comparison — no redundancy signal from empty data.
 
 ---
 
@@ -291,7 +292,7 @@ try {
 
 // Line ~608: generate cleaned output (after Phase D try/catch, before state.progress = 100)
 try {
-  state.cleanedOutput = cleanFinalOutput({
+  const { result: cleaned, serializedSize } = cleanFinalOutput({
     actions: state.actions,
     annotations: state.annotations,
     narrativeSteps: cumulativeNarrative,
@@ -305,10 +306,11 @@ try {
       deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
     }
   });
+  state.cleanedOutput = cleaned;
   if (!phaseDSucceeded) {
     addLog('warn', `Cleaned output generated from PRE-DEDUP data (Phase D failed). Export may contain duplicate actions.`);
   } else {
-    addLog('info', `Cleaned output generated (${JSON.stringify(state.cleanedOutput).length} chars)`);
+    addLog('info', `Cleaned output generated (${serializedSize} chars)`);
   }
 } catch (cleanErr: any) {
   addLog('warn', `Failed to generate cleaned output: ${cleanErr.message}`);
@@ -342,14 +344,11 @@ try {
 Add two new export functions alongside the existing `downloadJSON`. The existing button stays as "Export Raw JSON" (relational format, suitable for automation compilation and re-import):
 
 ```typescript
-import { extractSkeleton } from '../utils/jsonOptimize';
+import { extractSkeleton, compactStringify } from '../utils/jsonOptimize';
 
 const downloadCleanedJSON = () => {
   if (!cleanedOutput) return;
-  // indent: 1 for consistency with the plan's LLM-optimized formatting.
-  // indent: 2 would contradict the optimization goal — users re-injecting
-  // this export into LLM prompts would get no token savings.
-  const blob = new Blob([JSON.stringify(cleanedOutput, null, 1)], { type: "application/json" });
+  const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -363,7 +362,7 @@ const downloadCleanedJSON = () => {
 const downloadSkeletonJSON = () => {
   if (!cleanedOutput) return;
   const skeleton = extractSkeleton(cleanedOutput);
-  const blob = new Blob([JSON.stringify(skeleton, null, 1)], { type: "application/json" });
+  const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
