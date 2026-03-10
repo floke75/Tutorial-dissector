@@ -96,10 +96,15 @@ const message = JSON.stringify({
 });
 ```
 
-**Change to:**
+**Changes:**
+
+At the **top of the file** (module-level imports), add:
 ```typescript
 import { cleanForPrompt, stripEmptyAndDefaults, compactStringify } from '../utils/jsonOptimize';
+```
 
+Then replace the **function body** at ~line 342-353:
+```typescript
 // Strip ui_context to save tokens in Phase B (and in chat history)
 const simplifiedChunkActions = chunkActions.map(a => {
   const { ui_context, ...rest } = a;
@@ -157,7 +162,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
 
 Current (lines 531-533): sends last 10 full step objects as `JSON.stringify(previousSteps, null, 2)`.
 
-**What's expensive:** Each step's `linked_visual_action_ids` array contains 3-15 UUID strings (~20 tokens each). With 10 previous steps averaging 8 linked IDs, that's 10 × 8 × 20 = ~1,600 tokens of UUID arrays. These IDs serve no purpose in the continuity prompt — Phase C needs to know *what was already explained*, not *which action IDs were linked*.
+**What's expensive:** Each step's `linked_visual_action_ids` array contains 3-15 UUID strings (~10 tokens each with Gemini's tokenizer). With 10 previous steps averaging 8 linked IDs, that's 10 × 8 × 10 = ~800 tokens of UUID arrays, plus JSON structural overhead (brackets, commas, quotes) bringing it to ~900-1,000 tokens. These IDs serve no purpose in the continuity prompt — Phase C needs to know *what was already explained*, not *which action IDs were linked*.
 
 **What must be preserved for continuity:**
 - `explanation` — Without this, the model re-explains the same concepts because it only sees the intent (a short phrase like "Configure block properties") and can't tell what was already said.
@@ -185,7 +190,7 @@ const previousStepsContext = previousSteps.length > 0
   : "This is the beginning of the video.";
 ```
 
-**Token savings:** ~1,600-3,000 tokens per Phase C call (depending on number and link density of previous steps). Plus `indent: 2` → `indent: 1` whitespace reduction.
+**Token savings:** ~900-1,500 tokens per Phase C call (depending on number and link density of previous steps). Plus `indent: 2` → `indent: 1` whitespace reduction.
 
 ### 3c. Switch all replacements to compact stringify
 
@@ -205,23 +210,27 @@ const previousStepsContext = previousSteps.length > 0
 
 ### 4a. Clean simplified actions (keep structured components)
 
+The existing projection at lines 680-693 already omits `ui_context` and `chunkIndex`. We further omit `confidence` and `spatial_bounding_box` directly in the projection (rather than including them only to have `cleanForPrompt` strip them), then apply `stripEmptyAndDefaults` for null/default removal:
+
 ```typescript
 const simplifiedActions = actions.map(a => {
-  const projected = {
+  const target = a.target ? { ...a.target } : undefined;
+  if (target) delete target.spatial_bounding_box;  // not needed for dedup reasoning
+
+  return stripEmptyAndDefaults({
     id: a.id,
     timestamp: a.timestamp,
     action_type: a.action_type,
     actor: a.actor,
-    target: a.target,
+    target,
     detail: a.detail,
     result: a.result,
     interacted_components: a.interacted_components,  // KEPT as structured objects
     input_data: a.input_data,
     is_error_recovery: a.is_error_recovery,
-    context_note: a.context_note,
-    confidence: a.confidence
-  };
-  return cleanForPrompt(projected);  // strips confidence, bounding box, chunkIndex, empties
+    context_note: a.context_note
+    // confidence intentionally omitted — not referenced by dedup prompt, Zod forces it in output
+  });
 });
 ```
 
@@ -255,8 +264,18 @@ cleanedOutput?: object;  // Denormalized, cleaned JSON for export
 
 ### 5b. After Phase D completes (after ~line 607, before line 609)
 
+The `import` statement goes at the **top of the file** (module-level):
 ```typescript
 import { cleanFinalOutput, detectUnlinkedActions, detectRedundantSteps } from '../utils/jsonOptimize';
+```
+
+Then in the function body, after the Phase D try/catch block:
+
+**Important:** Phase D can fail gracefully (lines 604-607), in which case `state.actions` still contains pre-dedup data with potential duplicates. The `cleanFinalOutput` must flag this degraded state so the operator knows the cleaned export may contain duplicates.
+
+```typescript
+// Track whether Phase D succeeded (set a flag inside the try block above)
+// e.g., let phaseDSucceeded = false; ... phaseDSucceeded = true; inside the try
 
 // Generate cleaned denormalized output for export
 try {
@@ -270,10 +289,15 @@ try {
       duration: state.duration,
       totalActions: state.actions.length,
       totalSteps: cumulativeNarrative.length,
-      totalAnnotations: state.annotations.length
+      totalAnnotations: state.annotations.length,
+      deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
     }
   });
-  addLog('info', `Cleaned output generated (${JSON.stringify(state.cleanedOutput).length} chars)`);
+  if (!phaseDSucceeded) {
+    addLog('warn', `Cleaned output generated from PRE-DEDUP data (Phase D failed). Export may contain duplicate actions.`);
+  } else {
+    addLog('info', `Cleaned output generated (${JSON.stringify(state.cleanedOutput).length} chars)`);
+  }
 } catch (cleanErr: any) {
   addLog('warn', `Failed to generate cleaned output: ${cleanErr.message}`);
 }
@@ -374,7 +398,7 @@ The `cleanedOutput` must flow from server → polling response → frontend stat
 | `indent: 2` → `indent: 1` | ~12-15% of whitespace tokens | B, C, D |
 | Strip `confidence` + `spatial_bounding_box` + `chunkIndex` | ~5-8% per action | B, C, D |
 | Strip null/empty/default fields | ~3-5% per action | B, C, D |
-| Trim `previousStepsContext` (drop linked IDs, precondition, id) | ~40-60% reduction in context tokens | C |
+| Trim `previousStepsContext` (drop linked IDs, precondition, id) | ~30-45% reduction in context tokens | C |
 | **Combined Phase B** | ~15-20% reduction per call | B |
 | **Combined Phase C** | ~25-35% reduction per call | C |
 | **Combined Phase D** | ~15-20% reduction per call | D |
