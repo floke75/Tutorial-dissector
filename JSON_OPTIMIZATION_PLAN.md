@@ -64,6 +64,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - Strips `actions` from each step in already-cleaned output.
 - Returns the lightweight planning layer (~15-25% of full cleaned size).
 - Useful for outlining tutorial structure, planning sections, and identifying redundancies without the bulk of visual action data.
+- **Integration:** Exposed as a third export option in Step 5c ("Export Skeleton"). Not called internally by the pipeline — this is a user-facing export utility only, alongside "Export Raw" and "Export Cleaned."
 
 #### `detectUnlinkedActions(steps: NarrativeStep[], actions: ActionItem[]): object`
 - Port of Python `detect_unlinked_actions` with cross-chunk linking failure diagnosis.
@@ -145,11 +146,12 @@ const simplifiedActions = relevantVisualActions.map(a => {
     detail: a.detail,
     is_error_recovery: a.is_error_recovery,
     state_change: a.interacted_components?.length
-      ? a.interacted_components.map(c => ({
-          label: c.label,
-          from: c.state_before ?? null,
-          to: c.state_after ?? null,
-        }))
+      ? a.interacted_components.map(c => {
+          const entry: Record<string, string> = { label: c.label };
+          if (c.state_before) entry.from = c.state_before;
+          if (c.state_after) entry.to = c.state_after;
+          return entry;
+        })
       : undefined
   };
   return stripEmptyAndDefaults(projected);
@@ -171,7 +173,7 @@ Current (lines 531-533): sends last 10 full step objects as `JSON.stringify(prev
 - `topics` — Prevents topic repetition.
 
 **What's safe to drop:**
-- `linked_visual_action_ids` — Bulk UUID arrays (~1,600 tokens). Not needed for continuity.
+- `linked_visual_action_ids` — Bulk UUID arrays (~800-1,000 tokens including structural overhead). Not needed for continuity.
 - `linked_annotation_ids` — Same reasoning.
 - `precondition` — Derivable from the prior step's postcondition, which is preserved.
 - `id` — The step IDs are generated fresh by jobManager.ts (line 430: `step.id = 'step_' + uuidv4().substring(0, 8)`), so previous step IDs have no downstream reference value in the Phase C prompt.
@@ -273,11 +275,22 @@ Then in the function body, after the Phase D try/catch block:
 
 **Important:** Phase D can fail gracefully (lines 604-607), in which case `state.actions` still contains pre-dedup data with potential duplicates. The `cleanFinalOutput` must flag this degraded state so the operator knows the cleaned export may contain duplicates.
 
-```typescript
-// Track whether Phase D succeeded (set a flag inside the try block above)
-// e.g., let phaseDSucceeded = false; ... phaseDSucceeded = true; inside the try
+**Concrete placement:** Declare `let phaseDSucceeded = false;` immediately before the existing Phase D try/catch block (before line 529: `try {`). Set `phaseDSucceeded = true;` at line 603, after link remapping completes — this is the last operation inside the try block, after both dedup (line 551) and narrative link remapping (line 602). This ensures the flag is only true when dedup AND remapping both succeeded. The `cleanFinalOutput` call goes after the Phase D try/catch block closes (after line 607), before line 609 (`state.progress = 100`):
 
-// Generate cleaned denormalized output for export
+```typescript
+// Line ~528: declare before Phase D try/catch
+let phaseDSucceeded = false;
+
+try {
+  // ... existing Phase D logic (lines 529-603) ...
+
+  // Line ~603: set after link remapping completes (last operation in try block)
+  phaseDSucceeded = true;
+} catch (dedupError: any) {
+  addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
+}
+
+// Line ~608: generate cleaned output (after Phase D try/catch, before state.progress = 100)
 try {
   state.cleanedOutput = cleanFinalOutput({
     actions: state.actions,
@@ -346,9 +359,10 @@ const downloadCleanedJSON = () => {
 
 The `cleanedOutput` is passed as a prop from the parent component (AnalysisView.tsx → ResultsTimeline.tsx).
 
-**UI consideration:** The two export buttons should be clearly labeled:
+**UI consideration:** The three export options should be clearly labeled (e.g., as a dropdown or button group):
 - "Export Raw" — Full relational format with IDs, bounding boxes, all fields. Use for Playwright export, re-import, or custom tooling.
 - "Export Cleaned" — Denormalized, LLM-optimized format. Use for writing workflow specs, documentation, or feeding to other LLMs.
+- "Export Skeleton" — Steps without inlined actions (~15-25% of cleaned size). Use for planning tutorial structure, outlining sections, or quick review. Calls `extractSkeleton(cleanedOutput)` client-side.
 
 ### 5d. Wire cleanedOutput through the API and frontend
 
