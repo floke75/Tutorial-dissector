@@ -10,13 +10,14 @@ interface ResultsTimelineProps {
   narrativeSteps: NarrativeStep[];
   currentTime?: number;
   onSeek?: (time: number) => void;
+  learnedContext?: string;
 }
 
 type TimelineNode = 
   | { type: 'action'; action: ActionItem }
   | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
@@ -110,7 +111,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
       metadata: {
          total_steps: narrativeSteps.length,
          total_actions: actions.length,
-         total_annotations: annotations.length
+         total_annotations: annotations.length,
+         learned_context: learnedContext || ""
       },
       narrative_steps: narrativeSteps,
       visual_actions: actions,

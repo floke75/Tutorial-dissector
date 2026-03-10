@@ -871,6 +871,29 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                 </div>
               </div>
             )}
+
+            {procState.learnedContext && (
+              <div className="bg-indigo-50/50 dark:bg-indigo-900/10 backdrop-blur-md p-6 rounded-2xl border border-indigo-100/50 dark:border-indigo-800/30 shadow-md dark:shadow-black/20">
+                <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+                  <Activity className="w-3 h-3" />
+                  Learned Domain Knowledge
+                </h3>
+                <div className="space-y-2 text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                  {procState.learnedContext.split('\n').map((line, i) => (
+                    <p key={i} className="flex items-start gap-2">
+                      {line.startsWith('- ') ? (
+                        <>
+                          <span className="text-indigo-400 dark:text-indigo-500 mt-0.5">•</span>
+                          <span>{line.substring(2)}</span>
+                        </>
+                      ) : (
+                        line
+                      )}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="w-80 lg:w-[32rem] shrink-0 border-r border-gray-200/50 dark:border-gray-800/50 bg-transparent flex flex-col z-10 relative p-4 gap-4">
@@ -973,6 +996,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               narrativeSteps={narrativeSteps} 
               currentTime={currentTime}
               onSeek={handleSeek}
+              learnedContext={procState.learnedContext}
             />
           </div>
           
