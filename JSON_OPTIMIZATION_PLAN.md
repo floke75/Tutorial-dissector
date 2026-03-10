@@ -179,16 +179,15 @@ Current (lines 531-533): sends last 10 full step objects as `JSON.stringify(prev
 - `id` — The step IDs are generated fresh by jobManager.ts (line 430: `step.id = 'step_' + uuidv4().substring(0, 8)`), so previous step IDs have no downstream reference value in the Phase C prompt.
 
 ```typescript
-const trimmedPrevSteps = previousSteps.map(s => ({
-  timestamp: s.timestamp,
-  intent: s.intent,
-  explanation: s.explanation,
-  postcondition: s.postcondition,
-  insight_type: s.insight_type,
-  topics: s.topics
-}));
 const previousStepsContext = previousSteps.length > 0
-  ? compactStringify(trimmedPrevSteps)
+  ? compactStringify(previousSteps.map(s => ({
+      timestamp: s.timestamp,
+      intent: s.intent,
+      explanation: s.explanation,
+      postcondition: s.postcondition,
+      insight_type: s.insight_type,
+      topics: s.topics
+    })))
   : "This is the beginning of the video.";
 ```
 
@@ -340,16 +339,35 @@ try {
 
 **File:** `components/ResultsTimeline.tsx` ~lines 108-130
 
-Add a second export option alongside the existing `downloadJSON`. The existing button stays as "Export Raw JSON" (relational format, suitable for automation compilation and re-import). New button:
+Add two new export functions alongside the existing `downloadJSON`. The existing button stays as "Export Raw JSON" (relational format, suitable for automation compilation and re-import):
 
 ```typescript
+import { extractSkeleton } from '../utils/jsonOptimize';
+
 const downloadCleanedJSON = () => {
   if (!cleanedOutput) return;
-  const blob = new Blob([JSON.stringify(cleanedOutput, null, 2)], { type: "application/json" });
+  // indent: 1 for consistency with the plan's LLM-optimized formatting.
+  // indent: 2 would contradict the optimization goal — users re-injecting
+  // this export into LLM prompts would get no token savings.
+  const blob = new Blob([JSON.stringify(cleanedOutput, null, 1)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = "tutorial_workflow_cleaned.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+const downloadSkeletonJSON = () => {
+  if (!cleanedOutput) return;
+  const skeleton = extractSkeleton(cleanedOutput);
+  const blob = new Blob([JSON.stringify(skeleton, null, 1)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "tutorial_workflow_skeleton.json";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -368,7 +386,9 @@ The `cleanedOutput` is passed as a prop from the parent component (AnalysisView.
 
 The `cleanedOutput` must flow from server → polling response → frontend state → ResultsTimeline props.
 
-**Server (server.ts):** Already included in the full state response (`{...safeState}`), which spreads all job state fields. The incremental poll (`unchanged: true`) skips it — this is correct since `cleanedOutput` only exists after completion.
+**Expected payload size:** For a typical 15-minute video (~150 actions, ~25 narrative steps), the cleaned output is approximately 100-300 KB (roughly 40-60% smaller than the raw relational format due to field stripping and default removal). For long videos (30+ minutes, 300+ actions), this could reach 500 KB-1 MB. This is acceptable for a single delivery at job completion — the incremental polling (`unchanged: true`) already skips full-state payloads during processing, so `cleanedOutput` only appears in the final completion response. It does NOT inflate per-chunk poll traffic.
+
+**Server (server.ts):** Already included in the full state response (`{...safeState}`), which spreads all job state fields. The incremental poll (`unchanged: true`) skips it — this is correct since `cleanedOutput` only exists after completion. No lazy-load needed: the existing pattern delivers full state once at completion, and the cleaned output is a subset of the raw data (smaller, not larger).
 
 **Frontend (AnalysisView.tsx):** Add state for `cleanedOutput` and populate it from poll responses when `state.cleanedOutput` is present. Pass as prop to ResultsTimeline.
 
