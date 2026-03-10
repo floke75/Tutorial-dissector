@@ -63,6 +63,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - **Important:** This output is NOT suitable for the AutomationCompiler (Playwright export) because: (a) it strips `is_error_recovery` on false-valued actions, which the compiler needs to filter on; (b) it strips `spatial_bounding_box`, which the Playwright compiler uses for coordinate-based clicks; (c) it removes cross-reference IDs, making relational queries impossible. It must be offered as a separate export alongside the raw relational format.
 
 #### `extractSkeleton(cleanedData: object): object`
+- **Input:** The `result` object from `cleanFinalOutput` (i.e. `{ metadata, steps, learnedContext?, ... }`) — not the full `{ result, serializedSize }` wrapper.
 - Strips `actions` from each step in already-cleaned output.
 - Returns the lightweight planning layer (~15-25% of full cleaned size).
 - Useful for outlining tutorial structure, planning sections, and identifying redundancies without the bulk of visual action data.
@@ -234,7 +235,7 @@ const simplifiedActions = actions.map(a => {
     interacted_components: a.interacted_components,  // KEPT as structured objects
     input_data: a.input_data,
     is_error_recovery: a.is_error_recovery,
-    context_note: a.context_note
+    context_note: a.context_note  // Human-readable note from extraction phases to aid dedup disambiguation
     // confidence intentionally omitted — not referenced by dedup prompt, Zod forces it in output
   });
 });
