@@ -43,6 +43,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 
 #### `stripExtractionMeta(obj: any): any`
 - Removes: `confidence`, `chunkIndex`, and `target.spatial_bounding_box`.
+- **Null guard required:** `target.spatial_bounding_box` removal must be guarded (`if (obj.target) { ... }`) because `VideoAnnotation` objects do not have a `target` field. Without this guard, `cleanForPrompt` calls on annotations (e.g., `chunkAnnotations.map(cleanForPrompt)` in Phase B, `relevantAnnotations.map(cleanForPrompt)` in Phase C) would throw `Cannot read properties of undefined`.
 - Applies to **both actions and annotations** — annotations also carry `chunkIndex` (types.ts line 21) which is extraction metadata, not instructional content.
 - `confidence` — Phase B/D dedup prompts don't reference it. The dedup rule says "keep the one with the most detailed target and interacted_components." Zod forces `confidence` in output regardless.
 - `spatial_bounding_box` — pixel coordinates never referenced by any downstream phase's system prompt. Actions are matched by timestamp + action_type + detail, not spatial position. Two actions at the same timestamp targeting different screen regions are disambiguated by `target.element` + `target.panel`.
