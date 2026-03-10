@@ -56,7 +56,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 #### `cleanFinalOutput(data: {actions, annotations, narrativeSteps, learnedContext?, metadata?}): object`
 - TypeScript port of the Python `clean_json()` denormalization.
 - **Denormalization:** Inlines each step's linked actions and annotations directly into the step object, eliminating cross-reference lookups.
-- **Strips:** Cross-reference IDs (`id` on *inlined* actions/annotations only, `linked_*_ids` on steps), extraction metadata (`confidence`, `chunkIndex`, `spatial_bounding_box`), empty/null/default fields.
+- **Strips:** Cross-reference IDs (`id` on *inlined* actions/annotations only, `linked_*_ids` on steps), extraction metadata (`confidence`, `chunkIndex`, `spatial_bounding_box`), `ui_context` (raw screenshot/DOM state — every pipeline phase already strips this before LLM use via the zipper pattern; retaining it in the cleaned export would negate field-stripping savings for downstream LLM consumers), empty/null/default fields.
 - **Compacts:** `interacted_components` from objects to pipe-delimited strings (`"type|label[|state]"`). Safe here because this output is for human/LLM tutorial-writing consumption, not for pipeline reasoning or automation compilation.
 - **Preserves:** Unlinked actions/annotations in separate top-level arrays for review, **with their `id` fields intact** (needed to cross-reference against the raw export to diagnose extraction gaps or broken ID links).
 - Returns `{ result: { metadata, steps, learnedContext?, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. When `learnedContext` is provided, it is included in `result` after applying `stripEmptyAndDefaults` (same treatment as other fields — empty arrays/objects and null values are removed, but non-empty content passes through verbatim). The `serializedSize` is computed once after the complete `result` object is assembled (including any `unlinked_actions?`/`unlinked_annotations?` arrays) using `compactStringify(result)` internally (indent 1), matching the format used by the Step 5c export download functions. This avoids redundant serialization at the logging callsite and ensures the logged size matches the actual exported file size.
@@ -64,8 +64,8 @@ New utility module with all cleaning/compaction functions, centralized and testa
 
 #### `extractSkeleton(cleanedData: object): object`
 - **Input:** The `result` object from `cleanFinalOutput` (i.e. `{ metadata, steps, learnedContext?, ... }`) — not the full `{ result, serializedSize }` wrapper.
-- Strips `actions` from each step in already-cleaned output.
-- Returns the lightweight planning layer (~15-25% of full cleaned size).
+- Strips `actions` **and inlined `annotations`** from each step in already-cleaned output.
+- Returns the lightweight planning layer (~15-25% of full cleaned size). This estimate assumes both actions and annotations are removed; actions dominate step size, but annotations (content notes, chapter markers) add non-trivial bulk.
 - Useful for outlining tutorial structure, planning sections, and identifying redundancies without the bulk of visual action data.
 - **Integration:** Exposed as a third export option in Step 5c ("Export Skeleton"). Not called internally by the pipeline — this is a user-facing export utility only, alongside "Export Raw" and "Export Cleaned."
 
