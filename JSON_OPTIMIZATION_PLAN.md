@@ -41,11 +41,12 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - **Safe because:** Zod schema enforces output shape. Input field absence cannot cause output omission.
 - Ported from Python `_strip_empty_fields` + `DEFAULT_VALUES`.
 
-#### `stripExtractionMeta(action: any): any`
+#### `stripExtractionMeta(obj: any): any`
 - Removes: `confidence`, `chunkIndex`, and `target.spatial_bounding_box`.
+- Applies to **both actions and annotations** — annotations also carry `chunkIndex` (types.ts line 21) which is extraction metadata, not instructional content.
 - `confidence` — Phase B/D dedup prompts don't reference it. The dedup rule says "keep the one with the most detailed target and interacted_components." Zod forces `confidence` in output regardless.
 - `spatial_bounding_box` — pixel coordinates never referenced by any downstream phase's system prompt. Actions are matched by timestamp + action_type + detail, not spatial position. Two actions at the same timestamp targeting different screen regions are disambiguated by `target.element` + `target.panel`.
-- `chunkIndex` — pipeline tracking metadata, not instructional content.
+- `chunkIndex` — pipeline tracking metadata, not instructional content. Present on both `ActionItem` and `VideoAnnotation`.
 
 #### `cleanForPrompt(action: any): any`
 - Combines `stripExtractionMeta` + `stripEmptyAndDefaults` in one call.
@@ -117,7 +118,7 @@ const message = compactStringify({
   chunk_number: chunkNumber,
   primary_window: primaryWindow,
   extracted_actions: simplifiedChunkActions,
-  extracted_annotations: chunkAnnotations.map(stripEmptyAndDefaults)
+  extracted_annotations: chunkAnnotations.map(cleanForPrompt)  // strips chunkIndex + empties
 });
 ```
 
@@ -199,7 +200,7 @@ const previousStepsContext = previousSteps.length > 0
 ```typescript
 .replace('{previous_steps_context}', previousStepsContext)  // already compact from 3b
 .replace('{visual_actions}', compactStringify(simplifiedActions))
-.replace('{annotations}', compactStringify(relevantAnnotations.map(stripEmptyAndDefaults)))
+.replace('{annotations}', compactStringify(relevantAnnotations.map(cleanForPrompt)))  // strips chunkIndex + empties
 ```
 
 **Reasoning quality risk:** Low-Medium. Phase C receives the video alongside this text. The simplified actions serve as a "what to look for" reference, not the sole information source. The model sees/hears the video and uses the text to match narration to specific action IDs. The ID (critical for linking), timestamp, action type, element, detail, and state_change (critical for accuracy per IMPLEMENTATION_PLAN step 2) are all preserved.
