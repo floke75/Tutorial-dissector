@@ -58,7 +58,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - **Strips:** Cross-reference IDs (`id` on inlined actions/annotations, `linked_*_ids` on steps), extraction metadata (`confidence`, `chunkIndex`, `spatial_bounding_box`), empty/null/default fields.
 - **Compacts:** `interacted_components` from objects to pipe-delimited strings (`"type|label[|state]"`). Safe here because this output is for human/LLM tutorial-writing consumption, not for pipeline reasoning or automation compilation.
 - **Preserves:** Unlinked actions/annotations in separate top-level arrays for review (indicates extraction gaps or broken ID links).
-- Returns `{ result: { metadata, steps, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. The `serializedSize` is computed once during denormalization (the function internally serializes to measure size), avoiding redundant `JSON.stringify` calls at the logging callsite.
+- Returns `{ result: { metadata, steps, learnedContext?, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. When `learnedContext` is provided, it is included in `result` after applying `stripEmptyAndDefaults` (same treatment as other fields — empty arrays/objects and null values are removed, but non-empty content passes through verbatim). The `serializedSize` is computed once during denormalization (the function internally serializes to measure size), avoiding redundant `JSON.stringify` calls at the logging callsite.
 - **Important:** This output is NOT suitable for the AutomationCompiler (Playwright export) because: (a) it strips `is_error_recovery` on false-valued actions, which the compiler needs to filter on; (b) it strips `spatial_bounding_box`, which the Playwright compiler uses for coordinate-based clicks; (c) it removes cross-reference IDs, making relational queries impossible. It must be offered as a separate export alongside the raw relational format.
 
 #### `extractSkeleton(cleanedData: object): object`
@@ -146,6 +146,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
     action: a.action_type,
     element: a.target?.element,
     detail: a.detail,
+    input_data: a.input_data,   // preserves typed text for narration-to-action matching
     is_error_recovery: a.is_error_recovery,
     state_change: a.interacted_components?.length
       ? a.interacted_components.map(c => {
@@ -160,7 +161,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
 });
 ```
 
-**Token savings:** Actions without `state_change` or `is_error_recovery` drop from 7 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens.
+**Token savings:** Actions without `state_change`, `is_error_recovery`, or `input_data` drop from 8 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Note: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value in this field — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value.
 
 ### 3b. Trim previous steps context
 
