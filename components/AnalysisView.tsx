@@ -31,7 +31,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
-  const [cleanedOutput, setCleanedOutput] = useState<object | null>(null);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
@@ -187,12 +186,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         });
         setNarrativeSteps(sanitizedSteps);
         
-        if (data.procState?.cleanedOutput) {
-          setCleanedOutput(data.procState.cleanedOutput);
-        } else if (data.cleanedOutput) {
-          setCleanedOutput(data.cleanedOutput);
-        }
-
         // Sanitize logs
         const seenLogIds = new Set<string>();
         const sanitizedLogs = (data.procState?.logs || []).map((l, idx) => {
@@ -242,7 +235,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         actions,
         annotations,
         narrativeSteps,
-        procState: { ...procState, cleanedOutput: cleanedOutput || undefined },
+        procState,
         latestUIState,
         status: procState.status, 
         actionCount: actions.length
@@ -259,7 +252,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
 
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded, cleanedOutput]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -273,7 +266,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         const saveData: Project = {
           id: projectId, name: projectName, updatedAt: Date.now(),
           videoUrl, durationInput, chunkSize, overlap, customContext,
-          chunks, actions, annotations, narrativeSteps, procState: { ...procState, cleanedOutput: cleanedOutput || undefined }, latestUIState,
+          chunks, actions, annotations, narrativeSteps, procState, latestUIState,
           status: procState.status, actionCount: actions.length
         };
         localStorage.setItem(`td_emergency_save_${projectId}`, JSON.stringify(saveData));
@@ -282,7 +275,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded, cleanedOutput]);
+  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
 
   // Local chunk computation removed as it's now handled by the server
 
@@ -427,10 +420,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           
           if (state.uiState) {
             setLatestUIState(state.uiState);
-          }
-          
-          if (state.cleanedOutput !== undefined) {
-            setCleanedOutput(state.cleanedOutput);
           }
           
           // Append new logs
@@ -1008,7 +997,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               currentTime={currentTime}
               onSeek={handleSeek}
               learnedContext={procState.learnedContext}
-              cleanedOutput={cleanedOutput || undefined}
             />
           </div>
           
