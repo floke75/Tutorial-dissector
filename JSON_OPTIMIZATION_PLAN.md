@@ -146,12 +146,13 @@ const simplifiedActions = relevantVisualActions.map(a => {
     timestamp: a.timestamp,
     action: a.action_type,
     element: a.target?.element,
+    panel: a.target?.panel,      // needed to disambiguate same-type elements in different panels
     detail: a.detail,
-    input_data: a.input_data,   // preserves typed text for narration-to-action matching
+    input_data: a.input_data,    // preserves typed text for narration-to-action matching
     is_error_recovery: a.is_error_recovery,
     state_change: a.interacted_components?.length
       ? a.interacted_components.map(c => {
-          const entry: Record<string, string> = { label: c.label };
+          const entry: Record<string, string | number | boolean> = { label: c.label };
           if (c.state_before != null) entry.from = c.state_before;
           if (c.state_after != null) entry.to = c.state_after;
           return entry;
@@ -159,7 +160,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
       if (c.state_before != null) entry.from = c.state_before;
       if (c.state_after != null) entry.to = c.state_after;
 
-**Token savings:** Actions without `state_change`, `is_error_recovery`, or `input_data` drop from 8 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Note: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value in this field — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value.
+**Token savings:** Actions without `state_change`, `is_error_recovery`, `input_data`, or `panel` drop from 9 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Notes: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value. `panel` is included because the plan's own disambiguation rationale (line 48) states actions are disambiguated by `target.element + target.panel` — omitting `panel` would make identically-typed elements in different panels (e.g., two "input" fields in a sidebar vs. a modal) indistinguishable.
 
 ### 3b. Trim previous steps context
 
