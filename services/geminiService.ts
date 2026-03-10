@@ -520,6 +520,7 @@ export async function analyzeNarrationSegment(
       action: a.action_type,
       element: a.target?.element,
       detail: a.detail,
+      input_data: a.input_data,
       is_error_recovery: a.is_error_recovery,
       state_change: a.interacted_components?.length
         ? a.interacted_components.map(c => {

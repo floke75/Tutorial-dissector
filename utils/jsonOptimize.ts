@@ -150,21 +150,22 @@ export function cleanFinalOutput(data: {
     .filter(a => !linkedAnnotationIds.has(a.id))
     .map(a => cleanForPrompt(a));
     
-  const result: any = {
+  const rawResult: any = {
     metadata: metadata || {},
     steps
   };
   
   if (learnedContext) {
-    result.learnedContext = learnedContext;
+    rawResult.learnedContext = learnedContext;
   }
   if (unlinked_actions.length > 0) {
-    result.unlinked_actions = unlinked_actions;
+    rawResult.unlinked_actions = unlinked_actions;
   }
   if (unlinked_annotations.length > 0) {
-    result.unlinked_annotations = unlinked_annotations;
+    rawResult.unlinked_annotations = unlinked_annotations;
   }
   
+  const result = stripEmptyAndDefaults(rawResult);
   const serialized = compactStringify(result);
   return { result, serializedSize: serialized.length };
 }

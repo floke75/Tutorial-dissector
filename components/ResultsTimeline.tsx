@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
+import { extractSkeleton, compactStringify } from '../utils/jsonOptimize';
 
 import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 
@@ -11,13 +12,14 @@ interface ResultsTimelineProps {
   currentTime?: number;
   onSeek?: (time: number) => void;
   learnedContext?: string;
+  cleanedOutput?: object;
 }
 
 type TimelineNode = 
   | { type: 'action'; action: ActionItem }
   | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext, cleanedOutput }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
@@ -123,6 +125,33 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     const a = document.createElement('a');
     a.href = url;
     a.download = "tutorial_workflow_graph.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadCleanedJSON = () => {
+    if (!cleanedOutput) return;
+    const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "tutorial_workflow_cleaned.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadSkeletonJSON = () => {
+    if (!cleanedOutput) return;
+    const skeleton = extractSkeleton(cleanedOutput);
+    const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "tutorial_workflow_skeleton.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -377,10 +406,17 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
              <Code2 size={13} />
              Playwright
            </button>
-           <button onClick={downloadJSON} className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
-             <Download size={13} />
-             JSON
-           </button>
+           <div className="relative group">
+             <button className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+               <Download size={13} />
+               Export JSON
+             </button>
+             <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+               <button onClick={downloadJSON} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">Export Raw</button>
+               <button onClick={downloadCleanedJSON} disabled={!cleanedOutput} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Cleaned</button>
+               <button onClick={downloadSkeletonJSON} disabled={!cleanedOutput} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Skeleton</button>
+             </div>
+           </div>
         </div>
       </div>
 
