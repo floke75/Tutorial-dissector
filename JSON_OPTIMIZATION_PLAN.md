@@ -149,8 +149,8 @@ const simplifiedActions = relevantVisualActions.map(a => {
     state_change: a.interacted_components?.length
       ? a.interacted_components.map(c => {
           const entry: Record<string, string> = { label: c.label };
-          if (c.state_before) entry.from = c.state_before;
-          if (c.state_after) entry.to = c.state_after;
+          if (c.state_before != null) entry.from = c.state_before;
+          if (c.state_after != null) entry.to = c.state_after;
           return entry;
         })
       : undefined
@@ -387,7 +387,7 @@ The `cleanedOutput` must flow from server → polling response → frontend stat
 
 **Expected payload size:** For a typical 15-minute video (~150 actions, ~25 narrative steps), the cleaned output is approximately 100-300 KB (roughly 40-60% smaller than the raw relational format due to field stripping and default removal). For long videos (30+ minutes, 300+ actions), this could reach 500 KB-1 MB. This is acceptable for a single delivery at job completion — the incremental polling (`unchanged: true`) already skips full-state payloads during processing, so `cleanedOutput` only appears in the final completion response. It does NOT inflate per-chunk poll traffic.
 
-**Server (server.ts):** Already included in the full state response (`{...safeState}`), which spreads all job state fields. The incremental poll (`unchanged: true`) skips it — this is correct since `cleanedOutput` only exists after completion. No lazy-load needed: the existing pattern delivers full state once at completion, and the cleaned output is a subset of the raw data (smaller, not larger).
+**Server (server.ts):** Already included in the full state response (`{...safeState}`), which spreads all job state fields. The incremental poll (`unchanged: true`) skips it — this is correct since `cleanedOutput` only exists after completion. No lazy-load needed: the existing pattern delivers full state once at completion, and the cleaned output is a denormalized restructuring of the raw data (smaller due to field stripping, but not interchangeable — the two formats serve different use cases).
 
 **Frontend (AnalysisView.tsx):** Add state for `cleanedOutput` and populate it from poll responses when `state.cleanedOutput` is present. Pass as prop to ResultsTimeline.
 
