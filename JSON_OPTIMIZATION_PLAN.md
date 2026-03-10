@@ -155,12 +155,9 @@ const simplifiedActions = relevantVisualActions.map(a => {
           if (c.state_before != null) entry.from = c.state_before;
           if (c.state_after != null) entry.to = c.state_after;
           return entry;
-        })
-      : undefined
-  };
-  return stripEmptyAndDefaults(projected);
-});
-```
+      const entry: Record<string, string | number | boolean> = { label: c.label };
+      if (c.state_before != null) entry.from = c.state_before;
+      if (c.state_after != null) entry.to = c.state_after;
 
 **Token savings:** Actions without `state_change`, `is_error_recovery`, or `input_data` drop from 8 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Note: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value in this field — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value.
 
