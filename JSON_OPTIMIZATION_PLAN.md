@@ -59,7 +59,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 - **Strips:** Cross-reference IDs (`id` on inlined actions/annotations, `linked_*_ids` on steps), extraction metadata (`confidence`, `chunkIndex`, `spatial_bounding_box`), empty/null/default fields.
 - **Compacts:** `interacted_components` from objects to pipe-delimited strings (`"type|label[|state]"`). Safe here because this output is for human/LLM tutorial-writing consumption, not for pipeline reasoning or automation compilation.
 - **Preserves:** Unlinked actions/annotations in separate top-level arrays for review (indicates extraction gaps or broken ID links).
-- Returns `{ result: { metadata, steps, learnedContext?, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. When `learnedContext` is provided, it is included in `result` after applying `stripEmptyAndDefaults` (same treatment as other fields — empty arrays/objects and null values are removed, but non-empty content passes through verbatim). The `serializedSize` is computed once during denormalization (the function internally serializes to measure size), avoiding redundant `JSON.stringify` calls at the logging callsite.
+- Returns `{ result: { metadata, steps, learnedContext?, unlinked_actions?, unlinked_annotations? }, serializedSize: number }`. When `learnedContext` is provided, it is included in `result` after applying `stripEmptyAndDefaults` (same treatment as other fields — empty arrays/objects and null values are removed, but non-empty content passes through verbatim). The `serializedSize` is computed once during denormalization using `compactStringify(result)` internally (indent 1), matching the format used by the Step 5c export download functions. This avoids redundant serialization at the logging callsite and ensures the logged size matches the actual exported file size.
 - **Important:** This output is NOT suitable for the AutomationCompiler (Playwright export) because: (a) it strips `is_error_recovery` on false-valued actions, which the compiler needs to filter on; (b) it strips `spatial_bounding_box`, which the Playwright compiler uses for coordinate-based clicks; (c) it removes cross-reference IDs, making relational queries impossible. It must be offered as a separate export alongside the raw relational format.
 
 #### `extractSkeleton(cleanedData: object): object`
@@ -377,7 +377,20 @@ const downloadSkeletonJSON = () => {
 };
 ```
 
-The `cleanedOutput` is passed as a prop from the parent component (AnalysisView.tsx → ResultsTimeline.tsx).
+The `cleanedOutput` is destructured from props. **Props interface update required:**
+
+```typescript
+// Add to ResultsTimelineProps interface:
+interface ResultsTimelineProps {
+  actions: ActionItem[];
+  annotations?: VideoAnnotation[];
+  narrativeSteps: NarrativeStep[];
+  currentTime?: number;
+  onSeek?: (time: number) => void;
+  learnedContext?: string;
+  cleanedOutput?: object;  // NEW — passed from AnalysisView
+}
+```
 
 **UI consideration:** The three export options should be clearly labeled (e.g., as a dropdown or button group):
 - "Export Raw" — Full relational format with IDs, bounding boxes, all fields. Use for Playwright export, re-import, or custom tooling.
@@ -392,7 +405,28 @@ The `cleanedOutput` must flow from server → polling response → frontend stat
 
 **Server (server.ts):** Already included in the full state response (`{...safeState}`), which spreads all job state fields. The incremental poll (`unchanged: true`) skips it — this is correct since `cleanedOutput` only exists after completion. No lazy-load needed: the existing pattern delivers full state once at completion, and the cleaned output is a denormalized restructuring of the raw data (smaller due to field stripping, but not interchangeable — the two formats serve different use cases).
 
-**Frontend (AnalysisView.tsx):** Add state for `cleanedOutput` and populate it from poll responses when `state.cleanedOutput` is present. Pass as prop to ResultsTimeline.
+**Frontend (AnalysisView.tsx):** Three concrete wiring changes:
+
+```typescript
+// 1. State declaration (near line 29 with other state declarations)
+const [cleanedOutput, setCleanedOutput] = useState<object | null>(null);
+
+// 2. Polling handler extraction (inside the `else` branch at ~line 387)
+if (state.cleanedOutput !== undefined) {
+  setCleanedOutput(state.cleanedOutput);
+}
+
+// 3. ResultsTimeline usage (at ~line 993)
+<ResultsTimeline
+  actions={actions}
+  annotations={annotations}
+  narrativeSteps={narrativeSteps}
+  currentTime={currentTime}
+  onSeek={handleSeek}
+  learnedContext={procState.learnedContext}
+  cleanedOutput={cleanedOutput}  // NEW
+/>
+```
 
 ---
 
