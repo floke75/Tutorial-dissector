@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
 import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
+import { cleanForPrompt, stripEmptyAndDefaults, compactStringify } from '../utils/jsonOptimize.ts';
 
 // Helper for exponential backoff
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -342,14 +343,14 @@ export async function accumulateChunkPhaseB(
   // Strip ui_context to save tokens in Phase B (and in chat history)
   const simplifiedChunkActions = chunkActions.map(a => {
     const { ui_context, ...rest } = a;
-    return rest;
+    return cleanForPrompt(rest);
   });
 
-  const message = JSON.stringify({
+  const message = compactStringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
     extracted_actions: simplifiedChunkActions,
-    extracted_annotations: chunkAnnotations
+    extracted_annotations: chunkAnnotations.map(cleanForPrompt)
   });
 
   const contents = [
@@ -512,32 +513,43 @@ export async function analyzeNarrationSegment(
   const ai = getClient(apiKey);
   
   // Provide simplified visual actions but include critical flags
-  const simplifiedActions = relevantVisualActions.map(a => ({
-    id: a.id,
-    timestamp: a.timestamp,
-    action: a.action_type,
-    element: a.target?.element,
-    detail: a.detail,
-    is_error_recovery: a.is_error_recovery,
-    state_change: a.interacted_components?.length
-      ? a.interacted_components.map(c => ({
-          label: c.label,
-          from: c.state_before ?? null,
-          to: c.state_after ?? null,
-        }))
-      : undefined
-  }));
+  const simplifiedActions = relevantVisualActions.map(a => {
+    const projected = {
+      id: a.id,
+      timestamp: a.timestamp,
+      action: a.action_type,
+      element: a.target?.element,
+      detail: a.detail,
+      is_error_recovery: a.is_error_recovery,
+      state_change: a.interacted_components?.length
+        ? a.interacted_components.map(c => {
+            const entry: Record<string, string> = { label: c.label };
+            if (c.state_before != null) entry.from = c.state_before;
+            if (c.state_after != null) entry.to = c.state_after;
+            return entry;
+          })
+        : undefined
+    };
+    return stripEmptyAndDefaults(projected);
+  });
   
   const previousStepsContext = previousSteps.length > 0
-    ? JSON.stringify(previousSteps, null, 2)
+    ? compactStringify(previousSteps.map(s => ({
+        timestamp: s.timestamp,
+        intent: s.intent,
+        explanation: s.explanation,
+        postcondition: s.postcondition,
+        insight_type: s.insight_type,
+        topics: s.topics
+      })))
     : "This is the beginning of the video.";
 
   const prompt = PASS_2_SYSTEM_PROMPT
     .replace('{start_time}', formatMMSS(startSec))
     .replace('{end_time}', formatMMSS(endSec))
     .replace('{previous_steps_context}', previousStepsContext)
-    .replace('{visual_actions}', JSON.stringify(simplifiedActions, null, 2))
-    .replace('{annotations}', JSON.stringify(relevantAnnotations, null, 2));
+    .replace('{visual_actions}', compactStringify(simplifiedActions))
+    .replace('{annotations}', compactStringify(relevantAnnotations.map(cleanForPrompt)));
 
   let lastError: any;
 
@@ -677,25 +689,30 @@ export async function analyzeGlobalDeduplication(
     links: n.linked_visual_action_ids
   }));
 
-  const simplifiedActions = actions.map(a => ({
-    id: a.id,
-    timestamp: a.timestamp,
-    action_type: a.action_type,
-    actor: a.actor,
-    target: a.target,
-    detail: a.detail,
-    result: a.result,
-    interacted_components: a.interacted_components,
-    input_data: a.input_data,
-    is_error_recovery: a.is_error_recovery,
-    context_note: a.context_note,
-    confidence: a.confidence
-  }));
+  const simplifiedActions = actions.map(a => {
+    const target = a.target ? { ...a.target } : undefined;
+    if (target) delete target.spatial_bounding_box;  // not needed for dedup reasoning
+
+    return stripEmptyAndDefaults({
+      id: a.id,
+      timestamp: a.timestamp,
+      action_type: a.action_type,
+      actor: a.actor,
+      target,
+      detail: a.detail,
+      result: a.result,
+      interacted_components: a.interacted_components,  // KEPT as structured objects
+      input_data: a.input_data,
+      is_error_recovery: a.is_error_recovery,
+      context_note: a.context_note
+      // confidence intentionally omitted — not referenced by dedup prompt, Zod forces it in output
+    });
+  });
 
   let prompt = GLOBAL_DEDUPLICATION_PROMPT
-    .replace('{all_actions}', JSON.stringify(simplifiedActions, null, 2))
-    .replace('{narrative_context}', JSON.stringify(minifiedNarrative, null, 2))
-    .replace('{final_ui_state}', JSON.stringify(finalUiState, null, 2));
+    .replace('{all_actions}', compactStringify(simplifiedActions))
+    .replace('{narrative_context}', compactStringify(minifiedNarrative))
+    .replace('{final_ui_state}', compactStringify(finalUiState));
 
   if (customContext) {
     prompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.`;
