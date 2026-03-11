@@ -1,5 +1,4 @@
 import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
-import { parseMMSS } from './timeUtils';
 
 /**
  * Replaces JSON.stringify(obj, null, 2) for all LLM-bound payloads.
@@ -109,65 +108,21 @@ export function cleanFinalOutput(data: {
   
   const linkedActionIds = new Set<string>();
   const linkedAnnotationIds = new Set<string>();
-
-  // --- Defensive sort: ensure steps are in timestamp order ---
-  const sortedNarrativeSteps = [...narrativeSteps].sort((a, b) =>
-    parseMMSS(a.timestamp) - parseMMSS(b.timestamp)
-  );
-
-  // --- Assign each action to exactly one step (closest timestamp wins) ---
-  // Prevents physical duplication when multiple steps reference the same action.
-  const actionOwnership = new Map<string, string>();
-
-  // Pre-compute parsed timestamps for O(1) lookup during ownership resolution
-  const stepTimestampMap = new Map<string, number>(
-    sortedNarrativeSteps.map(s => [s.id, parseMMSS(s.timestamp)])
-  );
-
-  for (const step of sortedNarrativeSteps) {
-    const stepTs = stepTimestampMap.get(step.id) ?? 0;
-    for (const actionId of (step.linked_visual_action_ids || [])) {
-      const action = actionMap.get(actionId);
-      if (!action) continue;
-
-      const actionTs = parseMMSS(action.timestamp);
-
-      const existingOwner = actionOwnership.get(actionId);
-      if (!existingOwner) {
-        actionOwnership.set(actionId, step.id);
-      } else {
-        const existingTs = stepTimestampMap.get(existingOwner) ?? 0;
-        const existingDist = Math.abs(existingTs - actionTs);
-        const currentDist = Math.abs(stepTs - actionTs);
-        // Strict < : on ties, the earlier step (processed first) keeps ownership
-        if (currentDist < existingDist) {
-          actionOwnership.set(actionId, step.id);
-        }
-      }
-    }
-  }
-
-  const steps = sortedNarrativeSteps.map(step => {
+  
+  const steps = narrativeSteps.map(step => {
     const stepCopy: any = { ...step };
     
     // Inline actions
     if (step.linked_visual_action_ids && step.linked_visual_action_ids.length > 0) {
-      // Mark ALL referenced actions as linked (even those owned by other steps),
-      // so they don't appear in unlinked_actions.
-      for (const id of step.linked_visual_action_ids) {
-        linkedActionIds.add(id);
-      }
-
-      // Only inline actions this step owns (prevents duplication)
       stepCopy.actions = step.linked_visual_action_ids
-        .filter(id => actionOwnership.get(id) === step.id)
         .map(id => {
+          linkedActionIds.add(id);
           const action = actionMap.get(id);
           if (!action) return null;
-
+          
           let cleanedAction = cleanForPrompt(action);
           delete cleanedAction.id; // Strip cross-reference ID
-
+          
           // Compact interacted_components
           if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {
             cleanedAction.interacted_components = compactInteractedComponents(cleanedAction.interacted_components);
@@ -301,14 +256,22 @@ export function detectUnlinkedActions(steps: NarrativeStep[], actions: ActionIte
   let likely_linking_failure = false;
   let maxCooccurringClusterSize = 0;
   
+  const parseTime = (ts: string) => {
+    if (!ts) return 0;
+    const parts = ts.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+  };
+
   for (const cluster of clusters) {
     if (cluster.length >= 3) {
-      const clusterStart = parseMMSS(cluster[0].timestamp);
-      const clusterEnd = parseMMSS(cluster[cluster.length - 1].timestamp);
-
+      const clusterStart = parseTime(cluster[0].timestamp);
+      const clusterEnd = parseTime(cluster[cluster.length - 1].timestamp);
+      
       // Check if any empty step is near this cluster (e.g., within 30 seconds)
       for (const step of emptySteps) {
-        const stepTime = parseMMSS(step.timestamp);
+        const stepTime = parseTime(step.timestamp);
         if (stepTime >= clusterStart - 30 && stepTime <= clusterEnd + 30) {
           likely_linking_failure = true;
           if (cluster.length > maxCooccurringClusterSize) {
