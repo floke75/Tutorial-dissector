@@ -619,9 +619,9 @@ export function cancelJob(jobId: string): boolean {
         metadata: {
           videoUrl: state.videoUrl,
           duration: state.duration,
-          totalActions: state.actions.length,
-          totalSteps: cumulativeNarrative.length,
-          totalAnnotations: state.annotations.length,
+          total_actions: state.actions.length,
+          total_steps: cumulativeNarrative.length,
+          total_annotations: state.annotations.length,
           deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
         }
       });
