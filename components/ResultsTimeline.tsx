@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
-import { cleanFinalOutput, extractSkeleton, compactStringify } from '../utils/jsonOptimize';
+import { extractSkeleton, compactStringify } from '../utils/jsonOptimize';
 
 import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 
@@ -14,13 +14,14 @@ interface ResultsTimelineProps {
   learnedContext?: string;
   videoUrl?: string;
   duration?: string;
+  cleanedOutput?: any;
 }
 
 type TimelineNode = 
   | { type: 'action'; action: ActionItem }
   | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext, videoUrl, duration }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext, videoUrl, duration, cleanedOutput }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -133,27 +134,9 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     URL.revokeObjectURL(url);
   };
 
-  const cachedCleanedOutput = useMemo(() => {
-    if (actions.length === 0 && narrativeSteps.length === 0) return null;
-    const { result } = cleanFinalOutput({
-      actions,
-      annotations,
-      narrativeSteps,
-      learnedContext,
-      metadata: {
-        videoUrl,
-        duration,
-        total_steps: narrativeSteps.length,
-        total_actions: actions.length,
-        total_annotations: annotations.length
-      }
-    });
-    return result;
-  }, [actions, annotations, narrativeSteps, learnedContext, videoUrl, duration]);
-
   const downloadCleanedJSON = () => {
-    if (!cachedCleanedOutput) return;
-    const blob = new Blob([compactStringify(cachedCleanedOutput)], { type: "application/json" });
+    if (!cleanedOutput) return;
+    const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -165,8 +148,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
   };
 
   const downloadSkeletonJSON = () => {
-    if (!cachedCleanedOutput) return;
-    const skeleton = extractSkeleton(cachedCleanedOutput);
+    if (!cleanedOutput) return;
+    const skeleton = extractSkeleton(cleanedOutput);
     const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

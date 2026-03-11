@@ -219,11 +219,11 @@ export function detectUnlinkedActions(steps: NarrativeStep[], actions: ActionIte
   diagnosis?: string;
 } {
   const linkedIds = new Set<string>();
-  let emptyStepsCount = 0;
+  const emptySteps: NarrativeStep[] = [];
   
   for (const step of steps) {
     if (!step.linked_visual_action_ids || step.linked_visual_action_ids.length === 0) {
-      emptyStepsCount++;
+      emptySteps.push(step);
     } else {
       for (const id of step.linked_visual_action_ids) {
         linkedIds.add(id);
@@ -231,22 +231,67 @@ export function detectUnlinkedActions(steps: NarrativeStep[], actions: ActionIte
     }
   }
   
-  const unlinkedIds = actions.filter(a => !linkedIds.has(a.id)).map(a => a.id);
+  const unlinkedActions = actions.filter(a => !linkedIds.has(a.id));
+  const unlinkedIds = unlinkedActions.map(a => a.id);
   
-  // A simple heuristic for cross-chunk linking failure:
-  // If we have multiple empty steps AND multiple unlinked actions,
-  // it's highly likely the model failed to link them across chunks.
-  const likely_linking_failure = emptyStepsCount > 0 && unlinkedIds.length > 3;
+  // Detect contiguous clusters of orphan actions
+  const clusters: ActionItem[][] = [];
+  let currentCluster: ActionItem[] = [];
+  
+  for (const action of actions) {
+    if (!linkedIds.has(action.id)) {
+      currentCluster.push(action);
+    } else {
+      if (currentCluster.length > 0) {
+        clusters.push(currentCluster);
+        currentCluster = [];
+      }
+    }
+  }
+  if (currentCluster.length > 0) {
+    clusters.push(currentCluster);
+  }
+
+  // Check for temporal co-occurrence
+  let likely_linking_failure = false;
+  let maxCooccurringClusterSize = 0;
+  
+  const parseTime = (ts: string) => {
+    if (!ts) return 0;
+    const parts = ts.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+  };
+
+  for (const cluster of clusters) {
+    if (cluster.length >= 3) {
+      const clusterStart = parseTime(cluster[0].timestamp);
+      const clusterEnd = parseTime(cluster[cluster.length - 1].timestamp);
+      
+      // Check if any empty step is near this cluster (e.g., within 30 seconds)
+      for (const step of emptySteps) {
+        const stepTime = parseTime(step.timestamp);
+        if (stepTime >= clusterStart - 30 && stepTime <= clusterEnd + 30) {
+          likely_linking_failure = true;
+          if (cluster.length > maxCooccurringClusterSize) {
+            maxCooccurringClusterSize = cluster.length;
+          }
+          break;
+        }
+      }
+    }
+  }
   
   let diagnosis;
   if (likely_linking_failure) {
-    diagnosis = `Detected ${emptyStepsCount} empty narrative steps and ${unlinkedIds.length} unlinked actions. This strongly suggests a cross-chunk ID linking failure where Phase C generated narrative but failed to attach the correct action IDs.`;
+    diagnosis = `Detected empty narrative steps co-occurring temporally with a contiguous cluster of ${maxCooccurringClusterSize} unlinked actions. This strongly suggests a cross-chunk ID linking failure.`;
   }
   
   return {
     unlinked_count: unlinkedIds.length,
     unlinked_ids: unlinkedIds,
-    empty_steps: emptyStepsCount,
+    empty_steps: emptySteps.length,
     likely_linking_failure,
     diagnosis
   };

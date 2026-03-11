@@ -31,6 +31,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
+  const [cleanedOutput, setCleanedOutput] = useState<any>(null);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
@@ -420,6 +421,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           
           if (state.uiState) {
             setLatestUIState(state.uiState);
+          }
+          
+          if (state.cleanedOutput !== undefined) {
+            setCleanedOutput(state.cleanedOutput);
           }
           
           // Append new logs
