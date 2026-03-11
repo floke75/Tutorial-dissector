@@ -125,7 +125,7 @@ The `linkedActionIds.add(id)` loop runs **before** the ownership filter. This en
 
 ### 5. Replace inline `parseTime` in `detectUnlinkedActions` with `parseMMSS`
 
-In `detectUnlinkedActions`, delete the inline `parseTime` function declaration and replace all its call sites (`parseTime(...)`) with `parseMMSS(...)`. This is a no-behavior-change refactor — `parseMMSS` is a strict superset.
+In `detectUnlinkedActions`, delete the inline `parseTime` function declaration and replace all its call sites (`parseTime(...)`) with `parseMMSS(...)`. This is a backward-compatible improvement — `parseMMSS` is a strict superset that additionally handles raw seconds strings (e.g., `"45"` → 45, whereas `parseTime` would have returned 0) and trims whitespace.
 
 ## Constraints
 
