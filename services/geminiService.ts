@@ -344,16 +344,14 @@ export async function accumulateChunkPhaseB(
   const simplifiedChunkActions = chunkActions.map(a => {
     const { ui_context, ...rest } = a;
     // Preserve confidence for Phase B dedup quality; strip metadata
-    const cleaned = cleanForPrompt(rest);
-    cleaned.confidence = a.confidence; // re-attach
-    return cleaned;
+    return cleanForPrompt(rest, { keepConfidence: true });
   });
 
   const message = compactStringify({
     chunk_number: chunkNumber,
     primary_window: primaryWindow,
     extracted_actions: simplifiedChunkActions,
-    extracted_annotations: chunkAnnotations.map(cleanForPrompt)
+    extracted_annotations: chunkAnnotations.map(a => cleanForPrompt(a))
   });
 
   const contents = [

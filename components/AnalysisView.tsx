@@ -997,6 +997,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               currentTime={currentTime}
               onSeek={handleSeek}
               learnedContext={procState.learnedContext}
+              videoUrl={videoUrl}
+              duration={durationInput}
             />
           </div>
           
