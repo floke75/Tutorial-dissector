@@ -76,6 +76,7 @@ New utility module with all cleaning/compaction functions, centralized and testa
 
 #### `detectRedundantSteps(steps: NarrativeStep[]): {index: number, duplicateOf: number}[]`
 - Port of Python `detect_redundancy` — flags narrative steps with high topic/intent overlap using Jaccard similarity on non-stopword tokens.
+- **Tokenization:** Split on `/\W+/`, lowercase. Filter using a hardcoded stopword set ported from `postprocess.py` line 23: `{"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "it", "this", "that"}`. The TS port adds `"are", "was", "were"` for English auxiliary verb coverage — acceptable divergence since the thresholds are empirical.
 - Threshold: `topic_overlap >= 0.6 OR intent_overlap >= 0.6 OR (both >= 0.3)`.
 - **Edge case:** If either token set is empty after stopword removal (e.g., intent is all stopwords, or topics array is empty), treat Jaccard similarity as `0.0` for that comparison — no redundancy signal from empty data.
 
@@ -153,7 +154,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
     is_error_recovery: a.is_error_recovery,
     state_change: a.interacted_components?.length
       ? a.interacted_components.map(c => {
-          const entry: Record<string, string | number | boolean> = { label: c.label };
+          const entry: Record<string, string | number | boolean> = { type: c.type, label: c.label };
           if (c.state_before != null) entry.from = c.state_before;
           if (c.state_after != null) entry.to = c.state_after;
           return entry;
@@ -164,7 +165,7 @@ const simplifiedActions = relevantVisualActions.map(a => {
 });
 ```
 
-**Token savings:** Actions without `state_change`, `is_error_recovery`, `input_data`, or `panel` drop from 9 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Notes: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value. `panel` is included because the plan's own disambiguation rationale (line 48) states actions are disambiguated by `target.element + target.panel` — omitting `panel` would make identically-typed elements in different panels (e.g., two "input" fields in a sidebar vs. a modal) indistinguishable.
+**Token savings:** Actions without `state_change`, `is_error_recovery`, `input_data`, or `panel` drop from 9 fields to 5. With 30-50 actions per chunk, this saves ~200-400 tokens. Notes: `input_data` is included because text-input actions (`keyboard_type`, `paste`) carry the literal typed value — without it, the model cannot match narration like "I'm typing 'config.yaml'" to the correct action when `detail` contains an intent description rather than the literal value. `panel` is included because the plan's own disambiguation rationale (line 48) states actions are disambiguated by `target.element + target.panel` — omitting `panel` would make identically-typed elements in different panels (e.g., two "input" fields in a sidebar vs. a modal) indistinguishable. `state_change` items include `type` (e.g., `"dropdown"`, `"checkbox"`) alongside `label` for the same disambiguation reason — two components with identical labels but different types would otherwise be indistinguishable (minimal token cost: 1-2 tokens per component).
 
 ### 3b. Trim previous steps context
 

@@ -528,7 +528,7 @@ export async function analyzeNarrationSegment(
       is_error_recovery: a.is_error_recovery,
       state_change: a.interacted_components?.length
         ? a.interacted_components.map(c => {
-            const entry: Record<string, string> = { label: c.label };
+            const entry: Record<string, string> = { type: c.type, label: c.label };
             if (c.state_before != null) entry.from = c.state_before;
             if (c.state_after != null) entry.to = c.state_after;
             return entry;
