@@ -541,7 +541,6 @@ export async function analyzeNarrationSegment(
         timestamp: s.timestamp,
         intent: s.intent,
         explanation: s.explanation,
-        precondition: s.precondition,   // preserves prerequisite state for coherence
         postcondition: s.postcondition,
         insight_type: s.insight_type,
         topics: s.topics
