@@ -17,10 +17,10 @@ All four prompts are defined in `constants.ts`. This pass modifies all four to f
 | Phase A treats all UI responses identically. Immediate responses (dialog opens on click) should be captured in the triggering action's `result` field, but the prompt says "log EVERY UI response" without distinguishing immediate from async. This creates redundant system_event actions that clutter the log. | No triage heuristic for immediate vs. async responses. |
 | Phase B's system event preservation rule is unconditional — it forbids dropping ANY system event, even redundant ones that duplicate a nearby action's `result` field. This conflicts with Phase A's updated triage. | Blanket preservation without nuance. |
 | Phase D Rule 1 contradicts the updated Phase B Rule 2. Phase D says "DO NOT remove system events just because they occur near a user action" while Phase B now allows removal when a system event restates a nearby `result` field. This cross-prompt inconsistency causes divergent LLM behavior. | Rules accumulated independently across phases without cross-phase alignment. |
-| Phase D Rule 5 (NARRATIVE FLOW) rewrites the `detail` field, which breaks the Zipper ID-matching in `geminiService.ts` (lines 766-788) that re-attaches `ui_context` using `timestamp + action_type + detail` as a fallback. | No awareness of downstream matching constraints. |
+| Phase D Rule 5 (NARRATIVE FLOW) rewrites the `detail` field, which breaks the Zipper ID-matching in `geminiService.ts` (lines 766-788) that re-attaches `ui_context` using `timestamp + action_type + detail` as a fallback. Simply removing the rule also drops `context_note` quality coverage — stale or redundant continuity notes go unpolished. | No awareness of downstream matching constraints. `context_note` coverage must be retained while protecting `detail`. |
 | Phase D has no timestamp protection. The Zipper fallback matches on `timestamp + action_type`, so if Phase D modifies timestamps, `ui_context` is permanently lost. | Missing constraint for downstream dependency. |
 | Phase D Rule 4 (NAMING CONSISTENCY) doesn't reference the custom app context glossary, even though `geminiService.ts` appends `customContext` below the prompt at runtime. | Rule doesn't reference available context. |
-| Phase C Rule 7 says "timestamp must reflect when the explanation starts in the audio." For standalone conceptual steps, the narrator explains after demonstrating — audio timestamp is 10-20s after the actions. Next chunk's linked step covers earlier actions, causing timestamp regression. The monotonic constraint must apply to ALL step types, not just standalone steps. | Audio timing diverges from action timing at chunk boundaries. No universal monotonicity guard. |
+| Phase C Rule 7 has no monotonic timestamp constraint for any step type. It says "timestamp must reflect when the explanation starts in the audio," which allows timestamps to freely regress. For standalone conceptual steps, the narrator explains after demonstrating — audio timestamp is 10-20s after the actions. For linked steps at chunk boundaries, the earliest linked action can predate the previous chunk's last narrative step. Both cases produce timeline regression. | No monotonic constraint exists. Audio timing diverges from action timing at chunk boundaries. |
 | Phase C Rule 8 says "genuinely distinct content" for standalone steps, but provides no examples. Model interprets too loosely — generates orphan steps like "Compose a playlist" next to "Populate a playlist with overlays." | Abstract instruction without anchoring examples. |
 | Phase C Rule 5 says "MUST strive to link EVERY" action. This pressures the model into generating extra thin steps to cover audio content, conflicting with Rule 8 (fold into linked step) and Rule 11 (step economy). | Absolute coverage mandate conflicts with quality rules. |
 | Phase C Rules 2, 4, 5 reference "system events" as a primary category equal to user actions. With the updated Phase A triage, most system events are now folded into `result` fields — only async ones remain as separate actions. The terminology should reflect this. | Stale terminology after Phase A/B updates. |
@@ -89,7 +89,7 @@ Replace with:
 
 **Rationale:** `geminiService.ts` (line 720-722) appends `customContext` after placeholder substitution. The phrasing "appended below" accurately describes the runtime injection point.
 
-#### 3c. Protect `detail` field in Rule 5
+#### 3c. Protect `detail` field and restore `context_note` coverage in Rule 5
 
 Locate in `GLOBAL_DEDUPLICATION_PROMPT`:
 ```
@@ -98,10 +98,10 @@ Locate in `GLOBAL_DEDUPLICATION_PROMPT`:
 
 Replace with:
 ```
-5. RESULT QUALITY: Ensure every action's "result" field clearly describes the visible UI outcome. Replace vague results like "Action performed" with specifics (e.g., "The Export Settings dialog opens"). Do NOT rewrite the "detail" field — it must stay close to its original wording to preserve cross-reference integrity.
+5. RESULT & CONTEXT_NOTE QUALITY: Ensure every action's "result" field clearly describes the visible UI outcome. Replace vague results like "Action performed" with specifics (e.g., "The Export Settings dialog opens"). Ensure "context_note" values are consistent and accurate — fix stale references to UI state that has changed, remove redundant notes that repeat the "detail" field, and ensure cross-action continuity notes remain coherent across the timeline. Do NOT rewrite the "detail" field — it must stay close to its original wording to preserve cross-reference integrity.
 ```
 
-**Rationale:** The Zipper in `geminiService.ts` (lines 766-788) falls back to matching on `timestamp + action_type + detail`. Rewriting `detail` breaks this fallback and causes `ui_context` to be permanently lost from actions. The `result` field improvement is valuable and safe; the `detail` field must be protected.
+**Rationale:** The Zipper in `geminiService.ts` (lines 766-788) falls back to matching on `timestamp + action_type + detail`. Rewriting `detail` breaks this fallback and causes `ui_context` to be permanently lost from actions. The `result` field improvement is valuable and safe; the `detail` field must be protected. The `context_note` field must retain explicit quality guidance — the original Rule 5 covered it, and dropping it silently regresses polish coverage for cross-action continuity notes.
 
 #### 3d. Add timestamp protection to Rule 7
 
@@ -211,6 +211,7 @@ After implementation, search `constants.ts` for:
 - `"DO NOT remove system events"` in `GLOBAL_DEDUPLICATION_PROMPT` → should NOT appear (replaced with aligned language)
 - `"TIMESTAMP PRESERVATION"` in `GLOBAL_DEDUPLICATION_PROMPT` → should appear
 - `"CUSTOM APP CONTEXT is appended below"` in `GLOBAL_DEDUPLICATION_PROMPT` → should appear
+- `"RESULT & CONTEXT_NOTE QUALITY"` in `GLOBAL_DEDUPLICATION_PROMPT` → should appear
 - `"Do NOT rewrite the \"detail\" field"` in `GLOBAL_DEDUPLICATION_PROMPT` → should appear
 - `"SORTING"` in `GLOBAL_DEDUPLICATION_PROMPT` → should still appear (preserved)
 - `"MONOTONIC TIMING"` in `PASS_2_SYSTEM_PROMPT` → should appear
