@@ -12,13 +12,15 @@ interface ResultsTimelineProps {
   currentTime?: number;
   onSeek?: (time: number) => void;
   learnedContext?: string;
+  videoUrl?: string;
+  duration?: string;
 }
 
 type TimelineNode = 
   | { type: 'action'; action: ActionItem }
   | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext, videoUrl, duration }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -139,13 +141,15 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
       narrativeSteps,
       learnedContext,
       metadata: {
+        videoUrl,
+        duration,
         total_steps: narrativeSteps.length,
         total_actions: actions.length,
         total_annotations: annotations.length
       }
     });
     return result;
-  }, [actions, annotations, narrativeSteps, learnedContext]);
+  }, [actions, annotations, narrativeSteps, learnedContext, videoUrl, duration]);
 
   const downloadCleanedJSON = () => {
     if (!cachedCleanedOutput) return;

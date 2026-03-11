@@ -9,6 +9,20 @@ export function compactStringify(obj: unknown, indent: number = 1): string {
   return JSON.stringify(obj, null, indent);
 }
 
+function compactInteractedComponents(components: any[]): string[] {
+  return components.map((c: any) => {
+    const parts = [c.type || '', c.label || ''];
+    if (c.state_before && c.state_after) {
+      parts.push(`${c.state_before}->${c.state_after}`);
+    } else if (c.state_after) {
+      parts.push(c.state_after);
+    } else if (c.state_before) {
+      parts.push(c.state_before);
+    }
+    return parts.join('|');
+  });
+}
+
 /**
  * Removes keys where value is null, undefined, "", [], or {}.
  * Removes is_error_recovery: false from prompt copies.
@@ -39,15 +53,21 @@ export function stripEmptyAndDefaults(obj: Record<string, any>): Record<string, 
   return result;
 }
 
+export interface CleanOptions {
+  keepConfidence?: boolean;
+}
+
 /**
  * Removes: confidence, chunkIndex, ui_context, and target.spatial_bounding_box.
  * Applies to both actions and annotations.
  */
-export function stripExtractionMeta(obj: any): any {
+export function stripExtractionMeta(obj: any, options?: CleanOptions): any {
   if (!obj || typeof obj !== 'object') return obj;
 
   const result = { ...obj };
-  delete result.confidence;
+  if (!options?.keepConfidence) {
+    delete result.confidence;
+  }
   delete result.chunkIndex;
   delete result.ui_context;
   
@@ -64,8 +84,8 @@ export function stripExtractionMeta(obj: any): any {
  * Combines stripExtractionMeta + stripEmptyAndDefaults in one call.
  * Does NOT compact interacted_components.
  */
-export function cleanForPrompt(action: any): any {
-  return stripEmptyAndDefaults(stripExtractionMeta(action));
+export function cleanForPrompt(action: any, options?: CleanOptions): any {
+  return stripEmptyAndDefaults(stripExtractionMeta(action, options));
 }
 
 /**
@@ -80,7 +100,7 @@ export function cleanFinalOutput(data: {
   narrativeSteps: NarrativeStep[];
   learnedContext?: string;
   metadata?: any;
-}): { result: any; serializedCharCount: number } {
+}): { result: any; serializedSize: number } {
   const { actions, annotations, narrativeSteps, learnedContext, metadata } = data;
   
   const actionMap = new Map(actions.map(a => [a.id, a]));
@@ -105,17 +125,7 @@ export function cleanFinalOutput(data: {
           
           // Compact interacted_components
           if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {
-            cleanedAction.interacted_components = cleanedAction.interacted_components.map((c: any) => {
-              const parts = [c.type || '', c.label || ''];
-              if (c.state_before && c.state_after) {
-                parts.push(`${c.state_before}->${c.state_after}`);
-              } else if (c.state_after) {
-                parts.push(c.state_after);
-              } else if (c.state_before) {
-                parts.push(c.state_before);
-              }
-              return parts.join('|');
-            });
+            cleanedAction.interacted_components = compactInteractedComponents(cleanedAction.interacted_components);
           }
           return cleanedAction;
         })
@@ -148,17 +158,7 @@ export function cleanFinalOutput(data: {
     .map(a => {
       let cleanedAction = cleanForPrompt(a);
       if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {
-        cleanedAction.interacted_components = cleanedAction.interacted_components.map((c: any) => {
-          const parts = [c.type || '', c.label || ''];
-          if (c.state_before && c.state_after) {
-            parts.push(`${c.state_before}->${c.state_after}`);
-          } else if (c.state_after) {
-            parts.push(c.state_after);
-          } else if (c.state_before) {
-            parts.push(c.state_before);
-          }
-          return parts.join('|');
-        });
+        cleanedAction.interacted_components = compactInteractedComponents(cleanedAction.interacted_components);
       }
       return cleanedAction;
     });
@@ -184,7 +184,7 @@ export function cleanFinalOutput(data: {
   
   const result = stripEmptyAndDefaults(rawResult);
   const serialized = compactStringify(result);
-  return { result, serializedCharCount: serialized.length };
+  return { result, serializedSize: serialized.length };
 }
 
 /**
@@ -279,8 +279,8 @@ export function detectRedundantSteps(steps: NarrativeStep[]): {index: number, du
       const intentA = tokenize(steps[i].intent);
       const intentB = tokenize(steps[j].intent);
       
-      const topicsA = new Set((steps[i].topics || []).map(t => t.toLowerCase()));
-      const topicsB = new Set((steps[j].topics || []).map(t => t.toLowerCase()));
+      const topicsA = new Set((steps[i].topics || []).flatMap(t => [...tokenize(t)]));
+      const topicsB = new Set((steps[j].topics || []).flatMap(t => [...tokenize(t)]));
       
       const intentOverlap = jaccard(intentA, intentB);
       const topicOverlap = jaccard(topicsA, topicsB);
