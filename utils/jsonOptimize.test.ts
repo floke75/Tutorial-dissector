@@ -156,7 +156,7 @@ describe('cleanFinalOutput', () => {
     expect(result.steps[0].actions[0].id).toBeUndefined();
   });
 
-  it('error recovery actions excluded from unlinked_actions', () => {
+  it('unlinked error recovery actions excluded from unlinked_actions', () => {
     const actions = [
       makeAction({ id: 'a1', timestamp: '0:10', is_error_recovery: true }),
     ];
@@ -164,6 +164,21 @@ describe('cleanFinalOutput', () => {
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
 
+    expect(result.unlinked_actions).toBeUndefined();
+  });
+
+  it('linked error-recovery action is still inlined into owning step', () => {
+    const actions = [
+      makeAction({ id: 'a1', timestamp: '0:10', is_error_recovery: true, detail: 'undo mistake' }),
+    ];
+    const steps = [
+      makeStep({ id: 's1', timestamp: '0:10', linked_visual_action_ids: ['a1'] }),
+    ];
+
+    const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
+
+    expect(result.steps[0].actions).toHaveLength(1);
+    expect(result.steps[0].actions[0].detail).toBe('undo mistake');
     expect(result.unlinked_actions).toBeUndefined();
   });
 

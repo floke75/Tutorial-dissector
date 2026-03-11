@@ -140,7 +140,7 @@ After implementation, export the cleaned JSON and assert:
 - **No duplicate actions:** Total actions across all steps equals unique action count. Check by signature: `${action.timestamp}|${action.action_type}|${action.detail}` — no signature should appear more than once.
 - **Step monotonicity:** `steps[i].timestamp <= steps[i+1].timestamp` for all consecutive pairs.
 - **No orphaned actions lost:** The `unlinked_actions` array at the top level should contain any actions not assigned to a step (same behavior as before, but now multi-linked actions are assigned to exactly one step instead of duplicated).
-- **Action count preserved:** `sum(step.actions.length for all steps) + unlinked_actions.length + error_recovery_count === total_actions`.
+- **Action count preserved:** `sum(step.actions.length for all steps) + unlinked_actions.length + unlinked_error_recovery_count === total_actions`. Note: only **unlinked** error-recovery actions are excluded from both `steps` and `unlinked_actions`. Linked error-recovery actions are inlined into their owning step normally.
 
 ## Test Cases to Add (new file: `utils/jsonOptimize.test.ts`)
 
@@ -155,5 +155,6 @@ Minimum coverage for `cleanFinalOutput`:
 | Unlinked preservation | 3 actions, only 2 linked | 1 action in `unlinked_actions` |
 | Ownership tiebreak | Action at `1:00`, steps at `0:50` and `1:10` (equidistant) | Action belongs to earlier step (`0:50`) |
 | IDs stripped | 1 step, 1 action | Neither `step.id` nor `action.id` in output |
-| Error recovery excluded | 1 unlinked action with `is_error_recovery: true` | Not in `unlinked_actions` |
+| Unlinked error recovery excluded | 1 unlinked action with `is_error_recovery: true` | Not in `unlinked_actions` |
+| Linked error recovery inlined | 1 step referencing 1 action with `is_error_recovery: true` | Action appears in `step.actions` (not dropped) |
 | Metadata stripped | Action with `confidence`, `chunkIndex`, `ui_context`, `spatial_bounding_box` | All four absent from output |
