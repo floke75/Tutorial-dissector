@@ -191,6 +191,17 @@ export function cancelJob(jobId: string): boolean {
     }
   };
 
+  // Deterministic schema normalization — fills defaults for fields the LLM may omit.
+  // Primarily benefits the raw "Full Workflow Graph" export; cleanFinalOutput strips most of these.
+  const normalizeActionDefaults = (actions: ActionItem[]) => {
+    for (const action of actions) {
+      if (action.is_error_recovery === undefined) action.is_error_recovery = false;
+      if (!action.interacted_components) action.interacted_components = [];
+      if (action.context_note === undefined) action.context_note = null;
+      if (!action.confidence) action.confidence = 'high';
+    }
+  };
+
   const state = jobs.get(jobId)!;
   const runId = state.runId;
 
@@ -351,9 +362,16 @@ export function cancelJob(jobId: string): boolean {
       });
       let nextCumulativeActions = [...cumulativeActions, ...newValidatedEvents];
 
-      // Append new validated annotations
+      // Append new validated annotations (filter placeholder entries first)
       const existingAnnIds = new Set(cumulativeAnnotations.map(a => a.id));
-      const newValidatedAnnotations = (phaseBResult.result.validated_segment_annotations || []).map(ann => {
+      const newValidatedAnnotations = (phaseBResult.result.validated_segment_annotations || [])
+        .filter(ann => {
+          if (!ann.content?.trim()) return false;
+          const content = ann.content.toLowerCase();
+          if (content.includes('no annotations') || content.includes('not extracted') || content.includes('none provided')) return false;
+          return true;
+        })
+        .map(ann => {
         if (!ann.id || existingAnnIds.has(ann.id)) {
           ann.id = `ann_${uuidv4().substring(0, 8)}`;
         }
@@ -476,6 +494,72 @@ export function cancelJob(jobId: string): boolean {
       bumpVersion(state);
     }
 
+    // --- POST-LOOP CLEANUP (deterministic, no LLM) ---
+
+    // 1. Enforce monotonic timestamp ordering
+    const beforeSort = cumulativeNarrative.map(s => s.timestamp).join(',');
+    cumulativeNarrative.sort((a, b) => parseMMSS(a.timestamp) - parseMMSS(b.timestamp));
+    const afterSort = cumulativeNarrative.map(s => s.timestamp).join(',');
+    if (beforeSort !== afterSort) {
+      addLog('warn', `Reordered ${cumulativeNarrative.length} narrative steps to enforce timestamp monotonicity.`);
+    }
+
+    // 2. Merge orphan steps into nearest linked neighbors
+    // Skip rationale steps — they are designed to be standalone conceptual steps
+    // (aligned with coverage validation exemption below)
+    const mergedOrphanIds: string[] = [];
+    for (let si = cumulativeNarrative.length - 1; si >= 0; si--) {
+      const step = cumulativeNarrative[si];
+
+      if (step.insight_type === 'rationale') continue;
+
+      const hasActionLinks = step.linked_visual_action_ids && step.linked_visual_action_ids.length > 0;
+      const hasAnnotationLinks = step.linked_annotation_ids && step.linked_annotation_ids.length > 0;
+
+      if (hasActionLinks || hasAnnotationLinks) continue;
+
+      const stepTs = parseMMSS(step.timestamp);
+      const stepTopics = new Set(step.topics.map((t: string) => t.toLowerCase()));
+
+      let bestNeighbor: { index: number; jaccard: number } | null = null;
+
+      for (let ni = 0; ni < cumulativeNarrative.length; ni++) {
+        if (ni === si) continue;
+        const neighbor = cumulativeNarrative[ni];
+        const neighborHasLinks = (neighbor.linked_visual_action_ids?.length > 0) ||
+                                  (neighbor.linked_annotation_ids?.length > 0);
+        if (!neighborHasLinks) continue;
+
+        const neighborTs = parseMMSS(neighbor.timestamp);
+        if (Math.abs(neighborTs - stepTs) > 15) continue;
+
+        const neighborTopics = new Set(neighbor.topics.map((t: string) => t.toLowerCase()));
+        const intersection = new Set([...stepTopics].filter(t => neighborTopics.has(t)));
+        const union = new Set([...stepTopics, ...neighborTopics]);
+        const jaccard = union.size > 0 ? intersection.size / union.size : 0;
+
+        if (jaccard >= 0.3 && (!bestNeighbor || jaccard > bestNeighbor.jaccard)) {
+          bestNeighbor = { index: ni, jaccard };
+        }
+      }
+
+      if (bestNeighbor) {
+        const neighbor = cumulativeNarrative[bestNeighbor.index];
+        const separator = neighbor.explanation.endsWith('.') ? ' ' : '. ';
+        neighbor.explanation = neighbor.explanation + separator + step.explanation;
+        const mergedTopics = new Set([...neighbor.topics, ...step.topics]);
+        neighbor.topics = [...mergedTopics];
+
+        mergedOrphanIds.push(step.id);
+        cumulativeNarrative.splice(si, 1);
+      }
+    }
+
+    state.narrativeSteps = cumulativeNarrative;
+    if (mergedOrphanIds.length > 0) {
+      addLog('info', `Merged ${mergedOrphanIds.length} orphan steps into linked neighbors: ${mergedOrphanIds.join(', ')}`);
+    }
+
     // After all chunks are processed, before global dedup
     addLog('info', 'Validating narrative-action link coverage...');
 
@@ -552,6 +636,7 @@ export function cancelJob(jobId: string): boolean {
       });
       
       state.actions = deduplicatedActions;
+      normalizeActionDefaults(deduplicatedActions);
       addLog('success', `Global deduplication complete. Final action count: ${deduplicatedActions.length}`);
       
       // After global dedup, remap narrative links for any removed duplicates
@@ -607,6 +692,7 @@ export function cancelJob(jobId: string): boolean {
       phaseDSucceeded = true;
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
+      normalizeActionDefaults(cumulativeActions);
       // We don't fail the whole job if the final polish step fails
     }
 
