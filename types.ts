@@ -142,6 +142,7 @@ export interface ProcessingState {
   lastInteractionId: string | null; 
   chatHistory?: any[]; 
   learnedContext?: string;
+  cleanedOutput?: any;
   logs?: LogMessage[]; // Added logs array for Dev Console
   jobId?: string;
   duration?: number;

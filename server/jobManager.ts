@@ -3,7 +3,7 @@ import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, ana
 import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
-import { detectUnlinkedActions, detectRedundantSteps } from '../utils/jsonOptimize.ts';
+import { detectUnlinkedActions, detectRedundantSteps, cleanFinalOutput } from '../utils/jsonOptimize.ts';
 
 export interface JobState {
   id: string;
@@ -25,6 +25,7 @@ export interface JobState {
   overlap: number;
   ttlTimerId?: ReturnType<typeof setTimeout>;
   learnedContext?: string;
+  cleanedOutput?: any;
   lastUpdatedAt: number;
   stateVersion: number;
   logCapOccurred?: boolean;
@@ -607,6 +608,31 @@ export function cancelJob(jobId: string): boolean {
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
       // We don't fail the whole job if the final polish step fails
+    }
+
+    try {
+      const { result: cleaned, serializedSize } = cleanFinalOutput({
+        actions: state.actions,
+        annotations: state.annotations,
+        narrativeSteps: cumulativeNarrative,
+        learnedContext: state.learnedContext,
+        metadata: {
+          videoUrl: state.videoUrl,
+          duration: state.duration,
+          total_actions: state.actions.length,
+          total_steps: cumulativeNarrative.length,
+          total_annotations: state.annotations.length,
+          deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
+        }
+      });
+      state.cleanedOutput = cleaned;
+      if (!phaseDSucceeded) {
+        addLog('warn', `Cleaned output generated from PRE-DEDUP data (Phase D failed). Export may contain duplicate actions.`);
+      } else {
+        addLog('info', `Cleaned output generated (${serializedSize} chars)`);
+      }
+    } catch (cleanErr: any) {
+      addLog('warn', `Failed to generate cleaned output: ${cleanErr.message}`);
     }
 
     try {

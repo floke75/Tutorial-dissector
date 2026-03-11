@@ -552,7 +552,7 @@ export async function analyzeNarrationSegment(
     .replace('{end_time}', formatMMSS(endSec))
     .replace('{previous_steps_context}', previousStepsContext)
     .replace('{visual_actions}', compactStringify(simplifiedActions))
-    .replace('{annotations}', compactStringify(relevantAnnotations.map(cleanForPrompt)));
+    .replace('{annotations}', compactStringify(relevantAnnotations.map(a => cleanForPrompt(a))));
 
   let lastError: any;
 

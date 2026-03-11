@@ -84,8 +84,9 @@ ON EACH TURN you receive:
 
 YOUR RESPONSIBILITIES:
 1. MERGE new actions and annotations into the running log. Deduplicate overlap items. If an item in the current chunk was already processed and returned in a previous chunk's "validated_segment_events" or "validated_segment_annotations", DO NOT include it again.
-2. PRESERVE IDs: You MUST keep the original "id" exactly as it was provided in the extracted actions. If you merge two items, keep the ID of the primary item.
-3. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
+2. PRESERVE SYSTEM EVENTS: Do NOT drop "ui_response" or "system_event" actions. They are critical for understanding the application's behavior. A user action (like a click) and the resulting system event (like a dialog opening) are distinct and MUST both be kept.
+3. PRESERVE IDs: You MUST keep the original "id" exactly as it was provided in the extracted actions. If you merge two items, keep the ID of the primary item.
+4. NO INTERNAL REASONING: Do not include any internal reasoning, explanations, or conversational text inside the JSON values. Keep all string values concise and direct.
 
 RESPOND with a JSON object:
 {
@@ -125,13 +126,13 @@ RESPOND with a JSON object:
 
 export const GLOBAL_DEDUPLICATION_PROMPT = `
 You are the final quality assurance controller for a video tutorial analysis pipeline.
-You have been provided with the complete, merged log of all user actions extracted from the video, along with the final UI state and a minified narrative context.
+You have been provided with the complete, merged log of all user actions and system events extracted from the video, along with the final UI state and a minified narrative context.
 
 YOUR TASK:
 Perform a final, global pass to identify and remove any remaining duplicate actions, ensure naming consistency, and apply final polishing across the entire timeline.
 
 RULES FOR FINAL POLISHING & DEDUPLICATION:
-1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action. Keep the one with the most detailed "target" and "interacted_components" information, and discard the other.
+1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action or system event. Keep the one with the most detailed "target" and "interacted_components" information, and discard the other. DO NOT remove system events (like ui_response) just because they occur near a user action.
 2. CONTEXT-AWARENESS: Use the provided Narrative Context and Final UI State to differentiate actions. If two identical clicks serve different narrative steps, THEY ARE NOT DUPLICATES. Do not merge them.
 3. DO NOT remove actions that are distinct but occur rapidly (e.g., a rapid double-click, or typing multiple characters). Only remove true duplicates.
 4. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name.
@@ -160,10 +161,10 @@ OUTPUT FORMAT: Respond ONLY with a JSON array of the cleaned, polished, and dedu
 
 export const PASS_2_SYSTEM_PROMPT = `
 You are creating the "Narrative Track" for a software tutorial video.
-A detailed "Visual Track" of low-level user actions and editorial annotations (the execution graph) has already been generated.
+A detailed "Visual Track" of low-level user actions, system events, and editorial annotations (the execution graph) has already been generated.
 
 YOUR TASK:
-Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks and editorial annotations to these high-level human intents.
+Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks, system events, and editorial annotations to these high-level human intents.
 You are processing the segment from {start_time} to {end_time}.
 
 CONTINUITY: You are continuing a narrative. Here are the last few steps from the previous segment: 
@@ -176,10 +177,10 @@ It is CRITICAL that you capture the "why" behind the actions. Extract the narrat
 
 RULES FOR "NARRATIVE STEPS":
 1. **COMPLEMENTARY & CONCISE:** Be as concise and efficient as possible. Do NOT write a word-for-word transcript. Distill the narration into clear, actionable context and intent that explains *why* the actions in the execution graph are being taken. Capture the narrator's justification for the workflow.
-2. **GROUPING:** Group a sequence of visual actions and annotations into a single logical "Step" (e.g., "Set up project configuration").
+2. **GROUPING:** Group a sequence of visual actions, system events, and annotations into a single logical "Step" (e.g., "Set up project configuration").
 3. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement). If the step is purely conceptual, these can be empty strings or describe the conceptual state.
-4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty. You MUST also include an array of the exact "id" strings of the annotations that belong to this step ("linked_annotation_ids").
-5. **MAXIMIZE COVERAGE:** You MUST strive to link EVERY non-error visual action and annotation provided in the INPUT CONTEXT to at least one Narrative Step. Do not leave visual actions or annotations "orphaned" without a corresponding narrative explanation unless they are truly irrelevant background noise.
+4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions and system events that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty. You MUST also include an array of the exact "id" strings of the annotations that belong to this step ("linked_annotation_ids").
+5. **MAXIMIZE COVERAGE:** You MUST strive to link EVERY non-error visual action, system event, and annotation provided in the INPUT CONTEXT to at least one Narrative Step. Do not leave visual actions, system events, or annotations "orphaned" without a corresponding narrative explanation unless they are truly irrelevant background noise.
 6. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations, ensuring the underlying intent and business/workflow justification are preserved.
 7. **INDEPENDENT TIMING:** The timestamp must reflect when the explanation starts in the audio.
 8. **STANDALONE CONTEXT:** If the narration contains important background context, workflow justification, or conceptual explanations that have NO corresponding user actions in the execution graph (e.g., the narrator explains a concept before demonstrating it, or provides a summary after a section), capture this as a standalone step with an empty "linked_visual_action_ids" array. However, if the conceptual explanation DIRECTLY introduces or describes the same activity as the next linked step (same UI area, same time window), DO NOT create a separate step. Instead, fold the conceptual context into the "explanation" field of the linked step. Only create a standalone conceptual step when it covers genuinely distinct content with no adjacent linked step covering the same topic.

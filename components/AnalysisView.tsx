@@ -31,6 +31,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
+  const [cleanedOutput, setCleanedOutput] = useState<any>(null);
   const [procState, setProcState] = useState<ProcessingState>({
     status: 'idle',
     currentChunkIndex: 0,
@@ -114,7 +115,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             data.procState.status === 'running_narrative' ||
             data.procState.status === 'running_dedup') {
           try {
-            const res = await fetch(`/api/process/${projectId}?t=${Date.now()}`, { cache: 'no-store' });
+            const res = await fetch(`/api/start-job/${projectId}?t=${Date.now()}`, { cache: 'no-store' });
             if (res.ok) {
               const serverState = await res.json();
               if (serverState.status === 'completed' || serverState.status === 'error' || serverState.status === 'cancelled') {
@@ -335,7 +336,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         const controller = new AbortController();
         timeoutId = setTimeout(() => controller.abort(), 10000);
         
-        const pollRes = await fetch(`/api/process/${jobId}?t=${Date.now()}&since=${lastVersion}&logSince=${lastLogIndex}`, { 
+        const pollRes = await fetch(`/api/start-job/${jobId}?t=${Date.now()}&since=${lastVersion}&logSince=${lastLogIndex}`, { 
           cache: 'no-store',
           signal: controller.signal
         });
@@ -420,6 +421,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           
           if (state.uiState) {
             setLatestUIState(state.uiState);
+          }
+          
+          if (state.cleanedOutput !== undefined) {
+            setCleanedOutput(state.cleanedOutput);
           }
           
           // Append new logs
@@ -598,7 +603,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       try {
         handleLog('info', 'Starting analysis job on server...', { url: videoUrl });
         
-        const res = await fetch('/api/process', {
+        const res = await fetch('/api/start-job', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -666,7 +671,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     if (!projectId) return;
     try {
       handleLog('warn', 'Sending cancel request to server...');
-      await fetch(`/api/process/${projectId}/cancel`, { method: 'POST' });
+      await fetch(`/api/start-job/${projectId}/cancel`, { method: 'POST' });
       handleLog('info', 'Cancel request sent. Waiting for server to finish current operation...');
       // Don't clear polling — let it detect 'cancelled' status on next tick
     } catch (e) {
@@ -924,7 +929,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                     setIsPlaying(false);
                   }}
                   onError={(e) => console.error("[ReactPlayer] Error occurred:", e)}
-                  config={isGeminiFile ? { file: { forceVideo: true } } : {}}
+                  config={{
+                    youtube: {
+                      playerVars: {
+                        origin: typeof window !== 'undefined' ? window.location.origin : ''
+                      }
+                    },
+                    ...(isGeminiFile ? { file: { forceVideo: true } } : {})
+                  }}
                   onProgress={(state) => setCurrentTime(state.playedSeconds)}
                 />
               ) : (
@@ -999,6 +1011,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               learnedContext={procState.learnedContext}
               videoUrl={videoUrl}
               duration={durationInput}
+              cleanedOutput={cleanedOutput}
             />
           </div>
           
