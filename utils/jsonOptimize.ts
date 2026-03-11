@@ -154,7 +154,7 @@ export function cleanFinalOutput(data: {
   });
   
   const unlinked_actions = actions
-    .filter(a => !linkedActionIds.has(a.id) && a.actor === 'user' && !a.is_error_recovery)
+    .filter(a => !linkedActionIds.has(a.id) && !a.is_error_recovery)
     .map(a => {
       let cleanedAction = cleanForPrompt(a);
       if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {

@@ -11,10 +11,7 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGIN) {
-    console.warn("WARNING: CORS_ORIGIN is not set in production. Cross-origin requests may be rejected.");
-  }
-  app.use(cors({ origin: process.env.CORS_ORIGIN || (process.env.NODE_ENV !== 'production' ? 'http://localhost:3000' : undefined) }));
+  app.use(cors());
   app.use(express.json());
 
   // API Routes
@@ -49,7 +46,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/process", async (req, res) => {
+  app.post("/api/start-job", async (req, res) => {
     try {
       const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, customContext } = req.body;
       let apiKey = req.body.apiKey;
@@ -86,7 +83,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/process/:jobId", (req, res) => {
+  app.get("/api/start-job/:jobId", (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -130,7 +127,7 @@ async function startServer() {
     res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
   });
 
-  app.post("/api/process/:jobId/cancel", (req, res) => {
+  app.post("/api/start-job/:jobId/cancel", (req, res) => {
     const success = cancelJob(req.params.jobId);
     if (success) {
       res.json({ success: true, found: true });
