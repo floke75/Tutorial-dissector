@@ -511,7 +511,11 @@ export function cancelJob(jobId: string): boolean {
     for (let si = cumulativeNarrative.length - 1; si >= 0; si--) {
       const step = cumulativeNarrative[si];
 
-      if (step.insight_type === 'rationale') continue;
+      if (step.insight_type === 'rationale' ||
+          step.insight_type === 'workflow_framing' ||
+          step.insight_type === 'tip' ||
+          step.insight_type === 'warning' ||
+          step.insight_type === 'comparison') continue;
 
       const hasActionLinks = step.linked_visual_action_ids && step.linked_visual_action_ids.length > 0;
       const hasAnnotationLinks = step.linked_annotation_ids && step.linked_annotation_ids.length > 0;
