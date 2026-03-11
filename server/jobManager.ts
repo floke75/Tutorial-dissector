@@ -3,7 +3,7 @@ import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, ana
 import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
-import { cleanFinalOutput, detectUnlinkedActions, detectRedundantSteps } from '../utils/jsonOptimize.ts';
+import { detectUnlinkedActions, detectRedundantSteps } from '../utils/jsonOptimize.ts';
 
 export interface JobState {
   id: string;
@@ -28,7 +28,6 @@ export interface JobState {
   lastUpdatedAt: number;
   stateVersion: number;
   logCapOccurred?: boolean;
-  cleanedOutput?: object;
 }
 
 const jobs = new Map<string, JobState>();
@@ -611,32 +610,8 @@ export function cancelJob(jobId: string): boolean {
     }
 
     try {
-      const { result: cleaned, serializedSize } = cleanFinalOutput({
-        actions: state.actions,
-        annotations: state.annotations,
-        narrativeSteps: cumulativeNarrative,
-        learnedContext: state.learnedContext,
-        metadata: {
-          videoUrl: state.videoUrl,
-          duration: state.duration,
-          totalActions: state.actions.length,
-          totalSteps: cumulativeNarrative.length,
-          totalAnnotations: state.annotations.length,
-          deduplicated: phaseDSucceeded
-        }
-      });
-      state.cleanedOutput = cleaned;
-      if (!phaseDSucceeded) {
-        addLog('warn', `Cleaned output generated from PRE-DEDUP data (Phase D failed). Export may contain duplicate actions.`);
-      } else {
-        addLog('info', `Cleaned output generated (${serializedSize} chars)`);
-      }
-    } catch (cleanErr: any) {
-      addLog('warn', `Failed to generate cleaned output: ${cleanErr.message}`);
-    }
-
-    try {
-      const unlinked = detectUnlinkedActions(cumulativeNarrative, state.actions);
+      const actionsForDiag = phaseDSucceeded ? state.actions : cumulativeActions;
+      const unlinked = detectUnlinkedActions(cumulativeNarrative, actionsForDiag);
       if (unlinked.likely_linking_failure) {
         addLog('warn', `Linking diagnosis: ${unlinked.diagnosis}`);
       } else if (unlinked.unlinked_count > 0) {

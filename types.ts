@@ -146,7 +146,6 @@ export interface ProcessingState {
   jobId?: string;
   duration?: number;
   error?: string;
-  cleanedOutput?: object;
 }
 
 export interface UIState {
