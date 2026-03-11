@@ -80,7 +80,7 @@ export function cleanFinalOutput(data: {
   narrativeSteps: NarrativeStep[];
   learnedContext?: string;
   metadata?: any;
-}): { result: any; serializedSize: number } {
+}): { result: any; serializedCharCount: number } {
   const { actions, annotations, narrativeSteps, learnedContext, metadata } = data;
   
   const actionMap = new Map(actions.map(a => [a.id, a]));

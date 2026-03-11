@@ -20,6 +20,7 @@ type TimelineNode =
 
 export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
 
@@ -130,7 +131,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     URL.revokeObjectURL(url);
   };
 
-  const generateCleanedOutput = () => {
+  const cachedCleanedOutput = useMemo(() => {
+    if (actions.length === 0 && narrativeSteps.length === 0) return null;
     const { result } = cleanFinalOutput({
       actions,
       annotations,
@@ -143,12 +145,11 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
       }
     });
     return result;
-  };
+  }, [actions, annotations, narrativeSteps, learnedContext]);
 
   const downloadCleanedJSON = () => {
-    if (actions.length === 0 && narrativeSteps.length === 0) return;
-    const cleanedOutput = generateCleanedOutput();
-    const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
+    if (!cachedCleanedOutput) return;
+    const blob = new Blob([compactStringify(cachedCleanedOutput)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -160,9 +161,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
   };
 
   const downloadSkeletonJSON = () => {
-    if (actions.length === 0 && narrativeSteps.length === 0) return;
-    const cleanedOutput = generateCleanedOutput();
-    const skeleton = extractSkeleton(cleanedOutput);
+    if (!cachedCleanedOutput) return;
+    const skeleton = extractSkeleton(cachedCleanedOutput);
     const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -422,16 +422,28 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
              <Code2 size={13} />
              Playwright
            </button>
-           <div className="relative group">
-             <button className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md">
+           <div 
+             className="relative"
+             onBlur={(e) => {
+               if (!e.currentTarget.contains(e.relatedTarget)) {
+                 setIsExportDropdownOpen(false);
+               }
+             }}
+           >
+             <button 
+               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+               className="text-[11px] bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-700 border border-gray-200/60 dark:border-gray-700/60 px-3 py-1.5 rounded-lg text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all font-medium flex items-center gap-1.5 shadow-sm hover:shadow active:scale-[0.98] backdrop-blur-md"
+             >
                <Download size={13} />
                Export JSON
              </button>
-             <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-               <button onClick={downloadJSON} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">Export Raw</button>
-               <button onClick={downloadCleanedJSON} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Cleaned</button>
-               <button onClick={downloadSkeletonJSON} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Skeleton</button>
-             </div>
+             {isExportDropdownOpen && (
+               <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg transition-all z-50 overflow-hidden">
+                 <button onClick={() => { downloadJSON(); setIsExportDropdownOpen(false); }} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">Export Raw</button>
+                 <button onClick={() => { downloadCleanedJSON(); setIsExportDropdownOpen(false); }} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Cleaned</button>
+                 <button onClick={() => { downloadSkeletonJSON(); setIsExportDropdownOpen(false); }} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Skeleton</button>
+               </div>
+             )}
            </div>
         </div>
       </div>

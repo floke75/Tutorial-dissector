@@ -610,7 +610,8 @@ export function cancelJob(jobId: string): boolean {
     }
 
     try {
-      const unlinked = detectUnlinkedActions(cumulativeNarrative, state.actions);
+      const actionsForDiag = phaseDSucceeded ? state.actions : cumulativeActions;
+      const unlinked = detectUnlinkedActions(cumulativeNarrative, actionsForDiag);
       if (unlinked.likely_linking_failure) {
         addLog('warn', `Linking diagnosis: ${unlinked.diagnosis}`);
       } else if (unlinked.unlinked_count > 0) {
