@@ -40,12 +40,12 @@ export function stripEmptyAndDefaults(obj: Record<string, any>): Record<string, 
 }
 
 /**
- * Removes: confidence, chunkIndex, and target.spatial_bounding_box.
+ * Removes: confidence, chunkIndex, ui_context, and target.spatial_bounding_box.
  * Applies to both actions and annotations.
  */
 export function stripExtractionMeta(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
-  
+
   const result = { ...obj };
   delete result.confidence;
   delete result.chunkIndex;
@@ -188,7 +188,7 @@ export function cleanFinalOutput(data: {
 }
 
 /**
- * Strips actions from each step in already-cleaned output.
+ * Strips actions and annotations from each step in already-cleaned output.
  * Returns the lightweight planning layer.
  */
 export function extractSkeleton(cleanedData: any): any {
