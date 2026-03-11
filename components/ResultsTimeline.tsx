@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
-import { extractSkeleton, compactStringify } from '../utils/jsonOptimize';
+import { cleanFinalOutput, extractSkeleton, compactStringify } from '../utils/jsonOptimize';
 
 import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 
@@ -12,14 +12,13 @@ interface ResultsTimelineProps {
   currentTime?: number;
   onSeek?: (time: number) => void;
   learnedContext?: string;
-  cleanedOutput?: object;
 }
 
 type TimelineNode = 
   | { type: 'action'; action: ActionItem }
   | { type: 'annotation'; annotation: VideoAnnotation };
 
-export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext, cleanedOutput }) => {
+export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annotations = [], narrativeSteps, currentTime = 0, onSeek, learnedContext }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const activeNodeRef = useRef<HTMLDivElement>(null);
@@ -131,8 +130,24 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     URL.revokeObjectURL(url);
   };
 
+  const generateCleanedOutput = () => {
+    const { result } = cleanFinalOutput({
+      actions,
+      annotations,
+      narrativeSteps,
+      learnedContext,
+      metadata: {
+        total_steps: narrativeSteps.length,
+        total_actions: actions.length,
+        total_annotations: annotations.length
+      }
+    });
+    return result;
+  };
+
   const downloadCleanedJSON = () => {
-    if (!cleanedOutput) return;
+    if (actions.length === 0 && narrativeSteps.length === 0) return;
+    const cleanedOutput = generateCleanedOutput();
     const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -145,7 +160,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
   };
 
   const downloadSkeletonJSON = () => {
-    if (!cleanedOutput) return;
+    if (actions.length === 0 && narrativeSteps.length === 0) return;
+    const cleanedOutput = generateCleanedOutput();
     const skeleton = extractSkeleton(cleanedOutput);
     const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -413,8 +429,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
              </button>
              <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
                <button onClick={downloadJSON} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">Export Raw</button>
-               <button onClick={downloadCleanedJSON} disabled={!cleanedOutput} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Cleaned</button>
-               <button onClick={downloadSkeletonJSON} disabled={!cleanedOutput} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Skeleton</button>
+               <button onClick={downloadCleanedJSON} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Cleaned</button>
+               <button onClick={downloadSkeletonJSON} disabled={actions.length === 0 && narrativeSteps.length === 0} className="w-full text-left px-3 py-2 text-[11px] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">Export Skeleton</button>
              </div>
            </div>
         </div>

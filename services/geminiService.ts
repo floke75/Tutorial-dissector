@@ -343,7 +343,10 @@ export async function accumulateChunkPhaseB(
   // Strip ui_context to save tokens in Phase B (and in chat history)
   const simplifiedChunkActions = chunkActions.map(a => {
     const { ui_context, ...rest } = a;
-    return cleanForPrompt(rest);
+    // Preserve confidence for Phase B dedup quality; strip metadata
+    const cleaned = cleanForPrompt(rest);
+    cleaned.confidence = a.confidence; // re-attach
+    return cleaned;
   });
 
   const message = compactStringify({
@@ -519,6 +522,7 @@ export async function analyzeNarrationSegment(
       timestamp: a.timestamp,
       action: a.action_type,
       element: a.target?.element,
+      panel: a.target?.panel,
       detail: a.detail,
       input_data: a.input_data,
       is_error_recovery: a.is_error_recovery,
@@ -539,6 +543,7 @@ export async function analyzeNarrationSegment(
         timestamp: s.timestamp,
         intent: s.intent,
         explanation: s.explanation,
+        precondition: s.precondition,   // preserves prerequisite state for coherence
         postcondition: s.postcondition,
         insight_type: s.insight_type,
         topics: s.topics

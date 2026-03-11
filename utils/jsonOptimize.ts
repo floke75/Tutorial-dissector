@@ -12,7 +12,7 @@ export function compactStringify(obj: unknown, indent: number = 1): string {
 /**
  * Removes keys where value is null, undefined, "", [], or {}.
  * Removes is_error_recovery: false from prompt copies.
- * One level of nested dict cleaning (for target, input_data).
+ * Recursively cleans nested objects (including target, input_data, etc.).
  */
 export function stripEmptyAndDefaults(obj: Record<string, any>): Record<string, any> {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
@@ -49,6 +49,7 @@ export function stripExtractionMeta(obj: any): any {
   const result = { ...obj };
   delete result.confidence;
   delete result.chunkIndex;
+  delete result.ui_context;
   
   if (result.target && typeof result.target === 'object') {
     const targetCopy = { ...result.target };
@@ -144,16 +145,32 @@ export function cleanFinalOutput(data: {
   
   const unlinked_actions = actions
     .filter(a => !linkedActionIds.has(a.id))
-    .map(a => cleanForPrompt(a));
+    .map(a => {
+      let cleanedAction = cleanForPrompt(a);
+      if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {
+        cleanedAction.interacted_components = cleanedAction.interacted_components.map((c: any) => {
+          const parts = [c.type || '', c.label || ''];
+          if (c.state_before && c.state_after) {
+            parts.push(`${c.state_before}->${c.state_after}`);
+          } else if (c.state_after) {
+            parts.push(c.state_after);
+          } else if (c.state_before) {
+            parts.push(c.state_before);
+          }
+          return parts.join('|');
+        });
+      }
+      return cleanedAction;
+    });
     
   const unlinked_annotations = annotations
     .filter(a => !linkedAnnotationIds.has(a.id))
     .map(a => cleanForPrompt(a));
     
-  const rawResult: any = {
-    metadata: metadata || {},
-    steps
-  };
+  const rawResult: any = { steps };
+  if (metadata && Object.keys(metadata).length > 0) {
+    rawResult.metadata = metadata;
+  }
   
   if (learnedContext) {
     rawResult.learnedContext = learnedContext;
@@ -167,7 +184,7 @@ export function cleanFinalOutput(data: {
   
   const result = stripEmptyAndDefaults(rawResult);
   const serialized = compactStringify(result);
-  return { result, serializedSize: serialized.length };
+  return { result, serializedCharCount: serialized.length };
 }
 
 /**
@@ -180,6 +197,7 @@ export function extractSkeleton(cleanedData: any): any {
   const skeletonSteps = cleanedData.steps.map((step: any) => {
     const stepCopy = { ...step };
     delete stepCopy.actions;
+    delete stepCopy.annotations;
     return stepCopy;
   });
   
@@ -191,8 +209,7 @@ export function extractSkeleton(cleanedData: any): any {
 
 /**
  * Detects cross-chunk linking failure diagnosis.
- * Goes beyond listing orphan IDs — detects contiguous clusters of orphan actions 
- * co-occurring with empty narrative steps.
+ * A simple heuristic for cross-chunk linking failure based on global counts of empty steps and unlinked actions.
  */
 export function detectUnlinkedActions(steps: NarrativeStep[], actions: ActionItem[]): {
   unlinked_count: number;
