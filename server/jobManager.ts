@@ -3,6 +3,7 @@ import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, ana
 import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
+import { detectUnlinkedActions, detectRedundantSteps } from '../utils/jsonOptimize.ts';
 
 export interface JobState {
   id: string;
@@ -526,6 +527,7 @@ export function cancelJob(jobId: string): boolean {
     bumpVersion(state);
     addLog('info', `Phase D: Running final global deduplication pass on ${cumulativeActions.length} actions...`);
     
+    let phaseDSucceeded = false;
     try {
       const deduplicatedActionsRaw = await analyzeGlobalDeduplication(
         cumulativeActions,
@@ -601,9 +603,28 @@ export function cancelJob(jobId: string): boolean {
           }
         }
       }
+      phaseDSucceeded = true;
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
       // We don't fail the whole job if the final polish step fails
+    }
+
+    try {
+      const unlinked = detectUnlinkedActions(cumulativeNarrative, state.actions);
+      if (unlinked.likely_linking_failure) {
+        addLog('warn', `Linking diagnosis: ${unlinked.diagnosis}`);
+      } else if (unlinked.unlinked_count > 0) {
+        addLog('info', `${unlinked.unlinked_count} visual actions not linked to any narrative step`);
+      }
+
+      const redundant = detectRedundantSteps(cumulativeNarrative);
+      if (redundant.length > 0) {
+        addLog('warn', `${redundant.length} potentially redundant narrative step(s) detected: ${
+          redundant.map(r => `step ${r.index} ≈ step ${r.duplicateOf}`).join(', ')
+        }`);
+      }
+    } catch (diagErr: any) {
+      addLog('info', `Diagnostic analysis skipped: ${diagErr.message}`);
     }
 
     state.progress = 100;
