@@ -2,7 +2,7 @@
 
 ## Context
 
-Phase C (narrative synthesis) currently runs inline with Phase A/B in a single per-chunk loop. Phase C for chunk N can only see actions from chunks 0..N — no visibility into future chunks. This causes broken coverage (~83.6%).
+Phase C (narrative synthesis) currently runs inline with Phase A/B in a single per-chunk loop. Phase C for chunk N can only see actions from chunks 0..N — it has no visibility into actions extracted from future chunks. For tutorials where a concept at 02:00 is demonstrated via actions at 02:15 (in a different chunk), Phase C can't link them, causing broken coverage (~83.6%).
 
 **Goal:** Split into two sequential loops — first extract ALL actions (Phase A/B), then narrate with full action visibility (Phase C) using wider, non-aligned chunks. Phase C is resumable per-chunk, following the same pattern as Phase A/B.
 
@@ -87,6 +87,8 @@ Add inside the `computeChunkWindows` describe block (after the existing two test
     });
 ```
 
+The third test guards the `chunks.length >= 2` check — without it, a single-chunk video would erroneously attempt to fold.
+
 ---
 
 ## Step 2: Add `narrationChunkSize` parameter & `narrationChunkIndex` state
@@ -163,6 +165,8 @@ This prevents resuming with a different `narrationChunkSize`, which would cause 
 
 This placement works for both fresh and resume paths since `duration`, `chunkSize`, `overlap` are set before this point. The narration chunks are deterministic from the same inputs, so resume recomputes the identical layout.
 
+**Expected values for defaults (chunkSize=60, overlap=30):** narrationChunkSize=150, overlapRatio=0.5, narrationOverlapRatio=0.2, narrationOverlap=30.
+
 ### 2f. `server/jobManager.ts` — Add `formatMMSS` import
 
 **Find:**
@@ -224,6 +228,8 @@ state.progress = progressBase + (100 / state.chunks.length) * 0.3;
 state.progress = progressBase + (50 / state.chunks.length) * 0.3;
 ```
 
+**Why both changes are critical:** Without them, `progressBase` uses the 0–100% scale, causing progress to peak at ~82.5% during A/B then jump backwards to 50% at the end-of-chunk commit.
+
 ### 3b. Delete Phase C from the loop body
 
 **Find** the Phase C section that starts with:
@@ -234,6 +240,8 @@ state.progress = progressBase + (50 / state.chunks.length) * 0.3;
 ```
 
 **Delete everything** from that `// Phase C: Narrative Synthesis` comment through to (and including) the `bumpVersion(state);` that closes the loop body (the last line before the closing `}` of the `for` loop).
+
+This deletion range includes: the Phase C `analyzeNarrationSegment` call + retry logic, `learned_insights` accumulation, step ID assignment (`step_${uuidv4()}`), `cumulativeNarrative` append, the cancel check after Phase C, and the "Atomic state update" block that commits all chunk results. All of these are either moved to the Phase C loop (Step 4) or reimplemented below.
 
 ### 3c. Insert A/B-only state commit
 
@@ -270,6 +278,16 @@ state.progress = progressBase + (50 / state.chunks.length) * 0.3;
       addLog('success', `Chunk ${i + 1}/${state.chunks.length} Phase A/B complete. ${newActionsCount} new actions.`);
       bumpVersion(state);
 ```
+
+**What Step 3b removed vs. what Step 3c reimplements:**
+
+| Removed (moved to Phase C loop in Step 4) | Reimplemented in 3c |
+|---|---|
+| `analyzeNarrationSegment` call + retry | `chatHistory` commit |
+| `learned_insights` accumulation | `chunkIndex` assignment on new actions/annotations |
+| Step ID assignment (`step_${uuidv4()}`) | `chunk.phaseBAddedCount`, `chunk.actionCount`, `chunk.status` |
+| `cumulativeNarrative` append | UI state, actions, annotations commit (minus narrative) |
+| Cancel check after Phase C | Progress (0–50% formula), log, `currentChunkIndex`, `bumpVersion` |
 
 **Known trade-off:** `state.learnedContext` is empty during the entire A/B loop (previously it accumulated from Phase C). This is acceptable — Phase A/B are pure extraction/validation and don't depend heavily on narrative insights. `customContext` remains available.
 
@@ -421,7 +439,11 @@ Insert the following block **between** the loop's closing `}` and that comment:
 | Resume: A/B done, Phase C not started | true | 0 | A/B skips, Phase C from 0 |
 | Resume: Phase C partially done | true | >0 | A/B skips, Phase C resumes, preserves existing steps & learnedContext |
 
-Resume is safe because `narrationChunks` is deterministic from the same inputs, and `cumulativeNarrative`, `learnedContext`, `cumulativeActions`, and `cumulativeAnnotations` are all preserved in state.
+**Why resume is safe:**
+- `narrationChunks` is deterministic from `(duration, narrationChunkSize, narrationOverlap)` — same inputs produce the same layout on resume
+- `cumulativeNarrative` is preserved in `state.narrativeSteps`; `state.learnedContext` is preserved for resumed chunks
+- `cumulativeActions`/`cumulativeAnnotations` are restored from `state.actions`/`state.annotations` (the `let cumulativeActions = ...` lines after the `if (!isResuming)` block)
+- `cumulativeNarrative.slice(-10)` passed as `previousSteps` provides continuity context from preserved steps
 
 ---
 
@@ -433,6 +455,8 @@ The progress model:
 - Phase D: **92–100%** (the existing `state.progress = 92;` before `analyzeGlobalDeduplication`)
 
 Confirm `state.progress = 92;` is still present after the Phase C loop. **No change needed.**
+
+**Invariant:** Progress must never move backwards. On resume into Phase C, progress starts at `50 + (narrationStartIndex / narrationChunks.length) * 40`, correctly reflecting already-completed narration chunks.
 
 ---
 
