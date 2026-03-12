@@ -510,7 +510,7 @@ export const ChunkVisualizer: React.FC<ChunkVisualizerProps> = ({ chunks, narrat
       {isNarrating && narrationChunkCount != null && narrationChunkCount > 0 && (
         <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 font-medium">
           <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-          <span>Narrating segment {(narrationChunkIndex ?? 0) + 1} of {narrationChunkCount}...</span>
+          <span>Narrating segment {Math.min((narrationChunkIndex ?? 0) + 1, narrationChunkCount)} of {narrationChunkCount}...</span>
         </div>
       )}
 ```
