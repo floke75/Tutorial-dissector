@@ -196,7 +196,7 @@ export function cancelJob(jobId: string): boolean {
       if (action.is_error_recovery === undefined) action.is_error_recovery = false;
       if (action.interacted_components === undefined) action.interacted_components = [];
       if (action.context_note === undefined) action.context_note = null;
-      if (action.confidence === undefined) action.confidence = 'high';
+      if (action.confidence === undefined) action.confidence = 'medium';
     }
   };
 
@@ -362,11 +362,21 @@ export function cancelJob(jobId: string): boolean {
 
       // Append new validated annotations
       const rawValidatedAnnotations = phaseBResult.result.validated_segment_annotations || [];
-      const PLACEHOLDER_RE = /^(no annotations|not extracted|none provided|no relevant annotations|none)\.?$/i;
+      const EXPLICIT_PLACEHOLDER_RE = /^(no annotations|not extracted|none provided|no relevant annotations)\.?$/i;
+      const GENERIC_PLACEHOLDER_RE = /^(none|n\/a|na|-)\.?$/i;
       
       const filteredAnnotations = rawValidatedAnnotations.filter(ann => {
-        if (!ann.content?.trim()) return false;
-        if (PLACEHOLDER_RE.test(ann.content.trim())) return false;
+        const content = ann.content?.trim() || '';
+        if (!content) return false;
+        
+        if (EXPLICIT_PLACEHOLDER_RE.test(content)) return false;
+        
+        if (GENERIC_PLACEHOLDER_RE.test(content)) {
+          const relevance = ann.relevance?.trim() || '';
+          if (!relevance || GENERIC_PLACEHOLDER_RE.test(relevance) || EXPLICIT_PLACEHOLDER_RE.test(relevance)) {
+            return false;
+          }
+        }
         return true;
       });
       
@@ -530,17 +540,18 @@ export function cancelJob(jobId: string): boolean {
 
     // [Change 1d: Merge computation]
     const mergeInstructions: { orphanIndex: number, neighborIndex: number }[] = [];
+    const orphanSet = new Set(orphans);
     
     for (let i = 0; i < cumulativeNarrative.length; i++) {
       const step = cumulativeNarrative[i];
-      if (orphans.includes(step)) {
+      if (orphanSet.has(step)) {
         let bestNeighborIndex = -1;
         let bestJaccard = -1;
         
         for (let j = 0; j < cumulativeNarrative.length; j++) {
           if (i === j) continue;
           const neighbor = cumulativeNarrative[j];
-          if (orphans.includes(neighbor)) continue; // Only merge into non-orphans
+          if (orphanSet.has(neighbor)) continue; // Only merge into non-orphans
           
           if (Math.abs(parseMMSS(neighbor.timestamp) - parseMMSS(step.timestamp)) <= 15) {
             const stepTopics = new Set((step.topics || []).map(t => t.toLowerCase()));
@@ -608,7 +619,7 @@ export function cancelJob(jobId: string): boolean {
         step.linked_annotation_ids = validAnnotationLinks;
       }
 
-      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && step.insight_type !== 'rationale') {
+      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && !nonProceduralTypes.has(step.insight_type)) {
         unlinkedSteps++;
       }
     }
@@ -618,7 +629,7 @@ export function cancelJob(jobId: string): boolean {
     const unlinkedActions = userActions.filter(a => !linkedActionIds.has(a.id));
 
     const coveragePercent = userActions.length > 0 ? ((userActions.length - unlinkedActions.length) / userActions.length * 100).toFixed(1) : "100.0";
-    addLog('info', `Link coverage: ${coveragePercent}% of user actions linked. ${brokenLinks} broken refs removed. ${unlinkedSteps} non-rationale steps with no links.`);
+    addLog('info', `Link coverage: ${coveragePercent}% of user actions linked. ${brokenLinks} broken refs removed. ${unlinkedSteps} non-procedural steps with no links.`);
 
     if (unlinkedActions.length > userActions.length * 0.3) {
       addLog('warn', `Low link coverage (${coveragePercent}%). ${unlinkedActions.length} user actions have no narrative step.`);
