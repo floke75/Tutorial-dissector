@@ -20,11 +20,7 @@ After all chunks are processed but before Phase D global deduplication, the pipe
 
 **Insert location:** `server/jobManager.ts`, immediately after the chunk processing loop ends (after `state.currentChunkIndex = i + 1; bumpVersion(state);` and the closing `}` of the for-loop). This is before the existing coverage validation block.
 
-### Step 1a: Sort
-
-Sort `cumulativeNarrative` in-place by `parseMMSS(step.timestamp)` ascending (`parseMMSS` is already imported from `utils/timeUtils.ts`). Log only if the sort actually changed the order (compare serialized timestamp strings before/after to avoid noise).
-
-### Step 1b: Broken-link cleanup (MUST run before orphan detection)
+### Step 1a: Broken-link cleanup (MUST run before orphan detection and sort)
 
 Before identifying orphans, strip stale link IDs from every step. Build `Set`s of all valid action IDs (`cumulativeActions.map(a => a.id)`) and annotation IDs (`cumulativeAnnotations.map(a => a.id)`). For each step:
 - Filter `linked_visual_action_ids` to only IDs present in the action set
@@ -33,6 +29,10 @@ Before identifying orphans, strip stale link IDs from every step. Build `Set`s o
 This prevents steps with only stale/broken link IDs from being misclassified as "linked" and skipped by the orphan merge.
 
 > **Why before orphan merge:** Without this, a step referencing a deleted action ID appears linked (non-empty array), so it escapes orphan detection. Then the coverage validation later strips those IDs, leaving the step unlinked anyway — but now it's too late to merge it.
+
+### Step 1b: Sort
+
+Sort `cumulativeNarrative` in-place by `parseMMSS(step.timestamp)` ascending (`parseMMSS` is already imported from `utils/timeUtils.ts`). Log only if the sort actually changed the order (compare serialized timestamp strings before/after to avoid noise).
 
 ### Step 1c: Orphan identification
 
@@ -69,7 +69,7 @@ Log: `"Merged N orphan steps into linked neighbors. M orphans had no eligible ne
 
 ### Step 1e: Coverage validation broken-link cleanup (keep as defensive second pass)
 
-Since Step 1b already strips broken links before orphan merge, the existing broken-link cleanup in the coverage validation block becomes redundant. However, **keep it in place** as a defensive second pass — it has no cost and protects against future code reordering. Add a comment noting that the primary cleanup happens in Step 1b.
+Since Step 1a already strips broken links before orphan merge, the existing broken-link cleanup in the coverage validation block becomes redundant. However, **keep it in place** as a defensive second pass — it has no cost and protects against future code reordering. Add a comment noting that the primary cleanup happens in Step 1a.
 
 ---
 
@@ -159,8 +159,8 @@ Per-chunk loop:
   Phase A → Phase B → [Change 3: filter placeholders] → ID assignment → Phase C → accumulate
 
 Post-loop:
-  [Change 1b: broken-link cleanup]
-  [Change 1a: sort by timestamp]
+  [Change 1a: broken-link cleanup]
+  [Change 1b: sort by timestamp]
   [Change 1c+1d: orphan merge]
   Coverage validation (existing, kept as defensive second pass)
   Phase D global deduplication
@@ -170,7 +170,7 @@ Post-loop:
   cleanFinalOutput
 ```
 
-Change 1b (broken-link cleanup) MUST precede Change 1c+1d (orphan identification/merge). Change 1a (sort) should run after broken-link cleanup and before orphan merge, so that "nearest neighbor" distance is well-defined on a sorted, cleaned array.
+Change 1a (broken-link cleanup) MUST precede Change 1c+1d (orphan identification/merge). Change 1b (sort) should run after broken-link cleanup and before orphan merge, so that "nearest neighbor" distance is well-defined on a sorted, cleaned array.
 
 ---
 
