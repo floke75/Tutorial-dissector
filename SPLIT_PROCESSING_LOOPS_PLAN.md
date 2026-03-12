@@ -30,7 +30,7 @@ Phase C (narrative synthesis) currently runs inline with Phase A/B in a single p
 
 ### 1a. `utils/timeUtils.ts`
 
-Insert BEFORE `return chunks;` (line 59):
+**Find** the line `return chunks;` at the end of `computeChunkWindows`. Insert the following block **immediately before** that `return chunks;` line:
 
 ```typescript
   // Fold short tail: a chunk under 50% of target size isn't worth a separate LLM call
@@ -93,9 +93,9 @@ Add inside the `computeChunkWindows` describe block (after the existing two test
 
 ## Step 2: Add `narrationChunkSize` parameter & `narrationChunkIndex` state
 
-### 2a. `server/jobManager.ts` — `JobState` interface (line 8)
+### 2a. `server/jobManager.ts` — `JobState` interface
 
-Add three fields to the `JobState` interface. Insert after `currentChunkIndex: number;` (line 22):
+**Find** the `export interface JobState {` block. **Find** `currentChunkIndex: number;` inside it. Insert the following three fields **immediately after** `currentChunkIndex: number;`:
 
 ```typescript
   narrationChunkIndex: number;
@@ -103,17 +103,17 @@ Add three fields to the `JobState` interface. Insert after `currentChunkIndex: n
   narrationChunkCount: number;
 ```
 
-### 2b. `server/jobManager.ts` — `processVideoJob` params (line 86)
+### 2b. `server/jobManager.ts` — `processVideoJob` params
 
-Add between `overlap` and `customContext`:
+**Find** `export async function processVideoJob(params: {`. In that parameter object type, **find** the line `overlap: number;`. Insert the following **immediately after** `overlap: number;`:
 
 ```typescript
   narrationChunkSize?: number;
 ```
 
-### 2c. `server/jobManager.ts` — Fresh state initialization (line 108)
+### 2c. `server/jobManager.ts` — Fresh state initialization
 
-In the `jobs.set(jobId, { ... })` block, add after `currentChunkIndex: 0,` (line 121):
+**Find** the `jobs.set(jobId, {` block inside the `if (!isResuming)` branch. **Find** `currentChunkIndex: 0,` inside that block. Insert the following three fields **immediately after** `currentChunkIndex: 0,`:
 
 ```typescript
       narrationChunkIndex: 0,
@@ -121,9 +121,9 @@ In the `jobs.set(jobId, { ... })` block, add after `currentChunkIndex: 0,` (line
       narrationChunkCount: 0,  // set after narration chunks are computed
 ```
 
-### 2c-ii. `server/jobManager.ts` — `isResuming` validation (line 97)
+### 2c-ii. `server/jobManager.ts` — `isResuming` validation
 
-Add `narrationChunkSize` to the resume guard to prevent layout mismatch. Change the `isResuming` check:
+**Find** the `const isResuming = !!(...` expression (currently checks `existingState.videoUrl`, `chunkSize`, `overlap`, and `chunks.length > 0`). **Replace the entire `isResuming` declaration** with:
 
 ```typescript
   const isResuming = !!(existingState &&
@@ -138,13 +138,19 @@ Add `narrationChunkSize` to the resume guard to prevent layout mismatch. Change 
 
 **Why:** Without this, a user could resume a cancelled job with a different `narrationChunkSize` (or omit it, getting a different default). `state.narrationChunkIndex` would point into the old layout, causing Phase C to resume from the wrong narration chunk — potentially re-narrating or skipping segments.
 
-### 2d. `server/jobManager.ts` — `runJob` params (line 177)
+### 2d. `server/jobManager.ts` — `runJob` params
 
-Same change — add `narrationChunkSize?: number;` between `overlap` and `customContext`.
+**Find** `async function runJob(jobId: string, params: {`. In that parameter object type, **find** the line `overlap: number;`. Insert the following **immediately after** `overlap: number;`:
+
+```typescript
+  narrationChunkSize?: number;
+```
+
+**No change needed** to the destructuring line (`const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;`) — Step 2e accesses `params.narrationChunkSize` directly to avoid shadowing the local `narrationChunkSize` variable it computes.
 
 ### 2e. `server/jobManager.ts` — Compute narration chunks
 
-Insert AFTER the `if (!isResuming) { ... }` block closes (line 261) and BEFORE `let chatHistory: any[] = state.chatHistory || [];` (line 263):
+**Find** the closing brace `}` of the `if (!isResuming) { ... }` block (the block that calls `computeChunkWindows` and sets `state.chunks`). **Find** the line `let chatHistory: any[] = state.chatHistory || [];` that immediately follows. Insert the following block **between** them (after the `}`, before `let chatHistory`):
 
 ```typescript
     // Narration chunks: wider windows, non-aligned with A/B, reduced overlap
@@ -166,23 +172,31 @@ Insert AFTER the `if (!isResuming) { ... }` block closes (line 261) and BEFORE `
 
 ### 2f. `server/jobManager.ts` — Add `formatMMSS` import
 
-Change line 4 from:
+**Find** the import line:
 ```typescript
 import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
 ```
-to:
+**Replace with:**
 ```typescript
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils.ts';
 ```
 
-### 2g. `server.ts` — API endpoint (line 51)
+### 2g. `server.ts` — API endpoint
 
-Change destructuring:
+**Find** the destructuring line in the `/api/start-job` POST handler:
+```typescript
+const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, customContext } = req.body;
+```
+**Replace with:**
 ```typescript
 const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext } = req.body;
 ```
 
-Pass through to `processVideoJob` (line 78):
+**Find** the `processVideoJob` call:
+```typescript
+const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, customContext, apiKey });
+```
+**Replace with:**
 ```typescript
 const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, apiKey });
 ```
@@ -197,36 +211,48 @@ The existing POST body remains unchanged — no `narrationChunkSize` field. The 
 
 ## Step 3: Convert first loop to Phase A/B only
 
-In `server/jobManager.ts`, inside the `for` loop body, locate the Phase C section starting at line 398:
+This step makes **three changes** to the main `for` loop in `runJob`. Apply them in this order:
 
+### 3a. Update progress scale from 0–100% to 0–50%
+
+The A/B loop now represents only half the work. Two progress assignments must be updated:
+
+**Change 1:** **Find** inside the `for` loop body:
+```typescript
+const progressBase = (i / state.chunks.length) * 100;
+```
+**Replace with:**
+```typescript
+const progressBase = (i / state.chunks.length) * 50;
+```
+
+**Change 2:** **Find** (after Phase A completes, before Phase B starts):
+```typescript
+state.progress = progressBase + (100 / state.chunks.length) * 0.3;
+```
+**Replace with:**
+```typescript
+state.progress = progressBase + (50 / state.chunks.length) * 0.3;
+```
+
+**Why:** Without these changes, `progressBase` uses the 0–100% scale, causing progress to peak at ~82.5% during A/B then jump backwards to 50% at the end-of-chunk commit.
+
+### 3b. Delete Phase C from the loop body
+
+**Find** the Phase C section that starts with:
 ```typescript
       // Phase C: Narrative Synthesis
       state.status = 'running_narrative';
       chunk.status = 'analyzing_phase_c';
 ```
 
-**Also update** the two intermediate progress assignments earlier in the loop body to use the 0–50% scale:
+**Delete everything** from that `// Phase C: Narrative Synthesis` comment through to (and including) the `bumpVersion(state);` that closes the loop body (the last line before the closing `}` of the `for` loop).
 
-Line 282 — start of each chunk:
-```typescript
-// BEFORE: state.progress = progressBase;  (where progressBase = (i / state.chunks.length) * 100)
-// AFTER:
-const progressBase = (i / state.chunks.length) * 50;
-state.progress = progressBase;
-```
+This removes: the Phase C `analyzeNarrationSegment` call + retry, `learned_insights` accumulation, step ID assignment, `cumulativeNarrative` append, the cancel check after Phase C, and the "Atomic state update" block that commits all chunk results.
 
-Line 314 — after Phase A:
-```typescript
-// BEFORE: state.progress = progressBase + (100 / state.chunks.length) * 0.3;
-// AFTER:
-state.progress = progressBase + (50 / state.chunks.length) * 0.3;
-```
+### 3c. Insert A/B-only state commit
 
-**Why:** Without these changes, `progressBase` uses the 0–100% scale, causing progress to peak at ~82.5% during A/B then jump backwards to 50% at the end-of-chunk commit. Both intermediate updates must match the 0–50% range.
-
-**Delete** everything from line 398 through line 509 (the `bumpVersion(state);` at the end of the loop body).
-
-**Replace** with (this is the A/B-only state commit):
+**In place of the deleted code** (at the end of the loop body, after the annotation validation block ending with `let nextCumulativeAnnotations = [...cumulativeAnnotations, ...newValidatedAnnotations];`), insert:
 
 ```typescript
       // --- Commit Phase A/B results ---
@@ -268,7 +294,7 @@ state.progress = progressBase + (50 / state.chunks.length) * 0.3;
 | `learned_insights` accumulation | Moved to Phase C loop |
 | Step ID assignment (`step_${uuidv4()}`) | Moved to Phase C loop |
 | `cumulativeNarrative` append | Moved to Phase C loop |
-| Cancel check after Phase C (lines 470-475) | Phase C has its own cancel checks now |
+| Cancel check after Phase C | Phase C has its own cancel checks now |
 
 | Kept (reimplemented) | Notes |
 |---|---|
@@ -287,14 +313,13 @@ state.progress = progressBase + (50 / state.chunks.length) * 0.3;
 
 ## Step 4: Add Phase C loop after the A/B loop (with resume support)
 
-Locate after the first loop closes (line 510 in the original, will shift after edits):
-
+**Find** the closing `}` of the main `for` loop (the A/B loop modified in Step 3). **Find** the comment block that follows it:
 ```typescript
     // After all chunks are processed, before global dedup
     // [Change 1a: broken-link cleanup]
 ```
 
-Insert BEFORE it:
+Insert the following block **between** the loop's closing `}` and that comment (i.e., after the A/B loop ends, before the broken-link cleanup):
 
 ```typescript
     // === PHASE C LOOP: Narrative synthesis with full action visibility ===
@@ -441,7 +466,7 @@ The resume path is determined by two conditions:
 - `narrationChunks` is deterministic from `(duration, narrationChunkSize, narrationOverlap)` — same inputs produce the same chunk layout on resume
 - `cumulativeNarrative` is preserved in `state.narrativeSteps` between resume cycles
 - `state.learnedContext` is preserved, so resumed Phase C chunks benefit from prior insights
-- `cumulativeActions` / `cumulativeAnnotations` are restored from `state.actions` / `state.annotations` (line 264-265)
+- `cumulativeActions` / `cumulativeAnnotations` are restored from `state.actions` / `state.annotations` (the `let cumulativeActions = ...` / `let cumulativeAnnotations = ...` lines after the `if (!isResuming)` block)
 - The `cumulativeNarrative.slice(-10)` passed to `analyzeNarrationSegment` as `previousSteps` provides continuity context from preserved steps
 
 **Key differences from the original inline Phase C:**
@@ -460,9 +485,9 @@ The resume path is determined by two conditions:
 The progress model is now:
 - A/B loop: **0–50%** (`((i + 1) / state.chunks.length) * 50`)
 - Phase C loop: **50–90%** (`50 + ((i + 1) / narrationChunks.length) * 40`)
-- Phase D: **92–100%** (existing `state.progress = 92` at line 647, then `onProgress` callback)
+- Phase D: **92–100%** (the existing `state.progress = 92;` line just before the `analyzeGlobalDeduplication` call)
 
-Confirm `state.progress = 92` (current line 647) is still present after the Phase C loop and before Phase D. **No change needed** — this line is outside both loops and remains untouched.
+Confirm `state.progress = 92;` is still present after the Phase C loop and before Phase D. **No change needed** — this line is outside both loops and remains untouched.
 
 Note: Progress never moves backwards (unlike the current code where progress goes from ~100% down to 92% when Phase D starts).
 
@@ -473,23 +498,31 @@ On resume into Phase C, progress starts at `50 + (narrationStartIndex / narratio
 ## Step 6: Update ChunkVisualizer for Phase C feedback
 
 ### Problem
-`ChunkVisualizer.tsx` lines 28 and 44 actively render the `analyzing_phase_c` status (indigo pulse + "NARRATING..." label). After the split, A/B chunks go `pending → analyzing_phase_a → analyzing_phase_b → completed` and never enter `analyzing_phase_c`. The user sees all chunks turn green at 50%, then progress moves to 90% with zero visual feedback during Phase C.
+`ChunkVisualizer.tsx` actively renders the `analyzing_phase_c` status (indigo pulse + "NARRATING..." label). After the split, A/B chunks go `pending → analyzing_phase_a → analyzing_phase_b → completed` and never enter `analyzing_phase_c`. The user sees all chunks turn green at 50%, then progress moves to 90% with zero visual feedback during Phase C.
 
 ### 6a. `components/ChunkVisualizer.tsx` — Remove dead `analyzing_phase_c` rendering
 
-Remove lines 28 and 44:
+**Find and delete** this line (the `analyzing_phase_c` color assignment):
 ```typescript
-// DELETE line 28:
-if (chunk.status === 'analyzing_phase_c') colorClass = '...animate-pulse';
-// DELETE line 44:
-{chunk.status === 'analyzing_phase_c' && 'NARRATING...'}
+          if (chunk.status === 'analyzing_phase_c') colorClass = 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-500 text-indigo-600 dark:text-indigo-300 animate-pulse';
+```
+
+**Find and delete** this line (the `analyzing_phase_c` status label):
+```typescript
+                {chunk.status === 'analyzing_phase_c' && 'NARRATING...'}
 ```
 
 > **Note:** `'analyzing_phase_c'` is intentionally left in the `ChunkStatus` union in `types.ts` (out-of-scope). No code will set this value after the split. It can be repurposed for per-narration-chunk status in a future iteration, or removed in a dedicated cleanup PR.
 
 ### 6b. `components/ChunkVisualizer.tsx` — Add narration progress indicator
 
-Add new props for narration progress:
+**Find** the interface declaration:
+```typescript
+interface ChunkVisualizerProps {
+  chunks: Chunk[];
+}
+```
+**Replace with:**
 ```typescript
 interface ChunkVisualizerProps {
   chunks: Chunk[];
@@ -499,7 +532,16 @@ interface ChunkVisualizerProps {
 }
 ```
 
-After the A/B chunk row (`</div>` closing the `flex gap-2` container), add a narration indicator:
+**Also update** the component's function signature to destructure the new props. **Find:**
+```typescript
+export const ChunkVisualizer: React.FC<ChunkVisualizerProps> = ({ chunks }) => {
+```
+**Replace with:**
+```typescript
+export const ChunkVisualizer: React.FC<ChunkVisualizerProps> = ({ chunks, narrationChunkIndex, narrationChunkCount, isNarrating }) => {
+```
+
+**Find** the closing `</div>` of the A/B chunk row (the `<div className="flex gap-2 min-w-max pb-2">` container). Insert the following narration indicator **immediately after** that closing `</div>`:
 ```typescript
       {isNarrating && narrationChunkCount != null && narrationChunkCount > 0 && (
         <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 font-medium">
@@ -511,19 +553,23 @@ After the A/B chunk row (`</div>` closing the `flex gap-2` container), add a nar
 
 ### 6c. `components/AnalysisView.tsx` — Thread narration state to ChunkVisualizer
 
-Add state variables from polled job state:
+**Find** the state declarations near the top of the component (where `const [chunks, setChunks] = useState<Chunk[]>([]);` is declared). Add nearby:
 ```typescript
 const [narrationChunkIndex, setNarrationChunkIndex] = useState(0);
 const [narrationChunkCount, setNarrationChunkCount] = useState(0);
 ```
 
-In the polling response handler (where `setChunks`, `setActions`, etc. are called), add:
+**Find** the polling response handler — the block that reads `state` from the polling response and calls `setChunks(state.chunks)`. **After** the `setChunks` call (or nearby, alongside other state updates), add:
 ```typescript
-if (data.narrationChunkIndex !== undefined) setNarrationChunkIndex(data.narrationChunkIndex);
-if (data.narrationChunkCount !== undefined) setNarrationChunkCount(data.narrationChunkCount);
+if (state.narrationChunkIndex !== undefined) setNarrationChunkIndex(state.narrationChunkIndex);
+if (state.narrationChunkCount !== undefined) setNarrationChunkCount(state.narrationChunkCount);
 ```
 
-Update the ChunkVisualizer call:
+**Find** the ChunkVisualizer render:
+```tsx
+<ChunkVisualizer chunks={chunks} />
+```
+**Replace with:**
 ```tsx
 <ChunkVisualizer
   chunks={chunks}
@@ -535,7 +581,7 @@ Update the ChunkVisualizer call:
 
 ### 6d. Update the legend in ChunkVisualizer
 
-In the legend `<div>` (lines 17-20), add a narration legend entry:
+**Find** the legend section containing `Visual Raw` and `Visual Merge` spans. **After** the `Visual Merge` span, add a new narration legend entry:
 ```tsx
 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-indigo-500"></div> Narration</span>
 ```
