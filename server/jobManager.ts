@@ -352,7 +352,7 @@ export function cancelJob(jobId: string): boolean {
       // Append new validated actions
       const existingIds = new Set(cumulativeActions.map(a => a.id));
       const newValidatedEvents = (phaseBResult.result.validated_segment_events || []).map(action => {
-        if (!action.id || existingIds.has(action.id)) {
+        if (!action.id || existingIds.has(action.id) || !action.id.startsWith('evt_')) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
         }
         existingIds.add(action.id);
@@ -387,7 +387,7 @@ export function cancelJob(jobId: string): boolean {
 
       const existingAnnIds = new Set(cumulativeAnnotations.map(a => a.id));
       const newValidatedAnnotations = filteredAnnotations.map(ann => {
-        if (!ann.id || existingAnnIds.has(ann.id)) {
+        if (!ann.id || existingAnnIds.has(ann.id) || !ann.id.startsWith('ann_')) {
           ann.id = `ann_${uuidv4().substring(0, 8)}`;
         }
         existingAnnIds.add(ann.id);
@@ -663,9 +663,12 @@ export function cancelJob(jobId: string): boolean {
       );
       
       const seenDedupIds = new Set<string>();
+      const idRenames = new Map<string, string>();
       const deduplicatedActions = deduplicatedActionsRaw.map(action => {
-        if (!action.id || seenDedupIds.has(action.id)) {
+        const oldId = action.id;
+        if (!action.id || seenDedupIds.has(action.id) || !action.id.startsWith('evt_')) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
+          if (oldId) idRenames.set(oldId, action.id);
         }
         seenDedupIds.add(action.id);
         return action;
@@ -725,6 +728,16 @@ export function cancelJob(jobId: string): boolean {
           }
         }
       }
+
+      if (idRenames.size > 0) {
+        addLog('info', `Renamed ${idRenames.size} non-evt_ action IDs.`);
+        for (const step of cumulativeNarrative) {
+          step.linked_visual_action_ids = step.linked_visual_action_ids.map(
+            (id: string) => idRenames.get(id) ?? id
+          );
+        }
+      }
+
       phaseDSucceeded = true;
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
