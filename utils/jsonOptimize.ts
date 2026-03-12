@@ -1,4 +1,4 @@
-import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
+import type { ActionItem, NarrativeStep, VideoAnnotation } from '../types.ts';
 
 /**
  * Replaces JSON.stringify(obj, null, 2) for all LLM-bound payloads.

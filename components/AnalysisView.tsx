@@ -203,6 +203,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           logs: sanitizedLogs
         });
         setLatestUIState(data.latestUIState);
+        if (data.procState?.cleanedOutput) {
+          setCleanedOutput(data.procState.cleanedOutput);
+        }
       }
       setIsLoaded(true);
 
@@ -400,7 +403,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             currentChunkIndex: state.currentChunkIndex,
             totalActions: state.actions?.length || 0,
             duration: state.duration,
-            learnedContext: state.learnedContext
+            learnedContext: state.learnedContext,
+            cleanedOutput: state.cleanedOutput
           }));
           
           if (state.chunks !== undefined) {

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 import { parseMMSS } from '../utils/timeUtils';
-import { extractSkeleton, compactStringify } from '../utils/jsonOptimize';
+import { extractSkeleton, compactStringify, cleanFinalOutput } from '../utils/jsonOptimize';
 
 import { Download, Code2, Search, Target, AlertTriangle } from 'lucide-react';
 
@@ -134,9 +134,29 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
     URL.revokeObjectURL(url);
   };
 
+  const getCleanedOutput = () => {
+    if (cleanedOutput) return cleanedOutput;
+    const { result } = cleanFinalOutput({
+      actions,
+      annotations: annotations || [],
+      narrativeSteps,
+      learnedContext,
+      metadata: {
+        videoUrl,
+        duration,
+        total_actions: actions.length,
+        total_steps: narrativeSteps.length,
+        total_annotations: annotations?.length || 0,
+        deduplicated: true // Assume true if generated on client
+      }
+    });
+    return result;
+  };
+
   const downloadCleanedJSON = () => {
-    if (!cleanedOutput) return;
-    const blob = new Blob([compactStringify(cleanedOutput)], { type: "application/json" });
+    const output = getCleanedOutput();
+    if (!output) return;
+    const blob = new Blob([compactStringify(output)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -148,8 +168,9 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
   };
 
   const downloadSkeletonJSON = () => {
-    if (!cleanedOutput) return;
-    const skeleton = extractSkeleton(cleanedOutput);
+    const output = getCleanedOutput();
+    if (!output) return;
+    const skeleton = extractSkeleton(output);
     const blob = new Blob([compactStringify(skeleton)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
