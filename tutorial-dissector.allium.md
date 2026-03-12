@@ -53,6 +53,9 @@ value LogMessage {
 value ProcessingState {
     status: ProcessingStatus
     current_chunk_index: Integer
+    narration_chunk_index: Integer?
+    narration_chunk_size: Integer?
+    narration_chunk_count: Integer?
     total_actions: Integer
     total_tokens: Integer
     start_time: Timestamp?
@@ -74,7 +77,8 @@ value InputData {
 ------------------------------------------------------------
 
 enum ProcessingStatus { idle | running_visual | running_narrative | running_dedup | paused | completed | error | cancelled }
-enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | analyzing_phase_c | completed | error }
+enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
+enum NarrationChunkStatus { pending | analyzing_phase_c | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
 enum ActionType { 
@@ -106,10 +110,12 @@ entity Project {
     duration_input: String
     chunk_size: Duration
     overlap: Duration
+    narration_chunk_size: Duration?
     custom_context: String
 
     -- Relationships
     chunks: Chunk with project = this
+    narration_chunks: NarrationChunk with project = this
     actions: ActionItem with project = this
     annotations: VideoAnnotation with project = this
     narrative_steps: NarrativeStep with project = this
@@ -139,6 +145,20 @@ entity Chunk {
     phase_b_added_count: Integer?
     interaction_id: String?
     action_count: Integer?
+}
+
+entity NarrationChunk {
+    project: Project
+    index: Integer
+    
+    -- Time windows (wider than standard chunks)
+    clip_start: Duration
+    clip_end: Duration
+    primary_start: Duration
+    primary_end: Duration
+    
+    status: NarrationChunkStatus
+    error_msg: String?
 }
 
 -- Low-level mechanical action
@@ -237,7 +257,7 @@ rule CompletePhaseB {
     -- Uses "Zipper" optimization: strips ui_context before LLM processing
     -- and re-attaches it using a cascading content-similarity fallback 
     -- to prevent data loss from ID drift.
-    ensures: chunk.status = analyzing_phase_c
+    ensures: chunk.status = completed
     ensures: chunk.project.latest_ui_state = ui_state
     ensures: chunk.action_count = count(merged_actions)
     
@@ -276,32 +296,40 @@ rule CompletePhaseB {
             )
 }
 
+rule StartNarrativeSynthesis {
+    when: VisualAnalysisCompleted(project)
+    requires: project.status = running_visual
+    requires: project.proc_state.current_chunk_index >= count(project.chunks)
+    ensures: project.status = running_narrative
+    ensures: project.proc_state.status = running_narrative
+}
+
 rule CompletePhaseC {
-    when: PhaseCCompleted(chunk, narrative_steps, learned_insights)
+    when: PhaseCCompleted(narration_chunk, narrative_steps, learned_insights)
     
-    requires: chunk.status = analyzing_phase_c
-    requires: chunk.project.status = running_narrative
+    requires: narration_chunk.status = analyzing_phase_c
+    requires: narration_chunk.project.status = running_narrative
     
-    let context_window_start = chunk.clip_start - config.narration_context_buffer
-    let context_window_end = chunk.clip_end + config.narration_context_buffer
+    let context_window_start = narration_chunk.clip_start - config.narration_context_buffer
+    let context_window_end = narration_chunk.clip_end + config.narration_context_buffer
     
-    let visual_context = chunk.project.actions where 
+    let visual_context = narration_chunk.project.actions where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
         
-    let annotation_context = chunk.project.annotations where 
+    let annotation_context = narration_chunk.project.annotations where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
 
-    ensures: chunk.status = completed
-    ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    ensures: narration_chunk.status = completed
+    ensures: narration_chunk.project.proc_state.narration_chunk_index = narration_chunk.index + 1
     
     -- Accumulate learned context
-    ensures: if learned_insights then chunk.project.proc_state.learned_context = (if chunk.project.proc_state.learned_context = "" then "- " else chunk.project.proc_state.learned_context + "\n- ") + learned_insights
+    ensures: if learned_insights then narration_chunk.project.proc_state.learned_context = (if narration_chunk.project.proc_state.learned_context = "" then "- " else narration_chunk.project.proc_state.learned_context + "\n- ") + learned_insights
     
     -- Add Narrative Steps (Intent layer)
     ensures:
         for step in narrative_steps:
             NarrativeStep.created(
-                project: chunk.project,
+                project: narration_chunk.project,
                 id: step.id,
                 timestamp: step.timestamp,
                 intent: step.intent,
@@ -315,10 +343,19 @@ rule CompletePhaseC {
             )
 }
 
+rule StartGlobalDeduplication {
+    when: NarrativeSynthesisCompleted(project)
+    requires: project.status = running_narrative
+    requires: project.proc_state.narration_chunk_index >= count(project.narration_chunks)
+    ensures: project.status = running_dedup
+    ensures: project.proc_state.status = running_dedup
+}
+
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
     requires: project.status = running_dedup
     requires: project.proc_state.current_chunk_index >= count(project.chunks)
+    requires: project.proc_state.narration_chunk_index >= count(project.narration_chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
     -- This is a complex graph operation, represented here as an atomic state transition.
@@ -344,8 +381,10 @@ surface AnalysisDashboard {
         project.duration_input
         project.chunk_size
         project.overlap
+        project.narration_chunk_size
         project.custom_context
         project.chunks
+        project.narration_chunks
         project.actions
         project.annotations
         project.narrative_steps
