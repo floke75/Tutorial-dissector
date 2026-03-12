@@ -337,6 +337,10 @@ Insert the following block **between** the loop's closing `}` and that comment:
 
       const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 
+      // Buffer extends beyond clip window to catch actions near boundaries.
+      // For edge chunks (first/last), this may go negative or past duration —
+      // that's intentional: parseMMSS returns non-negative values, so t >= -15
+      // is always true, giving the edge chunk full visibility. Do NOT clamp to 0/duration.
       const CONTEXT_BUFFER_SEC = 15;
       const contextStart = nChunk.clipStart - CONTEXT_BUFFER_SEC;
       const contextEnd = nChunk.clipEnd + CONTEXT_BUFFER_SEC;
