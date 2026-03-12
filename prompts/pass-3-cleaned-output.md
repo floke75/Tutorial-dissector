@@ -153,6 +153,7 @@ After implementation, export the cleaned JSON and assert:
 - **Step monotonicity:** `steps[i].timestamp <= steps[i+1].timestamp` for all consecutive pairs.
 - **No orphaned actions lost:** The `unlinked_actions` array at the top level should contain any actions not assigned to a step (same behavior as before, but now multi-linked actions are assigned to exactly one step instead of duplicated).
 - **Action count preserved:** `sum(step.actions.length for all steps) + unlinked_actions.length + count(unlinked error-recovery actions) === total_actions`. The "unlinked error-recovery actions" count is the number of actions where `is_error_recovery === true` AND the action is not linked to any step — these are excluded from both `steps[].actions` and `unlinked_actions` by the existing filter at line 157.
+- **Empty-action steps expected:** A step may have zero inlined actions in the cleaned output if all its referenced actions were assigned to closer steps via ownership. This is correct behavior — the empty array is stripped by `stripEmptyAndDefaults`, so the step will have no `actions` property. The step still appears in the output (with its narrative fields), and the actions appear in their owning step.
 
 ## Test Cases to Add (new file: `utils/jsonOptimize.test.ts`)
 

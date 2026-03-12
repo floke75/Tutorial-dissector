@@ -67,9 +67,19 @@ Reassign `state.narrativeSteps = cumulativeNarrative` after the filter (the `.fi
 
 Log: `"Merged N orphan steps into linked neighbors. M orphans had no eligible neighbor and were kept."`
 
-### Step 1e: Coverage validation broken-link cleanup (keep as defensive second pass)
+### Step 1e: Coverage validation updates (keep as defensive second pass)
 
 Since Step 1a already strips broken links before orphan merge, the existing broken-link cleanup in the coverage validation block becomes redundant. However, **keep it in place** as a defensive second pass — it has no cost and protects against future code reordering. Add a comment noting that the primary cleanup happens in Step 1a.
+
+Additionally, update the coverage validation's `insight_type` exemption to match the broader exclusion list used in Step 1c. The existing code only exempts `'rationale'`:
+```typescript
+step.insight_type !== 'rationale'
+```
+Change this to exclude all non-procedural types:
+```typescript
+!(['rationale', 'workflow_framing', 'tip', 'warning', 'comparison'].includes(step.insight_type))
+```
+Without this, non-procedural orphan steps that had no eligible merge target (kept as-is in Step 1d) would inflate the `unlinkedSteps` count and potentially trigger false "low coverage" warnings.
 
 ---
 
@@ -163,10 +173,11 @@ Post-loop:
   [Change 1b: sort by timestamp]
   [Change 1c+1d: orphan merge]
   Coverage validation (existing, kept as defensive second pass)
-  Phase D global deduplication
-  [Change 2: normalize action defaults on success path]
-  Phase D catch block
-  [Change 2: normalize action defaults on catch path]
+  try:
+    Phase D global deduplication
+    [Change 2: normalize action defaults on success path]
+  catch:
+    [Change 2: normalize action defaults on catch path]
   cleanFinalOutput
 ```
 
