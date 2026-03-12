@@ -28,6 +28,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
   // Runtime State
   const [chunks, setChunks] = useState<Chunk[]>([]);
+  const [narrationChunkIndex, setNarrationChunkIndex] = useState(0);
+  const [narrationChunkCount, setNarrationChunkCount] = useState(0);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [narrativeSteps, setNarrativeSteps] = useState<NarrativeStep[]>([]);
@@ -410,6 +412,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           if (state.chunks !== undefined) {
             setChunks(state.chunks);
           }
+          if (state.narrationChunkIndex !== undefined) setNarrationChunkIndex(state.narrationChunkIndex);
+          if (state.narrationChunkCount !== undefined) setNarrationChunkCount(state.narrationChunkCount);
           
           if (state.actions !== undefined) {
             setActions(state.actions);
@@ -1021,7 +1025,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           
           {procState.status !== 'idle' && procState.status !== 'completed' && (
             <div className="shrink-0">
-               <ChunkVisualizer chunks={chunks} />
+               <ChunkVisualizer
+                 chunks={chunks}
+                 narrationChunkIndex={narrationChunkIndex}
+                 narrationChunkCount={narrationChunkCount}
+                 isNarrating={procState.status === 'running_narrative'}
+               />
             </div>
           )}
         </div>

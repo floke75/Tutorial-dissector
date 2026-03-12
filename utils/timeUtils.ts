@@ -56,5 +56,18 @@ export const computeChunkWindows = (
     index++;
   }
   
+  // Fold short tail: a chunk under 50% of target size isn't worth a separate LLM call
+  const minChunkDuration = chunkSizeSec * 0.5;
+  if (chunks.length >= 2) {
+    const last = chunks[chunks.length - 1];
+    const lastPrimaryDuration = last.primaryEnd - last.primaryStart;
+    if (lastPrimaryDuration < minChunkDuration) {
+      const prev = chunks[chunks.length - 2];
+      prev.primaryEnd = last.primaryEnd;
+      prev.clipEnd = last.clipEnd;
+      chunks.pop();
+    }
+  }
+
   return chunks;
 };
