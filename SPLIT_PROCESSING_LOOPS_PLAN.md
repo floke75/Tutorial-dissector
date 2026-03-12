@@ -555,12 +555,9 @@ export interface JobState {
 }
 ```
 
-Initialization in `processVideoJob` fresh-start block:
-```typescript
 narrationChunkIndex: 0,
-narrationChunkSize: params.narrationChunkSize || Math.floor(params.chunkSize * 2.5),
+narrationChunkSize: params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5),
 narrationChunkCount: 0,
-```
 
 `isResuming` guard now validates `narrationChunkSize` matches to prevent layout mismatch on resume.
 
