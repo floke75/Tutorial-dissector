@@ -19,7 +19,7 @@ Phase C (narrative synthesis) currently runs inline with Phase A/B in a single p
 | `utils/timeUtils.test.ts` | Add 3 test cases for tail-folding |
 | `server/jobManager.ts` | Split loop, add narration chunk computation, add `narrationChunkIndex` to state, add `formatMMSS` import, Phase C resume logic |
 | `server.ts` | Pass `narrationChunkSize` through API endpoint |
-| `components/AnalysisView.tsx` | Include `narrationChunkSize` in POST body |
+| `components/AnalysisView.tsx` | Thread narration chunk state to ChunkVisualizer |
 | `components/ChunkVisualizer.tsx` | Add narration chunk progress row for Phase C |
 
 **Do NOT modify:** `geminiService.ts`, `constants.ts`, `utils/jsonOptimize.ts`, `types.ts`
@@ -117,7 +117,7 @@ In the `jobs.set(jobId, { ... })` block, add after `currentChunkIndex: 0,` (line
 
 ```typescript
       narrationChunkIndex: 0,
-      narrationChunkSize: params.narrationChunkSize || Math.floor(params.chunkSize * 2.5),
+      narrationChunkSize: params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5),
       narrationChunkCount: 0,  // set after narration chunks are computed
 ```
 
@@ -148,7 +148,7 @@ Insert AFTER the `if (!isResuming) { ... }` block closes (line 261) and BEFORE `
 
 ```typescript
     // Narration chunks: wider windows, non-aligned with A/B, reduced overlap
-    const narrationChunkSize = params.narrationChunkSize || Math.floor(chunkSize * 2.5);
+    const narrationChunkSize = params.narrationChunkSize ?? Math.floor(chunkSize * 2.5);
     const overlapRatio = overlap / chunkSize;
     const narrationOverlapRatio = overlapRatio * 0.4;
     const narrationOverlap = Math.round(narrationChunkSize * narrationOverlapRatio);
@@ -189,22 +189,9 @@ const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, 
 
 ### 2h. `components/AnalysisView.tsx` — POST body
 
-In the `handleStartAnalysis` function (~line 613), add `narrationChunkSize` to the POST body. Compute it inline:
+**Do NOT send `narrationChunkSize` from the client.** Since there is no UI slider for this value and it's purely derived from `chunkSize`, the server's `??`-based default should be the single source of truth. Sending a hardcoded `Math.floor(chunkSize * 2.5)` from the client would silently override any future server-side default changes, and would tie the `isResuming` validation to the client's constant rather than the server's canonical default.
 
-```typescript
-body: JSON.stringify({
-  jobId: projectId,
-  videoUrl,
-  durationInput,
-  chunkSize,
-  overlap,
-  narrationChunkSize: Math.floor(chunkSize * 2.5),
-  customContext,
-  apiKey: currentApiKey
-})
-```
-
-No `useState` needed — computed inline from `chunkSize`. No UI slider needed — the server has a fallback default anyway.
+The existing POST body remains unchanged — no `narrationChunkSize` field. The server computes it via `params.narrationChunkSize ?? Math.floor(chunkSize * 2.5)` when the field is absent. A `narrationChunkSize` field should only be added to the POST body when a user-facing UI control is introduced.
 
 ---
 
@@ -333,7 +320,7 @@ Insert BEFORE it:
       if (cancelTokens.has(jobId)) {
         state.status = 'cancelled';
         bumpVersion(state);
-        addLog('warn', 'Job cancelled before Phase C');
+        addLog('warn', `Job cancelled before Phase C chunk ${i + 1}/${narrationChunks.length}`);
         return;
       }
 
@@ -498,6 +485,8 @@ if (chunk.status === 'analyzing_phase_c') colorClass = '...animate-pulse';
 {chunk.status === 'analyzing_phase_c' && 'NARRATING...'}
 ```
 
+> **Note:** `'analyzing_phase_c'` is intentionally left in the `ChunkStatus` union in `types.ts` (out-of-scope). No code will set this value after the split. It can be repurposed for per-narration-chunk status in a future iteration, or removed in a dedicated cleanup PR.
+
 ### 6b. `components/ChunkVisualizer.tsx` — Add narration progress indicator
 
 Add new props for narration progress:
@@ -594,6 +583,10 @@ No other change needed for the resume path — `narrationChunkIndex` retains its
 | Progress formula regression: A/B mid-loop uses 0–100% scale | Updated `progressBase` and post-Phase-A progress to 0–50% scale in Step 3 | **Greptile #1** |
 | `analyzing_phase_c` renders in ChunkVisualizer, not dead code | Removed dead rendering, added narration progress indicator (Step 6) | **Greptile #2** |
 | `narrationChunkSize` not stored in `JobState` or validated on resume | Added to `JobState`, initialized in fresh-start, validated in `isResuming` guard (Step 2c-ii) | **Greptile #3** |
+| `\|\|` / `??` inconsistency across init, runJob, and isResuming guard | Standardized all three sites to `??` (null/undefined only) | **Greptile #5** |
+| Misleading cancel log "before Phase C" fires mid-loop | Changed to `Job cancelled before Phase C chunk ${i+1}/${total}` | **Greptile #6** |
+| Dead `analyzing_phase_c` in `ChunkStatus` union (`types.ts`) | Added note in Step 6a: intentional out-of-scope tech debt, repurposable | **Greptile #7** |
+| Client hardcodes server's `narrationChunkSize` default | Removed from POST body; server is single source of truth (Step 2h) | **Greptile #8** |
 
 ---
 
