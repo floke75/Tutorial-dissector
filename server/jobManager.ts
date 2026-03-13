@@ -216,7 +216,11 @@ export function cancelJob(jobId: string): boolean {
 
   if (isResuming) {
     if (state.currentChunkIndex >= state.chunks.length && state.narrationChunkIndex > 0) {
-      addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}...`);
+      if (state.narrationChunkIndex >= state.narrationChunkCount) {
+        addLog('info', `Resuming job from Phase D (all narration complete, dedup failed)...`);
+      } else {
+        addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}/${state.narrationChunkCount}...`);
+      }
     } else {
       addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
     }

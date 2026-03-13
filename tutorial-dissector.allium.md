@@ -53,9 +53,9 @@ value LogMessage {
 value ProcessingState {
     status: ProcessingStatus
     current_chunk_index: Integer
-    narration_chunk_index: Integer?
-    narration_chunk_size: Integer?
-    narration_chunk_count: Integer?
+    narration_chunk_index: Integer
+    narration_chunk_size: Integer
+    narration_chunk_count: Integer
     total_actions: Integer
     total_tokens: Integer
     start_time: Timestamp?
@@ -78,7 +78,6 @@ value InputData {
 
 enum ProcessingStatus { idle | running_visual | running_narrative | running_dedup | paused | completed | error | cancelled }
 enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
-enum NarrationChunkStatus { pending | analyzing_phase_c | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
 enum ActionType { 
@@ -157,8 +156,8 @@ entity NarrationChunk {
     primary_start: Duration
     primary_end: Duration
     
-    status: NarrationChunkStatus
-    error_msg: String?
+    -- Note: This entity is a logical model. Progress is tracked via
+    -- project.proc_state.narration_chunk_index, not per-chunk status.
 }
 
 -- Low-level mechanical action
@@ -353,7 +352,6 @@ rule StartGlobalDeduplication {
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
     requires: project.status = running_dedup
-    requires: project.proc_state.current_chunk_index >= count(project.chunks)
     requires: project.proc_state.narration_chunk_index >= count(project.narration_chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
