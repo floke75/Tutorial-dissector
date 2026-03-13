@@ -2,15 +2,22 @@ import { describe, it, expect } from 'vitest';
 import { cleanFinalOutput } from './jsonOptimize';
 import type { ActionItem, NarrativeStep, VideoAnnotation } from '../types';
 
+const defaultActionProps = {
+  actor: 'user' as const,
+  result: null,
+  context_note: null,
+  confidence: 'high' as const
+};
+
 describe('cleanFinalOutput', () => {
   it('Basic inlining: 2 steps, 2 actions, 1:1 linking', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1' },
-      { id: 'a2', timestamp: '0:20', action_type: 'type', detail: 'type 1' }
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps },
+      { id: 'a2', timestamp: '0:20', action_type: 'type', detail: 'type 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' },
-      { id: 's2', timestamp: '0:20', explanation: 'step 2', linked_visual_action_ids: ['a2'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' },
+      { id: 's2', timestamp: '0:20', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 2', linked_visual_action_ids: ['a2'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -25,11 +32,11 @@ describe('cleanFinalOutput', () => {
 
   it('Multi-linked dedup: 2 steps both referencing action A', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:15', action_type: 'click', detail: 'click 1' }
+      { id: 'a1', timestamp: '0:15', action_type: 'click', detail: 'click 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' },
-      { id: 's2', timestamp: '0:20', explanation: 'step 2', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' },
+      { id: 's2', timestamp: '0:20', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 2', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -43,9 +50,9 @@ describe('cleanFinalOutput', () => {
 
   it('Timestamp sort: Steps at ["1:30", "0:45", "2:00"]', () => {
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '1:30', explanation: 'step 1', linked_visual_action_ids: [], insight_type: 'procedural' },
-      { id: 's2', timestamp: '0:45', explanation: 'step 2', linked_visual_action_ids: [], insight_type: 'procedural' },
-      { id: 's3', timestamp: '2:00', explanation: 'step 3', linked_visual_action_ids: [], insight_type: 'procedural' }
+      { id: 's1', timestamp: '1:30', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: [], insight_type: 'explanation' },
+      { id: 's2', timestamp: '0:45', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 2', linked_visual_action_ids: [], insight_type: 'explanation' },
+      { id: 's3', timestamp: '2:00', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 3', linked_visual_action_ids: [], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions: [], annotations: [], narrativeSteps: steps });
@@ -58,10 +65,10 @@ describe('cleanFinalOutput', () => {
 
   it('Missing timestamp: Step with empty timestamp, action with empty timestamp', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '', action_type: 'click', detail: 'click 1' }
+      { id: 'a1', timestamp: '', action_type: 'click', detail: 'click 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -73,12 +80,12 @@ describe('cleanFinalOutput', () => {
 
   it('Unlinked preservation: 3 actions, only 2 linked', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1' },
-      { id: 'a2', timestamp: '0:20', action_type: 'type', detail: 'type 1' },
-      { id: 'a3', timestamp: '0:30', action_type: 'scroll', detail: 'scroll 1' }
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps },
+      { id: 'a2', timestamp: '0:20', action_type: 'type', detail: 'type 1', ...defaultActionProps },
+      { id: 'a3', timestamp: '0:30', action_type: 'scroll', detail: 'scroll 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1', 'a2'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1', 'a2'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -91,11 +98,11 @@ describe('cleanFinalOutput', () => {
 
   it('Ownership tiebreak: Action at 1:00, steps at 0:50 and 1:10', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '1:00', action_type: 'click', detail: 'click 1' }
+      { id: 'a1', timestamp: '1:00', action_type: 'click', detail: 'click 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:50', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' },
-      { id: 's2', timestamp: '1:10', explanation: 'step 2', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:50', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' },
+      { id: 's2', timestamp: '1:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 2', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -107,10 +114,10 @@ describe('cleanFinalOutput', () => {
 
   it('IDs stripped: 1 step, 1 action', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1' }
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -122,7 +129,7 @@ describe('cleanFinalOutput', () => {
 
   it('Unlinked error recovery excluded', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', is_error_recovery: true }
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', is_error_recovery: true, ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [];
 
@@ -133,10 +140,10 @@ describe('cleanFinalOutput', () => {
 
   it('Linked error recovery inlined', () => {
     const actions: ActionItem[] = [
-      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', is_error_recovery: true }
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', is_error_recovery: true, ...defaultActionProps }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
@@ -150,12 +157,13 @@ describe('cleanFinalOutput', () => {
     const actions: ActionItem[] = [
       { 
         id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', 
-        confidence: 'high', chunkIndex: 1, ui_context: 'context', 
-        target: { element: 'button', spatial_bounding_box: [0, 0, 10, 10] } 
+        confidence: 'high', chunkIndex: 1, ui_context: { active_panel: '', active_tool: '', open_dialogs: [] }, 
+        target: { element: 'button', location: '', panel: '', visual: '', spatial_bounding_box: [0, 0, 10, 10] },
+        actor: 'user', result: null, context_note: null
       }
     ];
     const steps: NarrativeStep[] = [
-      { id: 's1', timestamp: '0:10', explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'procedural' }
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
     ];
 
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
