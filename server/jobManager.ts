@@ -105,6 +105,7 @@ export async function processVideoJob(params: {
                      existingState.overlap === params.overlap &&
                      existingState.narrationChunkSize ===
                        (params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5)) &&
+                     existingState.narrationChunkCount > 0 &&
                      existingState.chunks.length > 0);
 
   const runId = uuidv4();
@@ -214,7 +215,11 @@ export function cancelJob(jobId: string): boolean {
   const runId = state.runId;
 
   if (isResuming) {
-    addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+    if (state.currentChunkIndex >= state.chunks.length && state.narrationChunkIndex > 0) {
+      addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}...`);
+    } else {
+      addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+    }
   }
 
   try {
@@ -276,6 +281,11 @@ export function cancelJob(jobId: string): boolean {
     const narrationOverlapRatio = overlapRatio * 0.4;
     const narrationOverlap = Math.round(narrationChunkSize * narrationOverlapRatio);
     const narrationChunks = computeChunkWindows(duration, narrationChunkSize, narrationOverlap);
+    
+    if (isResuming && state.narrationChunkCount !== narrationChunks.length) {
+      throw new Error(`Narration chunk layout drift detected on resume. Expected ${state.narrationChunkCount} chunks, but computed ${narrationChunks.length}. Please start a new job.`);
+    }
+    
     state.narrationChunkCount = narrationChunks.length;
     addLog('info', `Narration plan: ${narrationChunks.length} chunks (${narrationChunkSize}s window, ${narrationOverlap}s overlap)`);
 
@@ -559,7 +569,9 @@ export function cancelJob(jobId: string): boolean {
       // Assign step IDs
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
-        step.id = `step_${uuidv4().substring(0, 8)}`;
+        if (!step.id || existingStepIds.has(step.id) || !step.id.startsWith('step_')) {
+          step.id = `step_${uuidv4().substring(0, 8)}`;
+        }
         existingStepIds.add(step.id);
         return step;
       });

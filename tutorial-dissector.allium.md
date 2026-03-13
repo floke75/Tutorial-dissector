@@ -307,7 +307,7 @@ rule StartNarrativeSynthesis {
 rule CompletePhaseC {
     when: PhaseCCompleted(narration_chunk, narrative_steps, learned_insights)
     
-    requires: narration_chunk.status = analyzing_phase_c
+    requires: narration_chunk.project.proc_state.narration_chunk_index = narration_chunk.index
     requires: narration_chunk.project.status = running_narrative
     
     let context_window_start = narration_chunk.clip_start - config.narration_context_buffer
@@ -319,7 +319,6 @@ rule CompletePhaseC {
     let annotation_context = narration_chunk.project.annotations where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
 
-    ensures: narration_chunk.status = completed
     ensures: narration_chunk.project.proc_state.narration_chunk_index = narration_chunk.index + 1
     
     -- Accumulate learned context
