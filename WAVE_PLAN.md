@@ -15,7 +15,7 @@ You are modifying the Gemini extraction prompts in `constants.ts` for Tutorial D
 **CONTEXT:** This extraction feeds a downstream pipeline that builds a canonical registry of UI elements and workflow states, then uses automated agents to locate these elements in live browser DOM, and finally reimplements the workflows natively in a different platform. Gemini currently has no idea about this purpose, which causes it to use narrator paraphrases instead of on-screen labels and produce vague location descriptions.
 
 **CHANGE A — Add purpose preamble to PHASE_A_SYSTEM_PROMPT:**
-Insert this block at the very top of the prompt, BEFORE the "ANALYSIS WINDOW:" section:
+Insert this block immediately AFTER the opening "You are a precision video analysis system…" sentence and BEFORE the "ANALYSIS WINDOW:" section:
 
 > PURPOSE: This extraction feeds a downstream pipeline that will:
 > 1. Build a canonical registry of every UI element, state, and workflow step in this software
@@ -203,7 +203,7 @@ export function captureActionScreenshots(
 
   for (const [timestamp, actionIds] of byTimestamp) {
     const seconds = parseMMSS(timestamp);
-    const filename = `frame-${String(seconds).padStart(5, '0')}.png`; // Use seconds for unique, collision-free filenames
+    const filename = `frame-${String(seconds).padStart(5, '0')}.png`; // Keyed on integer seconds; format-normalised timestamps share a file
     const outputPath = `${outputDir}/${filename}`;
 
     try {
@@ -354,7 +354,13 @@ export function generateExtractionVocabulary(
 ): string {
   if (!existsSync(glossaryPath)) return '';
 
-  const elements = JSON.parse(readFileSync(glossaryPath, 'utf-8'));
+  let elements: any;
+  try {
+    elements = JSON.parse(readFileSync(glossaryPath, 'utf-8'));
+  } catch {
+    return ''; // malformed JSON — skip vocabulary rather than crashing
+  }
+
   const softwareElements = elements[software];
   if (!softwareElements) return '';
 
