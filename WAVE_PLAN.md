@@ -236,10 +236,10 @@ This makes the cleaned export usable for relational linking while keeping all ot
 
 Run the existing `jsonOptimize` tests after this change. Two sets of changes are needed:
 
-**Update the existing "IDs stripped" test** (line 115). This test's fixture has one step with one action (no annotations). Update the two existing assertions and add a `linked_visual_action_ids` check:
+**Update the existing "IDs stripped" test** (line 115). This test's fixture has one step with one action (no annotations). **Rename the test to "IDs preserved: 1 step, 1 action"** and update the two existing assertions and add a `linked_visual_action_ids` check:
 
 ```typescript
-// In "IDs stripped: 1 step, 1 action" test — update these:
+// Rename to "IDs preserved: 1 step, 1 action" and update these:
 expect(result.steps[0].id).toBeDefined();              // was .toBeUndefined()
 expect(result.steps[0].actions[0].id).toBeDefined();    // was .toBeUndefined()
 expect(result.steps[0].linked_visual_action_ids).toBeDefined();
@@ -263,6 +263,7 @@ it('Annotation IDs and link arrays preserved', () => {
 
   const { result } = cleanFinalOutput({ actions, annotations, narrativeSteps: steps });
 
+  expect(result.steps[0].id).toBeDefined();
   expect(result.steps[0].annotations[0].id).toBeDefined();
   expect(result.steps[0].linked_annotation_ids).toBeDefined();
 });
