@@ -69,14 +69,17 @@ With:
   "element": "Create block template",
   "location": "Manage block templates modal → header actions row → right of Search field → Create block template button",
   "panel": "Manage block templates modal",
-  "visual": "enabled, blue primary button",
-  "spatial_bounding_box": [150, 200, 180, 400]
+  "visual": "enabled, blue primary button"
 }
 ```
 
-Do NOT add inline comments in the JSON example — JSON doesn't support `//` comments, and LLMs will mimic them in output, breaking `JSON.parse()`. The optionality of `spatial_bounding_box` is already communicated by rule 3.
+Do NOT include `spatial_bounding_box` in this example. LLMs follow schema examples more closely than prose rules — if the example always includes a bounding box, Gemini will hallucinate coordinates even when uncertain, which is exactly what Change C is trying to prevent. Add this prose note immediately after the JSON block:
 
-LLMs follow schema examples more closely than prose rules. This single change reinforces rules 9-10 at the point where the model is learning the output shape.
+> When the element's bounding box is clearly visible and you are confident in its coordinates, also include `"spatial_bounding_box": [ymin, xmin, ymax, xmax]` (normalized 0–1000). Omit this field when uncertain.
+
+This aligns the example with rule 3's optionality intent and reinforces rules 9-10 at the point where the model is learning the output shape.
+
+**Note on downstream impact:** Making `spatial_bounding_box` truly optional means `downloadPlaywright()` in `ResultsTimeline.tsx` (which generates `page.mouse.click(cx, cy)` only when `spatial_bounding_box` is present) will produce comment-only placeholders for actions without coordinates. A future wave should add a fallback that uses the rule-10 structured location path to generate selector-based Playwright commands (e.g., `page.getByRole(...)`) instead of coordinate clicks.
 
 **CHANGE D — Replace the CRITICAL OBJECTIVE block in PASS_2_SYSTEM_PROMPT:**
 Find the existing "CRITICAL OBJECTIVE:" block (starts with "The narrative blocks MUST complement...") and replace the ENTIRE block with:
