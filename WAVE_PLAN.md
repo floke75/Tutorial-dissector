@@ -409,9 +409,9 @@ const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n
 // (line ~318 in the Phase A/B extraction loop AND line ~493 in the Phase C narration loop):
 // const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 //
-// Note: analyzeGlobalDeduplication (Phase D) receives customContext directly, not dynamicContext.
-// Vocabulary is intentionally omitted from Phase D — deduplication operates on already-extracted
-// data and does not benefit from element-naming guidance.
+// Also update the analyzeGlobalDeduplication call (line ~734) to pass vocabularyContext
+// instead of customContext. Phase D's Rule 4 normalizes element names and prefers custom
+// context terminology as the canonical standard — vocabulary guidance directly improves that pass.
 ```
 
 **IMPORTANT:**
