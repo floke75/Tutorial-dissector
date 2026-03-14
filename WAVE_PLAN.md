@@ -117,7 +117,7 @@ You are adding visual ground truth capabilities to Tutorial Dissector's export p
 
 **CHANGE A — Add viewportResolution to metadata:**
 
-First, add a resolution detection utility. In `utils/screenshotCapture.ts` (or a separate `utils/videoMeta.ts`), add:
+First, create a resolution detection utility in a new file `utils/videoMeta.ts` (separate from `screenshotCapture.ts` — different concerns):
 
 ```typescript
 import { execFileSync } from 'child_process';
@@ -170,8 +170,8 @@ Create a new file: `utils/screenshotCapture.ts`
 
 ```typescript
 import { execFileSync } from 'child_process';
-import type { ActionItem } from '../types';
-import { parseMMSS } from './timeUtils';
+import type { ActionItem } from '../types.ts';
+import { parseMMSS } from './timeUtils.ts';
 
 /**
  * Captures one video frame per unique action timestamp.
@@ -232,20 +232,39 @@ delete stepCopy.id;              // line 197 — strips step ID
 
 This makes the cleaned export usable for relational linking while keeping all other cleaning (metadata stripping, `interacted_components` compaction, empty field removal).
 
-Run the existing `jsonOptimize` tests after this change. The existing "IDs stripped" test (line 115) asserts that `steps[0].id` and `steps[0].actions[0].id` are undefined — update those two assertions to expect IDs to be present (`.toBeDefined()`). There are **no existing assertions** for annotation IDs or link arrays, so **add new assertions**:
+Run the existing `jsonOptimize` tests after this change. Two sets of changes are needed:
+
+**Update the existing "IDs stripped" test** (line 115). This test's fixture has one step with one action (no annotations). Update the two existing assertions and add a `linked_visual_action_ids` check:
 
 ```typescript
-// Update existing assertions (in "IDs stripped" test):
-expect(result.steps[0].id).toBeDefined();
-expect(result.steps[0].actions[0].id).toBeDefined();
-
-// Add new assertions for annotation ID and link array preservation:
-expect(result.steps[0].annotations[0].id).toBeDefined();
+// In "IDs stripped: 1 step, 1 action" test — update these:
+expect(result.steps[0].id).toBeDefined();              // was .toBeUndefined()
+expect(result.steps[0].actions[0].id).toBeDefined();    // was .toBeUndefined()
 expect(result.steps[0].linked_visual_action_ids).toBeDefined();
-expect(result.steps[0].linked_annotation_ids).toBeDefined();
 ```
 
-The new annotation test will need a test fixture that includes annotations linked to a step (the current test fixture only has actions).
+**Add a NEW test case** for annotation ID preservation. The existing fixture has no annotations, so a new fixture is required:
+
+```typescript
+it('Annotation IDs and link arrays preserved', () => {
+  const actions: ActionItem[] = [
+    { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps }
+  ];
+  const annotations: VideoAnnotation[] = [
+    { id: 'ann1', timestamp: '0:10', annotation_type: 'text_overlay', content: 'Step 1', relevance: 'context' }
+  ];
+  const steps: NarrativeStep[] = [
+    { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [],
+      explanation: 'step 1', linked_visual_action_ids: ['a1'], linked_annotation_ids: ['ann1'],
+      insight_type: 'explanation' }
+  ];
+
+  const { result } = cleanFinalOutput({ actions, annotations, narrativeSteps: steps });
+
+  expect(result.steps[0].annotations[0].id).toBeDefined();
+  expect(result.steps[0].linked_annotation_ids).toBeDefined();
+});
+```
 
 **IMPORTANT:**
 * The screenshot utility file is standalone — it does not need to be wired into the automatic pipeline yet
@@ -340,9 +359,13 @@ export function generateExtractionVocabulary(
 **USAGE:** In the extraction orchestration code (`server/jobManager.ts` or wherever `customContext` is assembled before calling `analyzeChunkPhaseA`), prepend or append the vocabulary string to the existing `customContext`:
 
 ```typescript
-import { generateExtractionVocabulary } from '../utils/extractionVocabulary';
+import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 
 // Before the extraction loop:
+// softwareName must be added as a new parameter to processVideoJob and JobState.
+// It identifies which software the tutorial covers (e.g., "Cuez", "Flowics") so the
+// glossary lookup can find the right vocabulary. Pass it from the client-side job
+// submission form alongside the existing customContext field.
 const vocabulary = generateExtractionVocabulary('glossary/elements.json', softwareName);
 const fullContext = [existingCustomContext, vocabulary].filter(Boolean).join('\n\n');
 // Pass fullContext as the customContext parameter
