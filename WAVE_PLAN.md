@@ -295,6 +295,7 @@ it('Annotation IDs and link arrays preserved', () => {
   expect(result.steps[0].id).toBeDefined();
   expect(result.steps[0].annotations[0].id).toBeDefined();
   expect(result.steps[0].linked_annotation_ids).toBeDefined();
+  expect(result.steps[0].actions[0].id).toBeDefined();
 });
 ```
 
@@ -405,7 +406,7 @@ import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 // Both are passed from the client-side job submission form alongside customContext.
 //
 // FILES TO UPDATE for the full data flow:
-// 1. server/server.ts (line ~51): add softwareName and glossaryPath to the
+// 1. server.ts (root-level, line ~51): add softwareName and glossaryPath to the
 //    req.body destructure, and pass them to processVideoJob() on line ~78.
 // 2. components/InputPanel.tsx: add form fields for softwareName (text input,
 //    required) and glossaryPath (text input, optional, default 'glossary/elements.json').
