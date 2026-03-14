@@ -296,6 +296,7 @@ it('Annotation IDs and link arrays preserved', () => {
   expect(result.steps[0].annotations[0].id).toBeDefined();
   expect(result.steps[0].linked_annotation_ids).toBeDefined();
   expect(result.steps[0].actions[0].id).toBeDefined();
+  expect(result.steps[0].linked_visual_action_ids).toBeDefined();
 });
 ```
 
@@ -436,6 +437,7 @@ const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n
 - Unit test: call `generateExtractionVocabulary` with a sample `elements.json`, verify output format
 - Unit test: call with nonexistent file, verify empty string
 - Unit test: call with file that has no matching software key, verify empty string
+- Unit test: call with malformed JSON file, verify empty string (guards the try/catch branch)
 - Integration: manually prepend the output to a `customContext` string and verify it appears in the Gemini prompt during extraction
 
 ---
