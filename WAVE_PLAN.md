@@ -302,7 +302,7 @@ it('Annotation IDs and link arrays preserved', () => {
 
 ### Test
 
-- Verify `viewportResolution` appears in both graph and cleaned exports
+- Verify `viewportResolution` appears in the cleaned export (not in the raw graph export — see Change A)
 - Run `screenshotCapture` manually on one downloaded tutorial video, verify PNG files are created at correct timestamps
 - Run `jsonOptimize` test suite — update the 2 existing ID-stripping assertions for steps and actions, add new assertions for annotation IDs and link arrays, verify all other tests pass
 - Verify cleaned export now contains `id` fields on actions, steps, and annotations, and `linked_visual_action_ids` and `linked_annotation_ids` on steps
