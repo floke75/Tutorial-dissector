@@ -79,7 +79,7 @@ Do NOT include `spatial_bounding_box` in this example. LLMs follow schema exampl
 
 This aligns the example with rule 3's optionality intent and reinforces rules 9-10 at the point where the model is learning the output shape.
 
-**Note on downstream impact:** Making `spatial_bounding_box` truly optional means `downloadPlaywright()` in `ResultsTimeline.tsx` (which generates `page.mouse.click(cx, cy)` only when `spatial_bounding_box` is present) will produce comment-only placeholders for actions without coordinates. A future wave should add a fallback that uses the rule-10 structured location path to generate selector-based Playwright commands (e.g., `page.getByRole(...)`) instead of coordinate clicks.
+**Note on downstream impact (low priority):** Making `spatial_bounding_box` truly optional means `downloadPlaywright()` in `ResultsTimeline.tsx` will produce comment-only placeholders for click actions without coordinates. This is acceptable — element location is handled by the downstream refinement pipeline using the rule-10 structured location paths. A future improvement could add selector-based fallbacks (e.g., `page.getByRole(...)`) to the Playwright export, but this is not a priority.
 
 **CHANGE D — Replace the CRITICAL OBJECTIVE block in PASS_2_SYSTEM_PROMPT:**
 Find the existing "CRITICAL OBJECTIVE:" block (starts with "The narrative blocks MUST complement...") and replace the ENTIRE block with:
