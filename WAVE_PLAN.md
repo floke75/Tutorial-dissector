@@ -405,8 +405,13 @@ import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
 const vocabulary = generateExtractionVocabulary(glossaryPath, softwareName);
 const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
-// Then use vocabularyContext in place of customContext in the dynamicContext construction:
+// Then replace BOTH occurrences of dynamicContext inside jobManager.ts
+// (line ~318 in the Phase A/B extraction loop AND line ~493 in the Phase C narration loop):
 // const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+//
+// Note: analyzeGlobalDeduplication (Phase D) receives customContext directly, not dynamicContext.
+// Vocabulary is intentionally omitted from Phase D — deduplication operates on already-extracted
+// data and does not benefit from element-naming guidance.
 ```
 
 **IMPORTANT:**
