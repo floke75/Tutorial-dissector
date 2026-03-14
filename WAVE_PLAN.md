@@ -148,7 +148,14 @@ export function detectViewportResolution(
 }
 ```
 
-Then, in `server/jobManager.ts`, find the metadata object construction in the cleaned output section (search for the object that contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`). Add this field:
+Then, in `server/jobManager.ts`, add the import and the metadata field:
+
+```typescript
+// Add to imports at top of file:
+import { detectViewportResolution } from '../utils/videoMeta.ts';
+```
+
+Find the metadata object construction in the cleaned output section (search for the object that contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`). Add this field:
 
 ```
 viewportResolution: detectViewportResolution(null)
@@ -217,7 +224,9 @@ export function captureActionScreenshots(
 }
 ```
 
-This utility is called after extraction completes. Integration into the pipeline (when to call it, where to store frames, how to attach `screenshotRef` to the graph export) should be wired in `jobManager.ts` after Phase D completes, but the exact integration point depends on whether you want server-side capture or a separate CLI step. For now, export the utility and document its usage.
+This utility is called after extraction completes. Integration into the pipeline (when to call it, where to store frames) should be wired in `jobManager.ts` after Phase D completes, but the exact integration point depends on whether you want server-side capture or a separate CLI step. For now, export the utility and document its usage.
+
+Note: `screenshotRef` is NOT yet part of the `ActionItem` schema. When integrating, add `screenshotRef?: string` to `ActionItem` in `types.ts` and populate it from the `Map` returned by `captureActionScreenshots()` before calling `cleanFinalOutput()`.
 
 **CHANGE C — Preserve IDs in cleaned export:**
 
