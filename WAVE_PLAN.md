@@ -403,6 +403,14 @@ import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 // and JobState. softwareName identifies which software the tutorial covers (e.g.,
 // "Cuez", "Flowics"). glossaryPath points to the downstream glossary file.
 // Both are passed from the client-side job submission form alongside customContext.
+//
+// FILES TO UPDATE for the full data flow:
+// 1. server/server.ts (line ~51): add softwareName and glossaryPath to the
+//    req.body destructure, and pass them to processVideoJob() on line ~78.
+// 2. components/InputPanel.tsx: add form fields for softwareName (text input,
+//    required) and glossaryPath (text input, optional, default 'glossary/elements.json').
+//    Include both in the fetch payload sent to the server.
+// 3. server/jobManager.ts: add both to the JobState interface and processVideoJob params.
 
 // Before the extraction loop — integrate vocabulary before dynamicContext construction:
 const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
