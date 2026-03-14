@@ -182,6 +182,7 @@ Create a new file: `utils/screenshotCapture.ts`
 
 ```typescript
 import { execFileSync } from 'child_process';
+import path from 'path';
 import type { ActionItem } from '../types.ts';
 import { parseMMSS } from './timeUtils.ts';
 
@@ -207,7 +208,7 @@ export function captureActionScreenshots(
   for (const [timestamp, actionIds] of byTimestamp) {
     const seconds = parseMMSS(timestamp);
     const filename = `frame-${String(seconds).padStart(5, '0')}.png`; // Keyed on integer seconds; format-normalised timestamps share a file
-    const outputPath = `${outputDir}/${filename}`;
+    const outputPath = path.join(outputDir, filename);
 
     try {
       execFileSync(
@@ -384,12 +385,13 @@ export function generateExtractionVocabulary(
   }
   walk(softwareElements);
 
-  if (names.length === 0) return '';
+  const uniqueNames = [...new Set(names)];
+  if (uniqueNames.length === 0) return '';
 
   return [
     `KNOWN UI ELEMENTS FOR ${software.toUpperCase()}:`,
     `The following element names have been verified in previous extractions. When you see these elements on screen, use these exact names in target.element:`,
-    ...names.map(n => `- ${n}`),
+    ...uniqueNames.map(n => `- ${n}`),
     ``,
     `These are not exhaustive — if you see elements not on this list, name them using the exact on-screen label text.`
   ].join('\n');
