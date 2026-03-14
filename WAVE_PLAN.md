@@ -120,7 +120,7 @@ You are adding visual ground truth capabilities to Tutorial Dissector's export p
 First, add a resolution detection utility. In `utils/screenshotCapture.ts` (or a separate `utils/videoMeta.ts`), add:
 
 ```typescript
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 /**
  * Detects video resolution via ffprobe. Falls back to 1920×1080 if ffprobe
@@ -132,8 +132,9 @@ export function detectViewportResolution(
   const DEFAULT = { width: 1920, height: 1080 };
   if (!videoPath) return DEFAULT;
   try {
-    const raw = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of json "${videoPath}"`,
+    const raw = execFileSync(
+      'ffprobe',
+      ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'json', videoPath],
       { stdio: 'pipe', timeout: 10000 }
     ).toString();
     const { streams } = JSON.parse(raw);
@@ -168,7 +169,7 @@ The client-side export uses a hardcoded default since it runs in the browser wit
 Create a new file: `utils/screenshotCapture.ts`
 
 ```typescript
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import type { ActionItem } from '../types';
 import { parseMMSS } from './timeUtils';
 
@@ -197,8 +198,9 @@ export function captureActionScreenshots(
     const outputPath = `${outputDir}/${filename}`;
 
     try {
-      execSync(
-        `ffmpeg -ss ${seconds} -i "${videoPath}" -vframes 1 -q:v 2 "${outputPath}" -y`,
+      execFileSync(
+        'ffmpeg',
+        ['-ss', String(seconds), '-i', videoPath, '-vframes', '1', '-q:v', '2', outputPath, '-y'],
         { stdio: 'pipe', timeout: 15000 }
       );
       for (const id of actionIds) {
@@ -230,19 +232,31 @@ delete stepCopy.id;              // line 197 — strips step ID
 
 This makes the cleaned export usable for relational linking while keeping all other cleaning (metadata stripping, `interacted_components` compaction, empty field removal).
 
-Run the existing `jsonOptimize` tests after this change — they test for ID stripping, so those specific assertions need to be UPDATED (not deleted) to expect IDs to be present.
+Run the existing `jsonOptimize` tests after this change. The existing "IDs stripped" test (line 115) asserts that `steps[0].id` and `steps[0].actions[0].id` are undefined — update those two assertions to expect IDs to be present (`.toBeDefined()`). There are **no existing assertions** for annotation IDs or link arrays, so **add new assertions**:
+
+```typescript
+// Update existing assertions (in "IDs stripped" test):
+expect(result.steps[0].id).toBeDefined();
+expect(result.steps[0].actions[0].id).toBeDefined();
+
+// Add new assertions for annotation ID and link array preservation:
+expect(result.steps[0].annotations[0].id).toBeDefined();
+expect(result.steps[0].linked_visual_action_ids).toBeDefined();
+expect(result.steps[0].linked_annotation_ids).toBeDefined();
+```
+
+The new annotation test will need a test fixture that includes annotations linked to a step (the current test fixture only has actions).
 
 **IMPORTANT:**
 * The screenshot utility file is standalone — it does not need to be wired into the automatic pipeline yet
-* `ffmpeg` must be available on the system PATH for screenshot capture
+* `ffmpeg` and `ffprobe` must be available on the system PATH for screenshot capture and resolution detection
 * The cleaned export ID preservation is backward-compatible — downstream consumers that ignore IDs are unaffected
-* Update test expectations in `utils/jsonOptimize.test.ts` to match the new behavior (IDs preserved, annotation IDs preserved, link arrays preserved)
 
 ### Test
 
 - Verify `viewportResolution` appears in both graph and cleaned exports
 - Run `screenshotCapture` manually on one downloaded tutorial video, verify PNG files are created at correct timestamps
-- Run `jsonOptimize` test suite — update ID-stripping assertions (for actions, steps, and annotations), verify all other tests pass
+- Run `jsonOptimize` test suite — update the 2 existing ID-stripping assertions for steps and actions, add new assertions for annotation IDs and link arrays, verify all other tests pass
 - Verify cleaned export now contains `id` fields on actions, steps, and annotations, and `linked_visual_action_ids` and `linked_annotation_ids` on steps
 
 ---
