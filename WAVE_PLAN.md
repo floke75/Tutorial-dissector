@@ -70,9 +70,11 @@ With:
   "location": "Manage block templates modal → header actions row → right of Search field → Create block template button",
   "panel": "Manage block templates modal",
   "visual": "enabled, blue primary button",
-  "spatial_bounding_box": [150, 200, 180, 400]  // optional — omit if uncertain (see rule 3)
+  "spatial_bounding_box": [150, 200, 180, 400]
 }
 ```
+
+Do NOT add inline comments in the JSON example — JSON doesn't support `//` comments, and LLMs will mimic them in output, breaking `JSON.parse()`. The optionality of `spatial_bounding_box` is already communicated by rule 3.
 
 LLMs follow schema examples more closely than prose rules. This single change reinforces rules 9-10 at the point where the model is learning the output shape.
 
@@ -361,20 +363,22 @@ export function generateExtractionVocabulary(
 ```typescript
 import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 
-// Before the extraction loop:
-// softwareName must be added as a new parameter to processVideoJob and JobState.
-// It identifies which software the tutorial covers (e.g., "Cuez", "Flowics") so the
-// glossary lookup can find the right vocabulary. Pass it from the client-side job
-// submission form alongside the existing customContext field.
-const vocabulary = generateExtractionVocabulary('glossary/elements.json', softwareName);
-const fullContext = [existingCustomContext, vocabulary].filter(Boolean).join('\n\n');
-// Pass fullContext as the customContext parameter
+// softwareName and glossaryPath must be added as new parameters to processVideoJob
+// and JobState. softwareName identifies which software the tutorial covers (e.g.,
+// "Cuez", "Flowics"). glossaryPath points to the downstream glossary file.
+// Both are passed from the client-side job submission form alongside customContext.
+
+// Before the extraction loop — integrate vocabulary before dynamicContext construction:
+const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
+const vocabulary = generateExtractionVocabulary(glossaryPath, softwareName);
+const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
+// Then use vocabularyContext in place of customContext in the dynamicContext construction:
+// const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 ```
 
 **IMPORTANT:**
 * This is SOFT GUIDANCE, not enforcement. The prompt text explicitly says "if you see elements not on this list, name them using the exact on-screen label text"
 * If no glossary exists yet (first extraction), the function returns empty string and nothing changes
-* The glossary path should be configurable, not hardcoded — the downstream pipeline may store it anywhere
 * Do not modify the Gemini prompts in `constants.ts` for this change — the existing CUSTOM APP CONTEXT injection handles it
 
 ### Test
