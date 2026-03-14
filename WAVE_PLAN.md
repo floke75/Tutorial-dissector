@@ -148,16 +148,20 @@ export function detectViewportResolution(
 Then, in `server/jobManager.ts`, find the metadata object construction in the cleaned output section (search for the object that contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`). Add this field:
 
 ```
-viewportResolution: detectViewportResolution(localVideoPath)
+viewportResolution: detectViewportResolution(null)
 ```
 
-In `components/ResultsTimeline.tsx`, find the `downloadJSON` function's metadata object (contains `total_steps`, `total_actions`, `total_annotations`, `learned_context`). Since the client-side export doesn't have access to ffprobe, hardcode the default here:
+Note: `jobManager.ts` only tracks `state.videoUrl` (remote YouTube/Gemini URIs), not a local file path. Pass `null` for now, which triggers the 1920×1080 fallback. When local video download support is added (e.g., for screenshot capture), pass the local path here to get real resolution detection.
+
+In `components/ResultsTimeline.tsx`, find the `getCleanedOutput` function (line ~137, produces the cleaned export). In its metadata object (which contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`), add the same field:
 
 ```
 viewportResolution: { width: 1920, height: 1080 }
 ```
 
-The server-side export gets the real resolution; the client-side export uses a default. A future improvement can pass the detected resolution from the server to the client.
+Do NOT add it to `downloadJSON` — that function produces the raw export. The `getCleanedOutput` function is what mirrors the server-side cleaned export path.
+
+The client-side export uses a hardcoded default since it runs in the browser without ffprobe access. A future improvement can pass the server-detected resolution to the client via the job state.
 
 **CHANGE B — Add screenshot capture:**
 
