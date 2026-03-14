@@ -49,16 +49,42 @@ Replace the ENTIRE rule 3 with:
 
 > 3. SPATIAL GROUNDING: If you can confidently identify the target element's bounding box on screen, provide it as spatial_bounding_box: [ymin, xmin, ymax, xmax] normalized 0-1000. However, the structured location path (rule 10) is the primary spatial signal — bounding boxes are optional supplementary data. Do not estimate or hallucinate coordinates. If uncertain, omit the field.
 
+**CHANGE E — Update OUTPUT FORMAT schema example in PHASE_A_SYSTEM_PROMPT:**
+The schema example in the OUTPUT FORMAT section currently uses generic placeholders that undermine the naming and location rules. Update the `target` object example to demonstrate the expected quality:
+
+Replace:
+```json
+"target": {
+  "element": "descriptive name",
+  "location": "spatial position",
+  "panel": "which panel",
+  "visual": "visual state",
+  "spatial_bounding_box": [150, 200, 180, 400]
+}
+```
+
+With:
+```json
+"target": {
+  "element": "Create block template",
+  "location": "Manage block templates modal → header actions row → right of Search field → Create block template button",
+  "panel": "Manage block templates modal",
+  "visual": "enabled, blue primary button",
+  "spatial_bounding_box": [150, 200, 180, 400]  // optional — omit if uncertain (see rule 3)
+}
+```
+
+LLMs follow schema examples more closely than prose rules. This single change reinforces rules 9-10 at the point where the model is learning the output shape.
+
 **CHANGE D — Replace the CRITICAL OBJECTIVE block in PASS_2_SYSTEM_PROMPT:**
 Find the existing "CRITICAL OBJECTIVE:" block (starts with "The narrative blocks MUST complement...") and replace the ENTIRE block with:
 
 > CRITICAL OBJECTIVE:
 > This narrative track feeds a downstream pipeline that reimplements the tutorial's workflow in a different platform. Your narrative steps must capture:
 > 1. The INTENT behind each action sequence — why the operator is doing this, not just what they clicked
-> 2. The PRECONDITION — what must be true before this step can execute (which modal is open, what was previously configured)
-> 3. The POSTCONDITION — what state the system is in after this step completes
-> 4. Warnings, constraints, and mutual exclusions the narrator mentions — these become safety rules in the reimplementation
-> 5. The relationship between steps — if step 3 depends on the result of step 1, make this dependency explicit in the precondition
+> 2. PRECONDITIONS and POSTCONDITIONS — your existing BDD constraints (rule 3) serve this purpose; ensure they describe concrete UI state (which modal is open, what was previously configured), not abstract summaries
+> 3. Warnings, constraints, and mutual exclusions the narrator mentions — these become safety rules in the reimplementation. Examples: "this setting is incompatible with X", "you must do A before B", "changing this will reset Y"
+> 4. Cross-step data dependencies — if step 3 uses a value produced by step 1 (e.g., a template name, a saved preset, a configured field), make this dependency explicit in the precondition. The reimplementation agent needs to know which steps feed into which.
 >
 > A developer reading your narrative alongside the execution graph must be able to reimplement this workflow WITHOUT watching the video. Capture the "why" and the dependencies, not a transcript.
 
@@ -91,19 +117,47 @@ You are adding visual ground truth capabilities to Tutorial Dissector's export p
 
 **CHANGE A — Add viewportResolution to metadata:**
 
-In `server/jobManager.ts`, find the metadata object construction in the cleaned output section (search for the object that contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`). Add this field:
+First, add a resolution detection utility. In `utils/screenshotCapture.ts` (or a separate `utils/videoMeta.ts`), add:
+
+```typescript
+import { execSync } from 'child_process';
+
+/**
+ * Detects video resolution via ffprobe. Falls back to 1920×1080 if ffprobe
+ * is unavailable or the video path doesn't exist (e.g., YouTube URL only).
+ */
+export function detectViewportResolution(
+  videoPath: string | null
+): { width: number; height: number } {
+  const DEFAULT = { width: 1920, height: 1080 };
+  if (!videoPath) return DEFAULT;
+  try {
+    const raw = execSync(
+      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of json "${videoPath}"`,
+      { stdio: 'pipe', timeout: 10000 }
+    ).toString();
+    const { streams } = JSON.parse(raw);
+    if (streams?.[0]?.width && streams?.[0]?.height) {
+      return { width: streams[0].width, height: streams[0].height };
+    }
+  } catch { /* ffprobe not available or video not local */ }
+  return DEFAULT;
+}
+```
+
+Then, in `server/jobManager.ts`, find the metadata object construction in the cleaned output section (search for the object that contains `videoUrl`, `duration`, `total_actions`, `total_steps`, `total_annotations`, `deduplicated`). Add this field:
+
+```
+viewportResolution: detectViewportResolution(localVideoPath)
+```
+
+In `components/ResultsTimeline.tsx`, find the `downloadJSON` function's metadata object (contains `total_steps`, `total_actions`, `total_annotations`, `learned_context`). Since the client-side export doesn't have access to ffprobe, hardcode the default here:
 
 ```
 viewportResolution: { width: 1920, height: 1080 }
 ```
 
-In `components/ResultsTimeline.tsx`, find the `downloadJSON` function's metadata object (contains `total_steps`, `total_actions`, `total_annotations`, `learned_context`). Add the same field:
-
-```
-viewportResolution: { width: 1920, height: 1080 }
-```
-
-This is a hardcoded default for now — most tutorials are 1080p. A future improvement can detect resolution from YouTube metadata.
+The server-side export gets the real resolution; the client-side export uses a default. A future improvement can pass the detected resolution from the server to the client.
 
 **CHANGE B — Add screenshot capture:**
 
@@ -135,7 +189,7 @@ export function captureActionScreenshots(
 
   for (const [timestamp, actionIds] of byTimestamp) {
     const seconds = parseMMSS(timestamp);
-    const filename = `frame-${timestamp.replace(':', '-')}.png`;
+    const filename = `frame-${String(seconds).padStart(5, '0')}.png`; // Use seconds for unique, collision-free filenames
     const outputPath = `${outputDir}/${filename}`;
 
     try {
@@ -198,6 +252,25 @@ Depends on the downstream pipeline's Phase 3 (first reconciliation pass) produci
 You are adding a vocabulary feedback loop to Tutorial Dissector. When a canonical glossary of UI element names exists from a previous extraction + reconciliation cycle, those names should be fed back into subsequent extractions as soft guidance.
 
 **CONTEXT:** The downstream pipeline produces `glossary/elements.json` — a software-namespaced JSON file mapping canonical element names. When re-extracting tutorials for the same software, feeding these names into the Gemini prompt biases extraction toward consistent naming without enforcing it. Gemini still extracts what it sees; the vocabulary list just makes it more likely to use the established canonical name when it matches.
+
+**EXPECTED GLOSSARY SCHEMA:** The `elements.json` file is structured as a top-level object keyed by software name, with nested categories containing element entries that have a `canonical` field:
+
+```json
+{
+  "Cuez": {
+    "buttons": {
+      "create_template": { "canonical": "Create block template", "aliases": ["new template"] },
+      "manage_templates": { "canonical": "Manage block templates", "aliases": ["template settings"] }
+    },
+    "panels": {
+      "episode_menu": { "canonical": "Episode Action Menu", "aliases": ["episode dropdown"] }
+    },
+    "_meta": { "version": 1, "updated": "2026-03-14" }
+  }
+}
+```
+
+The `walk()` function below traverses this structure collecting all `canonical` values. If the downstream glossary schema changes, update `walk()` accordingly — the current implementation is intentionally simple and relies on the `canonical` key convention.
 
 **CHANGE — Create `utils/extractionVocabulary.ts`:**
 
@@ -285,3 +358,5 @@ Wave 3 (vocabulary feedback) → re-extract one tutorial → compare naming cons
 ```
 
 Wave 1 and Wave 2 can run in parallel if needed — they touch different files (`constants.ts` vs `jobManager`/`jsonOptimize`/new file). Wave 3 is sequentially dependent on the downstream glossary existing.
+
+**Testing isolation:** If running Wave 1 and Wave 2 in parallel, test them against the same baseline extraction (pre-Wave-1 output). This isolates prompt quality changes (Wave 1) from export format changes (Wave 2). After both are merged, run a combined end-to-end test to verify they compose correctly.
