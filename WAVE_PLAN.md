@@ -232,7 +232,24 @@ delete stepCopy.linked_annotation_ids;     // line 195 — strips annotation lin
 delete stepCopy.id;              // line 197 — strips step ID
 ```
 
-This makes the cleaned export usable for relational linking while keeping all other cleaning (metadata stripping, `interacted_components` compaction, empty field removal).
+Also update the function's JSDoc comment (lines 92–97 of `jsonOptimize.ts`). The current doc says "Strips: Cross-reference IDs" which will become false. Replace that line with:
+```
+* Preserves: Cross-reference IDs (action, step, annotation IDs and link arrays) for relational linking.
+```
+
+**New output structure:** After this change, each step in the cleaned export will contain both inlined objects AND ID arrays simultaneously:
+```json
+{
+  "id": "s1",
+  "timestamp": "0:10",
+  "explanation": "step 1",
+  "linked_visual_action_ids": ["a1"],
+  "actions": [{ "action_type": "click", "id": "a1" }],
+  "linked_annotation_ids": ["ann1"],
+  "annotations": [{ "id": "ann1", "content": "..." }]
+}
+```
+The inlined objects provide the denormalized data; the ID arrays provide stable references for relational linking. Downstream consumers that don't use IDs are unaffected — the extra fields are additive. Consumers that parse the cleaned export schema should be aware of these new fields.
 
 Run the existing `jsonOptimize` tests after this change. Two sets of changes are needed:
 
