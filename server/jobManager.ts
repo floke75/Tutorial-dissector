@@ -34,6 +34,8 @@ export interface JobState {
   logCapOccurred?: boolean;
 }
 
+import { detectViewportResolution } from '../utils/videoMeta.ts';
+
 const jobs = new Map<string, JobState>();
 const cancelTokens = new Set<string>();
 
@@ -838,7 +840,8 @@ export function cancelJob(jobId: string): boolean {
           total_actions: state.actions.length,
           total_steps: cumulativeNarrative.length,
           total_annotations: state.annotations.length,
-          deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
+          deduplicated: phaseDSucceeded,  // false = pre-dedup data, may contain duplicates
+          viewportResolution: detectViewportResolution(null)
         }
       });
       state.cleanedOutput = cleaned;

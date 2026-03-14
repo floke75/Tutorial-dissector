@@ -91,7 +91,8 @@ export function cleanForPrompt(action: any, options?: CleanOptions): any {
 
 /**
  * Denormalizes: Inlines each step's linked actions and annotations directly into the step object.
- * Strips: Cross-reference IDs, extraction metadata, empty/null/default fields.
+ * Preserves: Cross-reference IDs (action, step, annotation IDs and link arrays) for relational linking.
+ * Strips: Extraction metadata, empty/null/default fields.
  * Compacts: interacted_components from objects to pipe-delimited strings.
  * Preserves: Unlinked actions/annotations in separate top-level arrays.
  */
@@ -166,7 +167,6 @@ export function cleanFinalOutput(data: {
           if (!action) return null;
           
           let cleanedAction = cleanForPrompt(action);
-          delete cleanedAction.id; // Strip cross-reference ID
           
           // Compact interacted_components
           if (cleanedAction.interacted_components && Array.isArray(cleanedAction.interacted_components)) {
@@ -176,7 +176,6 @@ export function cleanFinalOutput(data: {
         })
         .filter(Boolean);
     }
-    delete stepCopy.linked_visual_action_ids;
     
     // Inline annotations
     if (step.linked_annotation_ids && step.linked_annotation_ids.length > 0) {
@@ -187,14 +186,11 @@ export function cleanFinalOutput(data: {
           if (!ann) return null;
           
           let cleanedAnn = cleanForPrompt(ann);
-          delete cleanedAnn.id; // Strip cross-reference ID
           return cleanedAnn;
         })
         .filter(Boolean);
     }
-    delete stepCopy.linked_annotation_ids;
     
-    delete stepCopy.id; // Strip step ID
     return stripEmptyAndDefaults(stepCopy);
   });
   

@@ -112,7 +112,7 @@ describe('cleanFinalOutput', () => {
     expect(result.steps[1].actions).toBeUndefined();
   });
 
-  it('IDs stripped: 1 step, 1 action', () => {
+  it('IDs preserved: 1 step, 1 action', () => {
     const actions: ActionItem[] = [
       { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps }
     ];
@@ -123,8 +123,31 @@ describe('cleanFinalOutput', () => {
     const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
 
     expect(result.steps.length).toBe(1);
-    expect(result.steps[0].id).toBeUndefined();
-    expect(result.steps[0].actions[0].id).toBeUndefined();
+    expect(result.steps[0].id).toBeDefined();
+    expect(result.steps[0].actions[0].id).toBeDefined();
+    expect(result.steps[0].linked_visual_action_ids).toBeDefined();
+  });
+
+  it('Annotation IDs and link arrays preserved', () => {
+    const actions: ActionItem[] = [
+      { id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', ...defaultActionProps }
+    ];
+    const annotations: VideoAnnotation[] = [
+      { id: 'ann1', timestamp: '0:10', annotation_type: 'text_overlay', content: 'Step 1', relevance: 'context' }
+    ];
+    const steps: NarrativeStep[] = [
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [],
+        explanation: 'step 1', linked_visual_action_ids: ['a1'], linked_annotation_ids: ['ann1'],
+        insight_type: 'explanation' }
+    ];
+
+    const { result } = cleanFinalOutput({ actions, annotations, narrativeSteps: steps });
+
+    expect(result.steps[0].id).toBeDefined();
+    expect(result.steps[0].annotations[0].id).toBeDefined();
+    expect(result.steps[0].linked_annotation_ids).toBeDefined();
+    expect(result.steps[0].actions[0].id).toBeDefined();
+    expect(result.steps[0].linked_visual_action_ids).toBeDefined();
   });
 
   it('Unlinked error recovery excluded', () => {
