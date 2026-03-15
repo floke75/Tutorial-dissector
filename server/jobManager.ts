@@ -841,7 +841,7 @@ export function cancelJob(jobId: string): boolean {
           total_steps: cumulativeNarrative.length,
           total_annotations: state.annotations.length,
           deduplicated: phaseDSucceeded,  // false = pre-dedup data, may contain duplicates
-          viewportResolution: detectViewportResolution(null)
+          viewportResolution: detectViewportResolution(state.videoUrl)
         }
       });
       state.cleanedOutput = cleaned;
