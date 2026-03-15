@@ -160,9 +160,12 @@ export function cleanFinalOutput(data: {
       }
 
       // Only inline actions this step owns (prevents duplication)
-      stepCopy.actions = step.linked_visual_action_ids
-        .filter(id => actionOwnership.get(id) === step.id)
-        .map(id => {
+      const ownedActionIds = step.linked_visual_action_ids.filter((id: string) => actionOwnership.get(id) === step.id);
+      
+      stepCopy.linked_visual_action_ids = ownedActionIds; // Trim to owned action IDs
+      
+      stepCopy.actions = ownedActionIds
+        .map((id: string) => {
           const action = actionMap.get(id);
           if (!action) return null;
           

@@ -71,6 +71,9 @@ async function startServer() {
       if (!videoUrl) {
         return res.status(400).json({ error: "videoUrl is required" });
       }
+      if (!softwareName) {
+        return res.status(400).json({ error: "softwareName is required." });
+      }
       if (!apiKey || apiKey === "undefined") {
         return res.status(400).json({ error: "apiKey is required. Please select an API key in AI Studio, or set the GEMINI_API_KEY environment variable if deployed." });
       }

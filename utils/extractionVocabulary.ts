@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 
 /**
  * Generates a vocabulary hint string from the canonical glossary for a given software.
@@ -9,11 +10,13 @@ export function generateExtractionVocabulary(
   glossaryPath: string,
   software: string
 ): string {
-  if (!fs.existsSync(glossaryPath)) return '';
+  const safePath = path.resolve('glossary', path.basename(glossaryPath));
+  if (!safePath.startsWith(path.resolve('glossary'))) return '';
+  if (!fs.existsSync(safePath)) return '';
 
   let elements: any;
   try {
-    elements = JSON.parse(fs.readFileSync(glossaryPath, 'utf-8'));
+    elements = JSON.parse(fs.readFileSync(safePath, 'utf-8'));
   } catch {
     return ''; // malformed JSON — skip vocabulary rather than crashing
   }
