@@ -24,6 +24,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [chunkSize, setChunkSize] = useState(60); 
   const [overlap, setOverlap] = useState(30);
   const [customContext, setCustomContext] = useState('');
+  const [softwareName, setSoftwareName] = useState('');
+  const [glossaryPath, setGlossaryPath] = useState('glossary/elements.json');
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Runtime State
@@ -151,6 +153,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setChunkSize(data.chunkSize);
         setOverlap(data.overlap);
         setCustomContext(data.customContext || '');
+        setSoftwareName(data.softwareName || '');
+        setGlossaryPath(data.glossaryPath || 'glossary/elements.json');
         setChunks(data.chunks);
         
         // Sanitize loaded actions to ensure unique IDs
@@ -237,6 +241,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         chunkSize,
         overlap,
         customContext,
+        softwareName,
+        glossaryPath,
         chunks,
         actions,
         annotations,
@@ -258,7 +264,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
     }
 
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -271,7 +277,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       try {
         const saveData: Project = {
           id: projectId, name: projectName, updatedAt: Date.now(),
-          videoUrl, durationInput, chunkSize, overlap, customContext,
+          videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath,
           chunks, actions, annotations, narrativeSteps, procState, latestUIState,
           status: procState.status, actionCount: actions.length
         };
@@ -281,7 +287,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
+  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
 
   // Local chunk computation removed as it's now handled by the server
 
@@ -621,6 +627,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             chunkSize,
             overlap,
             customContext,
+            softwareName,
+            glossaryPath,
             apiKey: currentApiKey
           })
         });
@@ -825,6 +833,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               setOverlap={setOverlap}
               customContext={customContext}
               setCustomContext={setCustomContext}
+              softwareName={softwareName}
+              setSoftwareName={setSoftwareName}
+              glossaryPath={glossaryPath}
+              setGlossaryPath={setGlossaryPath}
               onStart={handleStart}
               disabled={isProcessingActive}
             />

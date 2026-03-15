@@ -147,7 +147,8 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
         total_actions: actions.length,
         total_steps: narrativeSteps.length,
         total_annotations: annotations?.length || 0,
-        deduplicated: true // Assume true if generated on client
+        deduplicated: true, // Assume true if generated on client
+        viewportResolution: { width: 1920, height: 1080 }
       }
     });
     return result;

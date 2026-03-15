@@ -32,7 +32,12 @@ export interface JobState {
   lastUpdatedAt: number;
   stateVersion: number;
   logCapOccurred?: boolean;
+  softwareName?: string;
+  glossaryPath?: string;
 }
+
+import { detectViewportResolution } from '../utils/videoMeta.ts';
+import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 
 const jobs = new Map<string, JobState>();
 const cancelTokens = new Set<string>();
@@ -90,6 +95,8 @@ export async function processVideoJob(params: {
   narrationChunkSize?: number;
   customContext: string;
   apiKey: string;
+  softwareName?: string;
+  glossaryPath?: string;
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
@@ -135,7 +142,9 @@ export async function processVideoJob(params: {
       learnedContext: "",
       lastUpdatedAt: Date.now(),
       stateVersion: 1,
-      logCapOccurred: false
+      logCapOccurred: false,
+      softwareName: params.softwareName,
+      glossaryPath: params.glossaryPath
     });
   } else {
     if (existingState!.ttlTimerId) {
@@ -188,6 +197,8 @@ export function cancelJob(jobId: string): boolean {
   narrationChunkSize?: number;
   customContext: string;
   apiKey: string;
+  softwareName?: string;
+  glossaryPath?: string;
 }, isResuming: boolean) {
   const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;
   
@@ -216,7 +227,11 @@ export function cancelJob(jobId: string): boolean {
 
   if (isResuming) {
     if (state.currentChunkIndex >= state.chunks.length && state.narrationChunkIndex > 0) {
-      addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}...`);
+      if (state.narrationChunkIndex >= state.narrationChunkCount) {
+        addLog('info', `Resuming job from Phase D (all narration complete, dedup failed)...`);
+      } else {
+        addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}/${state.narrationChunkCount}...`);
+      }
     } else {
       addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
     }
@@ -295,6 +310,10 @@ export function cancelJob(jobId: string): boolean {
     let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
     let latestUIState: UIState | null = state.uiState || null;
 
+    const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
+    const vocabulary = params.softwareName ? generateExtractionVocabulary(glossaryPath, params.softwareName) : '';
+    const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
+
     const startIndex = isResuming ? state.currentChunkIndex : 0;
 
     for (let i = startIndex; i < state.chunks.length; i++) {
@@ -311,7 +330,7 @@ export function cancelJob(jobId: string): boolean {
       const progressBase = (i / state.chunks.length) * 50;
       state.progress = progressBase;
 
-      const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+      const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 
       chunk.status = 'analyzing_phase_a';
       bumpVersion(state);
@@ -486,7 +505,7 @@ export function cancelJob(jobId: string): boolean {
       bumpVersion(state);
       addLog('info', `Phase C (${i + 1}/${narrationChunks.length}): Narrating ${formatMMSS(nChunk.primaryStart)}–${formatMMSS(nChunk.primaryEnd)}...`);
 
-      const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+      const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 
       // Buffer extends beyond clip window to catch actions near boundaries.
       // For edge chunks (first/last), this may go negative or past duration —
@@ -731,7 +750,7 @@ export function cancelJob(jobId: string): boolean {
         cumulativeActions,
         cumulativeNarrative,
         latestUIState,
-        customContext,
+        vocabularyContext,
         apiKey,
         addLog,
         (pct) => {
@@ -834,7 +853,8 @@ export function cancelJob(jobId: string): boolean {
           total_actions: state.actions.length,
           total_steps: cumulativeNarrative.length,
           total_annotations: state.annotations.length,
-          deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
+          deduplicated: phaseDSucceeded,  // false = pre-dedup data, may contain duplicates
+          viewportResolution: await detectViewportResolution(state.videoUrl)
         }
       });
       state.cleanedOutput = cleaned;
