@@ -193,6 +193,8 @@ export interface Project extends ProjectSummary {
   chunkSize: number;
   overlap: number;
   customContext: string;
+  softwareName?: string;
+  glossaryPath?: string;
   
   chunks: Chunk[];
   actions: ActionItem[];

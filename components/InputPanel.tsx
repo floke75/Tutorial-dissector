@@ -12,6 +12,10 @@ interface InputPanelProps {
   setOverlap: (n: number) => void;
   customContext: string;
   setCustomContext: (s: string) => void;
+  softwareName: string;
+  setSoftwareName: (s: string) => void;
+  glossaryPath: string;
+  setGlossaryPath: (s: string) => void;
   onStart: () => void;
   disabled: boolean;
 }
@@ -27,10 +31,14 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   setOverlap,
   customContext,
   setCustomContext,
+  softwareName,
+  setSoftwareName,
+  glossaryPath,
+  setGlossaryPath,
   onStart,
   disabled
 }) => {
-  const isDisabled = disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !videoUrl.endsWith('.mp4') && !videoUrl.startsWith('gs://') && !durationInput);
+  const isDisabled = disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !videoUrl.endsWith('.mp4') && !videoUrl.startsWith('gs://') && !durationInput) || !softwareName;
 
   return (
     <div className="bg-white/70 dark:bg-gray-850/70 backdrop-blur-md p-5 rounded-2xl border border-gray-200/50 dark:border-gray-800/50 shadow-md dark:shadow-black/20">
@@ -111,6 +119,33 @@ export const InputPanel: React.FC<InputPanelProps> = ({
             disabled={disabled}
           />
           <p className="text-xs text-gray-500 dark:text-gray-500 mt-1.5">Provides holistic understanding to the LLM</p>
+        </div>
+
+        {/* Vocabulary Feedback */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Software Name <span className="text-red-500">*</span></label>
+            <input 
+              type="text"
+              value={softwareName}
+              onChange={(e) => setSoftwareName(e.target.value)}
+              placeholder="e.g., Cuez"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              disabled={disabled}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Glossary Path</label>
+            <input 
+              type="text"
+              value={glossaryPath}
+              onChange={(e) => setGlossaryPath(e.target.value)}
+              placeholder="glossary/elements.json"
+              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              disabled={disabled}
+            />
+          </div>
         </div>
       </div>
 

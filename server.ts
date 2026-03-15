@@ -48,7 +48,7 @@ async function startServer() {
 
   app.post("/api/start-job", async (req, res) => {
     try {
-      const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext } = req.body;
+      const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, softwareName, glossaryPath } = req.body;
       let apiKey = req.body.apiKey;
       
       console.log("[API /process] Received request.");
@@ -75,7 +75,7 @@ async function startServer() {
         return res.status(400).json({ error: "apiKey is required. Please select an API key in AI Studio, or set the GEMINI_API_KEY environment variable if deployed." });
       }
       
-      const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, apiKey });
+      const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, apiKey, softwareName, glossaryPath });
       res.json({ jobId });
     } catch (error: any) {
       console.error("Failed to start job:", error);
