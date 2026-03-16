@@ -7,8 +7,8 @@ import { DevConsole } from './DevConsole';
 import { ThemeToggle } from './ThemeToggle';
 import { ArrowLeft, LayoutPanelLeft, Activity, Clock, Loader2 } from 'lucide-react';
 import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils';
-import { getProject, saveProject } from '../services/storage';
-import { Chunk, ProcessingState, ActionItem, VideoAnnotation, NarrativeStep, PhaseBResponse, Project, LogLevel } from '../types';
+import { getProject, saveProject, getVocabularies } from '../services/storage';
+import { Chunk, ProcessingState, ActionItem, VideoAnnotation, NarrativeStep, PhaseBResponse, Project, LogLevel, Vocabulary } from '../types';
 import ReactPlayer from 'react-player';
 
 interface AnalysisViewProps {
@@ -26,6 +26,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [customContext, setCustomContext] = useState('');
   const [softwareName, setSoftwareName] = useState('');
   const [glossaryPath, setGlossaryPath] = useState('glossary/elements.json');
+  const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Runtime State
@@ -99,6 +100,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   useEffect(() => {
     const loadData = async () => {
       let data = await getProject(projectId);
+      const vocabs = await getVocabularies();
+      setVocabularies(vocabs);
       
       const emergencyKey = `td_emergency_save_${projectId}`;
       const emergencySave = localStorage.getItem(emergencyKey);
@@ -114,7 +117,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
 
       let needsReconnectPolling = false;
       if (data) {
-        // Recovery check: if IndexedDB shows a running state, verify with server
+        // Recovery check: if Firestore shows a running state, verify with server
         if (data.procState.status === 'running_visual' ||
             data.procState.status === 'running_narrative' ||
             data.procState.status === 'running_dedup') {
@@ -617,6 +620,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       try {
         handleLog('info', 'Starting analysis job on server...', { url: videoUrl });
         
+        let vocabularyContent = undefined;
+        if (glossaryPath && glossaryPath !== 'glossary/elements.json') {
+          const vocab = vocabularies.find(v => v.id === glossaryPath);
+          if (vocab) {
+            vocabularyContent = vocab.content;
+          }
+        }
+        
         const res = await fetch('/api/start-job', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -629,6 +640,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             customContext,
             softwareName,
             glossaryPath,
+            vocabularyContent,
             apiKey: currentApiKey
           })
         });
@@ -837,6 +849,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               setSoftwareName={setSoftwareName}
               glossaryPath={glossaryPath}
               setGlossaryPath={setGlossaryPath}
+              vocabularies={vocabularies}
+              setVocabularies={setVocabularies}
               onStart={handleStart}
               disabled={isProcessingActive}
             />

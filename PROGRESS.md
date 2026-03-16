@@ -17,10 +17,12 @@ The core architecture for the **Verifiable Execution Graph** is fully implemente
 | **BDD Intent Mapping** | ✅ | Pass 2 links `NarrativeStep` (Given/Then) to `ActionItem` (Mechanics) via foreign keys. |
 | **Automation Compiler** | ✅ | `downloadPlaywright()` traverses the graph, mapping bounding boxes to Cartesian `(x, y)` centers. |
 | **Error Path Filtering** | ✅ | Compiler strictly filters out actions flagged as `is_error_recovery`. |
-| **Session Persistence** | ✅ | State autosaved to `IndexedDB` via `services/storage.ts`. |
+| **Session Persistence** | ✅ | State autosaved to Firebase Firestore via `services/storage.ts`. |
 | **Video Synchronization** | ✅ | Two-way sync between ReactPlayer and ResultsTimeline with auto-scrolling and active state highlighting. |
 | **Dynamic Context Accumulation** | ✅ | Phase C extracts `learned_insights` which are appended to a `learnedContext` string and injected into subsequent chunks. |
 | **Context-Aware Deduplication** | ✅ | Phase D uses minified narrative and UI state to differentiate identical actions serving different narrative steps. |
+| **Cloud Persistence & Sync** | ✅ | State autosaved to Firebase Firestore, enabling multi-device sync and permanent storage. |
+| **Custom Vocabularies** | ✅ | Users can upload and manage custom JSON vocabularies for software-specific extraction. |
 
 ---
 
@@ -45,6 +47,6 @@ If you are a coding agent tasked with upgrading this application, pay attention 
     *   **"Zipper" Optimization:** Strips `ui_context` from actions *before* sending them to the LLM in Phase B, and strips both `ui_context` and `chunkIndex` in Phase D. Re-attaches them afterward.
     *   **ID-Drift Fallback:** To prevent metadata loss when the LLM hallucinates or drops action IDs during deduplication, a cascading fallback (strict match -> moderate match) is used to reliably map the stripped metadata back onto the action using its timestamp, type, and description.
 
-### ⚠️ D. Local Storage Quotas
+### ⚠️ D. Storage Quotas & Offline Support
 *   **Issue:** Browsers limit `localStorage` to ~5MB. Storing massive arrays of detailed ActionItems and chat history strings will eventually crash the storage service (`QuotaExceededError`).
-*   **Workaround Implemented:** Migrated `storage.ts` to use `IndexedDB` (via `idb-keyval`) to allow for gigabytes of local project storage.
+*   **Workaround Implemented:** Migrated `storage.ts` to use Firebase Firestore for cloud persistence. However, offline support and optimistic UI updates during network instability might need further refinement. Emergency saves during active processing still use `localStorage` as a temporary fallback.

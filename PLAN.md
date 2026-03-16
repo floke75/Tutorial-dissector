@@ -5,7 +5,8 @@
 
 ## 1. Tech Stack & Infrastructure
 - **Frontend:** React 19 + Tailwind CSS (via CDN/ESM).
-- **State Persistence:** Browser `IndexedDB` (via `idb-keyval`). Projects are indexed and individual project data is stored under `td_project_<id>`.
+- **State Persistence:** Firebase Firestore for cloud persistence and multi-device sync. Projects and custom vocabularies are securely stored under the authenticated user's ID.
+- **Authentication:** Firebase Authentication (Google Sign-In).
 - **AI Backend:** Express server (`server.ts`) using `@google/genai` SDK with `gemini-3.1-pro-preview` for deep video understanding and structured JSON output.
 
 ## 2. Single-Pass Execution Graph Analysis (Data Flow)
@@ -52,8 +53,8 @@ To ensure continuity, the video is chunked with an overlapping sliding window (`
 
 ## 4. UI Component Hierarchy
 1.  **`App`**: Top-level router. Switches between Dashboard and active Project.
-2.  **`Dashboard`**: Reads `IndexedDB` index. Handles creation/deletion of projects.
+2.  **`Dashboard`**: Reads from Firestore. Handles creation/deletion of projects and uploading/managing custom JSON vocabularies.
 3.  **`AnalysisView`**: The heavy lifter. Submits jobs to the backend, polls for updates, and manages the timer. It also hosts the `ReactPlayer` instance for video playback.
-    *   **`InputPanel`**: Sidebar controls for offsets, video URL, and starting the analysis.
+    *   **`InputPanel`**: Sidebar controls for offsets, video URL, vocabulary source, and starting the analysis.
     *   **`ChunkVisualizer`**: Bottom ticker showing the real-time status of Phase A/B chunk processing.
     *   **`ResultsTimeline`**: The main view. Takes the flat `actions`, `annotations`, and `narrativeSteps` arrays, builds a relational tree in memory (`useMemo`), renders it, and houses the JSON/Playwright exporters. It features two-way synchronization with the video player (clicking a step seeks the video, and playing the video auto-scrolls the timeline to highlight the active step).

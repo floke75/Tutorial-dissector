@@ -97,8 +97,29 @@ enum LogLevel { info | warn | error | success }
 -- Entities
 ------------------------------------------------------------
 
+entity UserProfile {
+    id: String
+    email: String
+    display_name: String?
+    photo_url: String?
+    
+    -- Relationships
+    projects: Project with user = this
+    vocabularies: Vocabulary with user = this
+}
+
+entity Vocabulary {
+    id: String
+    user: UserProfile
+    name: String
+    software_name: String
+    content: String
+    updated_at: Timestamp
+}
+
 entity Project {
     id: String
+    user: UserProfile
     name: String
     video_url: String
     updated_at: Timestamp
@@ -111,6 +132,8 @@ entity Project {
     overlap: Duration
     narration_chunk_size: Duration?
     custom_context: String
+    software_name: String?
+    glossary_path: String?
 
     -- Relationships
     chunks: Chunk with project = this
@@ -368,6 +391,22 @@ rule GlobalDeduplication {
 -- Surfaces
 ------------------------------------------------------------
 
+surface ProjectDashboard {
+    facing user: User
+    
+    context user_profile: UserProfile
+    
+    exposes:
+        user_profile.projects
+        user_profile.vocabularies
+        
+    provides:
+        UserCreatesProject()
+        UserDeletesProject(project)
+        UserUploadsVocabulary(vocabulary)
+        UserDeletesVocabulary(vocabulary)
+}
+
 surface AnalysisDashboard {
     facing user: User 
     
@@ -380,6 +419,8 @@ surface AnalysisDashboard {
         project.overlap
         project.narration_chunk_size
         project.custom_context
+        project.software_name
+        project.glossary_path
         project.chunks
         project.narration_chunks
         project.actions

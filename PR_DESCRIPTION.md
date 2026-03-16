@@ -1,71 +1,45 @@
-# Pull Request: Split Processing Loops — Fix Forward-Visibility Gap
+# Pull Request: Cloud Persistence & Custom Vocabularies
 
 ## 🎯 Motivation & Context
-**The Problem:** Previously, Phase C (narrative synthesis) ran inline with Phase A/B in a single per-chunk loop. Because of this, Phase C for chunk `N` only had visibility into actions extracted from chunks `0..N`. It had zero visibility into actions extracted from future chunks. For tutorials where a concept introduced at 02:00 is demonstrated via actions at 02:15 (in a subsequent chunk), Phase C couldn't link them, resulting in broken coverage (~83.6% link coverage).
+**The Problem:** Previously, the application relied on browser `IndexedDB` (via `idb-keyval`) for storing project data. This meant that projects were tied to a specific browser and device, making it impossible for users to access their analysis sessions across different machines. Additionally, the application relied on a hardcoded `glossary/elements.json` file for UI element vocabularies, which restricted users from easily adding or managing custom vocabularies for different software applications.
 
-**The Solution:** Split the pipeline into two sequential loops. 
-1. **Loop 1 (Phase A/B):** Extract and validate ALL actions and annotations across the entire video.
-2. **Loop 2 (Phase C):** Perform narrative synthesis using wider, non-aligned chunks (e.g., 150s), giving the LLM full visibility of *all* extracted actions across the entire timeline.
+**The Solution:** 
+1. **Cloud Persistence:** Integrate Firebase Authentication (Google Sign-In) and Firestore to securely store and sync user projects across devices.
+2. **Custom Vocabularies:** Introduce a new UI and backend flow allowing users to upload, manage, and apply custom JSON vocabularies on a per-project basis.
 
 ---
 
 ## 🏗️ Architecture & Logic Changes
 
-### 1. Tail-Folding for Chunk Windows (`utils/timeUtils.ts`)
-- Added tail-folding logic to `computeChunkWindows`. 
-- If the final chunk in a sequence is less than 50% of the target chunk size, it is now folded into the preceding chunk. This prevents wasting LLM calls on tiny 5-10 second tail segments.
-- Added 3 comprehensive unit tests in `utils/timeUtils.test.ts` to verify strict `< 50%` folding behavior.
+### 1. Firebase Integration (`firebase.ts`, `services/storage.ts`)
+- **Authentication:** Added Google Sign-In via Firebase Auth. Only authenticated users can create, view, and manage projects.
+- **Firestore Migration:** Replaced `idb-keyval` with Firestore. Projects are now stored in a `projects` collection, keyed by the user's UID.
+- **Data Models:** Updated the `Project` and `ProjectSummary` interfaces to align with Firestore document structures.
 
-### 2. State Management & API (`server/jobManager.ts`, `server.ts`)
-- **New State Variables:** Added `narrationChunkIndex`, `narrationChunkSize`, and `narrationChunkCount` to the `JobState` interface.
-- **API Passthrough:** Updated the `/api/start-job` endpoint to accept `narrationChunkSize`.
-- **Resume Validation:** Updated the `isResuming` check to ensure `narrationChunkSize` matches the existing job state to prevent layout misalignment on resume.
+### 2. Custom Vocabularies Management (`components/Dashboard.tsx`, `services/storage.ts`)
+- **Dashboard UI:** Added a new "Custom Vocabularies" section to the Dashboard.
+- **Upload Flow:** Users can upload `.json` files containing custom UI element definitions. These are validated and stored in a new `vocabularies` Firestore collection.
+- **Deletion:** Added confirmation-based deletion for custom vocabularies to prevent accidental data loss.
 
-### 3. Loop 1: Phase A/B Extraction (0% - 50% Progress)
-- Stripped Phase C logic out of the primary `for` loop.
-- The loop now strictly handles Phase A (Raw Extraction) and Phase B (Validation & State Merge).
-- Progress scaling for this loop was adjusted to map from `0%` to `50%`.
-- Replaced the old atomic state commit with an A/B-only state commit that updates `chatHistory`, assigns `chunkIndex` to new actions/annotations, and commits UI state.
+### 3. Project Configuration (`components/InputPanel.tsx`, `components/AnalysisView.tsx`)
+- **Vocabulary Selection:** Replaced the static text input for `glossaryPath` with a dynamic dropdown in the `InputPanel`. Users can now select either the default `glossary/elements.json` or any of their uploaded custom vocabularies.
+- **State Threading:** Threaded the selected vocabulary content through the `AnalysisView` and into the backend job submission.
 
-### 4. Loop 2: Phase C Narrative Synthesis (50% - 90% Progress)
-- Introduced a secondary `for` loop that iterates over `narrationChunks` (wider windows, default 150s, with reduced overlap).
-- **Full Action Visibility:** The LLM now receives `relevantActions` and `relevantAnnotations` filtered from the *entire* `cumulativeActions` array, buffered by 15 seconds on either side of the clip window to catch boundary actions.
-- **Resumability:** Added robust resume logic (`resumingPhaseC`). If a job fails during Phase C, it will skip the A/B loop entirely, preserve existing narrative steps and `learnedContext`, and resume exactly at the failed `narrationChunkIndex`.
-- **Retry Logic:** Maintained the 1x retry logic if Phase C returns 0 steps despite having relevant actions in its window.
+### 4. Backend Processing (`server/jobManager.ts`, `utils/extractionVocabulary.ts`)
+- **Dynamic Vocabulary Injection:** Updated the `/api/start-job` endpoint to accept `vocabularyContent`.
+- **Extraction Logic:** Modified `generateExtractionVocabulary` to prioritize the provided `vocabularyContent` over reading from the local filesystem. This allows the LLM to use the user's custom definitions during Phase A and Phase B extraction.
 
-### 5. UI & Visualizer Updates (`components/ChunkVisualizer.tsx`, `components/AnalysisView.tsx`)
-- **Removed Dead State:** Removed the `analyzing_phase_c` pulse animation and labels from the individual A/B chunk tiles, as they no longer process Phase C.
-- **New Indicator:** Added a dedicated narration progress row below the chunk tiles (e.g., *"Narrating segment 1 of 3..."*) with a pulsing indigo indicator.
-- **Legend:** Added "Narration" to the visualizer legend.
-- **State Threading:** Threaded `narrationChunkIndex`, `narrationChunkCount`, and `isNarrating` from `AnalysisView` down to `ChunkVisualizer`.
-
-### 6. Specification Updates (`tutorial-dissector.allium.md`)
-- **Updated Source of Truth:** The Allium specification has been updated to accurately reflect the new split-loop pipeline architecture.
-- **New Entities & Enums:** Added `NarrationChunk` entity and `NarrationChunkStatus` enum to model the wider, non-aligned chunks used in Phase C.
-- **State Management:** Added `narration_chunk_index`, `narration_chunk_size`, and `narration_chunk_count` to `ProcessingState` and `Project` entities.
-- **Rule Transitions:** Updated `CompletePhaseB`, `CompletePhaseC`, and `GlobalDeduplication` rules, and added explicit `StartNarrativeSynthesis` and `StartGlobalDeduplication` rules to formally model the new pipeline transitions.
+### 5. Specification Updates (`tutorial-dissector.allium.md`, `PLAN.md`, `PROGRESS.md`)
+- **Allium Spec:** Added `UserProfile` and `Vocabulary` entities. Updated the `Project` entity to link to `UserProfile`. Added the `ProjectDashboard` surface.
+- **Documentation:** Updated `PLAN.md` and `PROGRESS.md` to reflect the shift from `IndexedDB` to Firebase Firestore and the addition of the custom vocabulary feature.
 
 ---
 
 ## 🧪 Testing & Verification Guide for Reviewer
 
-### Automated Tests
-1. Run `npx vitest run utils/timeUtils.test.ts`. Verify all 9 tests pass (specifically the 3 new tail-folding tests).
-2. Run `npx tsc --noEmit` to verify no TypeScript interface regressions.
-
 ### Manual Verification Steps
-1. **Chunk Layout:** Start a job with a ~3:45 video. Verify logs show the A/B chunks (e.g., 4x 60s chunks) and a separate Narration plan (e.g., 2x 150s chunks, with the tail folded).
-2. **Sequential Execution:** Verify in the UI/logs that all A/B chunks complete (turning green) *before* "Starting narrative synthesis" begins.
-3. **Progress Bar:** Verify the progress bar scales smoothly:
-   - `0-50%`: Phase A/B
-   - `50-90%`: Phase C
-   - `92-100%`: Phase D (Global Dedup)
-4. **UI Feedback:** Verify the A/B chunk tiles do *not* show "NARRATING...". Verify the new "Narrating segment X of Y..." text appears below the tiles during Phase C.
-5. **Resume Behavior:** 
-   - Cancel a job midway through Phase C.
-   - Restart the job.
-   - Verify the logs state: `"Resuming Phase C from narration chunk X/Y. Preserving Z existing steps."`
-   - Verify Phase A/B is skipped and no duplicate narrative steps are generated.
-
----
-*Note: This PR perfectly aligns with the `PLAN_CONFIRMATION.md` checklist.*
+1. **Authentication:** Open the app in an incognito window. Verify that you are prompted to sign in with Google before accessing the dashboard.
+2. **Project Sync:** Create a project on one device/browser, then log in on another. Verify that the project appears and loads correctly.
+3. **Vocabulary Upload:** Upload a valid JSON vocabulary file from the dashboard. Verify it appears in the "Custom Vocabularies" list.
+4. **Vocabulary Application:** Open a project, select the newly uploaded vocabulary from the "Vocabulary Source" dropdown, and start an analysis. Verify in the backend logs that the custom vocabulary content is being passed to the LLM.
+5. **Deletion:** Delete a project and a custom vocabulary. Verify they are removed from the UI and Firestore.

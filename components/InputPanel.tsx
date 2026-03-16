@@ -1,5 +1,7 @@
 
-import React from 'react';
+import React, { useState, useRef } from 'react';
+import { Vocabulary } from '../types';
+import { saveVocabulary } from '../services/storage';
 
 interface InputPanelProps {
   videoUrl: string;
@@ -16,6 +18,8 @@ interface InputPanelProps {
   setSoftwareName: (s: string) => void;
   glossaryPath: string;
   setGlossaryPath: (s: string) => void;
+  vocabularies: Vocabulary[];
+  setVocabularies: React.Dispatch<React.SetStateAction<Vocabulary[]>>;
   onStart: () => void;
   disabled: boolean;
 }
@@ -35,9 +39,42 @@ export const InputPanel: React.FC<InputPanelProps> = ({
   setSoftwareName,
   glossaryPath,
   setGlossaryPath,
+  vocabularies,
+  setVocabularies,
   onStart,
   disabled
 }) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const content = await file.text();
+      // Basic validation
+      JSON.parse(content);
+      
+      const newVocab = {
+        name: file.name,
+        softwareName: softwareName || 'Unknown Software',
+        content
+      };
+      
+      const id = await saveVocabulary(newVocab);
+      const savedVocab = { ...newVocab, id, userId: 'temp', updatedAt: Date.now() };
+      setVocabularies(prev => [savedVocab, ...prev]);
+      setGlossaryPath(id);
+    } catch (err) {
+      alert("Invalid JSON file. Please upload a valid vocabulary JSON.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const isDisabled = disabled || !videoUrl || (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be') && !videoUrl.includes('generativelanguage.googleapis.com') && !videoUrl.endsWith('.mp4') && !videoUrl.startsWith('gs://') && !durationInput) || !softwareName;
 
   return (
@@ -136,15 +173,34 @@ export const InputPanel: React.FC<InputPanelProps> = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Glossary Path</label>
-            <input 
-              type="text"
-              value={glossaryPath}
-              onChange={(e) => setGlossaryPath(e.target.value)}
-              placeholder="glossary/elements.json"
-              className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
-              disabled={disabled}
-            />
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Vocabulary Source</label>
+            <div className="flex gap-2">
+              <select
+                value={glossaryPath}
+                onChange={(e) => setGlossaryPath(e.target.value)}
+                className="flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm text-gray-900 dark:text-white"
+                disabled={disabled}
+              >
+                <option value="glossary/elements.json">Default (glossary/elements.json)</option>
+                {vocabularies.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled || isUploading}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl transition-colors text-sm font-medium whitespace-nowrap"
+              >
+                {isUploading ? '...' : 'Upload'}
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".json"
+                className="hidden"
+              />
+            </div>
           </div>
         </div>
       </div>

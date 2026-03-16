@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { AnalysisView } from './components/AnalysisView';
+import { AuthProvider } from './components/AuthProvider';
 
 function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -15,18 +16,20 @@ function App() {
   }, []);
 
   return (
-    <div className="h-full bg-warm-flow text-gray-900 dark:text-gray-100 font-sans overflow-hidden transition-colors duration-200">
-      {!activeProjectId ? (
-        <div className="h-full overflow-y-auto">
-          <Dashboard onOpenProject={setActiveProjectId} />
-        </div>
-      ) : (
-        <AnalysisView 
-          projectId={activeProjectId} 
-          onBack={() => setActiveProjectId(null)} 
-        />
-      )}
-    </div>
+    <AuthProvider>
+      <div className="h-full bg-warm-flow text-gray-900 dark:text-gray-100 font-sans overflow-hidden transition-colors duration-200">
+        {!activeProjectId ? (
+          <div className="h-full overflow-y-auto">
+            <Dashboard onOpenProject={setActiveProjectId} />
+          </div>
+        ) : (
+          <AnalysisView 
+            projectId={activeProjectId} 
+            onBack={() => setActiveProjectId(null)} 
+          />
+        )}
+      </div>
+    </AuthProvider>
   );
 }
 

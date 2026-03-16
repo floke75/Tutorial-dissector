@@ -179,6 +179,15 @@ export interface VideoMetadata {
     duration?: number;
 }
 
+export interface Vocabulary {
+  id: string;
+  userId: string;
+  name: string;
+  softwareName: string;
+  content: string;
+  updatedAt: number;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
