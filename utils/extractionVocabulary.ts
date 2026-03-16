@@ -8,17 +8,27 @@ import path from 'path';
  */
 export function generateExtractionVocabulary(
   glossaryPath: string,
-  software: string
+  software: string,
+  vocabularyContent?: string
 ): string {
-  const safePath = path.resolve('glossary', path.basename(glossaryPath));
-  if (!safePath.startsWith(path.resolve('glossary'))) return '';
-  if (!fs.existsSync(safePath)) return '';
-
   let elements: any;
-  try {
-    elements = JSON.parse(fs.readFileSync(safePath, 'utf-8'));
-  } catch {
-    return ''; // malformed JSON — skip vocabulary rather than crashing
+  
+  if (vocabularyContent) {
+    try {
+      elements = JSON.parse(vocabularyContent);
+    } catch {
+      return '';
+    }
+  } else {
+    const safePath = path.resolve('glossary', path.basename(glossaryPath));
+    if (!safePath.startsWith(path.resolve('glossary'))) return '';
+    if (!fs.existsSync(safePath)) return '';
+
+    try {
+      elements = JSON.parse(fs.readFileSync(safePath, 'utf-8'));
+    } catch {
+      return ''; // malformed JSON — skip vocabulary rather than crashing
+    }
   }
 
   const softwareElements = elements[software];

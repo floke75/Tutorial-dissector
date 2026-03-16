@@ -97,6 +97,7 @@ export async function processVideoJob(params: {
   apiKey: string;
   softwareName?: string;
   glossaryPath?: string;
+  vocabularyContent?: string;
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
@@ -311,7 +312,7 @@ export function cancelJob(jobId: string): boolean {
     let latestUIState: UIState | null = state.uiState || null;
 
     const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
-    const vocabulary = params.softwareName ? generateExtractionVocabulary(glossaryPath, params.softwareName) : '';
+    const vocabulary = params.softwareName ? generateExtractionVocabulary(glossaryPath, params.softwareName, params.vocabularyContent) : '';
     const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
 
     const startIndex = isResuming ? state.currentChunkIndex : 0;

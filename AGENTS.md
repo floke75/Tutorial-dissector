@@ -5,12 +5,12 @@
 
 ## 1. System Architecture & Directory Map
 
-The application is a **full-stack** application: a React 19 SPA frontend backed by an Express server (`server.ts`). The frontend stores project data in **IndexedDB** (via `idb-keyval`). All Gemini API calls are made **server-side** via `server/jobManager.ts`, which imports from `services/geminiService.ts`.
+The application is a **full-stack** application: a React 19 SPA frontend backed by an Express server (`server.ts`). The frontend stores project data in **Firebase Firestore** for cloud persistence and multi-device sync. All Gemini API calls are made **server-side** via `server/jobManager.ts`, which imports from `services/geminiService.ts`.
 
 *   **`types.ts`**: The source of truth for the **Verifiable Execution Graph**. Contains definitions for `ActionItem` (mechanics) and `NarrativeStep` (intent). If you add a feature, update the types here first.
 *   **`constants.ts`**: Contains the raw system prompts for Phase A (`PHASE_A_SYSTEM_PROMPT`), Phase B (`PHASE_B_SYSTEM_PROMPT`), Phase C (`PASS_2_SYSTEM_PROMPT`), and Phase D (`GLOBAL_DEDUPLICATION_PROMPT`). Prompt engineering happens here.
 *   **`services/geminiService.ts`**: Handles all LLM API calls. **Crucially, it maps `types.ts` into Zod schemas compiled via `zodToJsonSchema`.**
-*   **`services/storage.ts`**: Wraps `IndexedDB` (via `idb-keyval`). Handles project creation, saving, and indexing.
+*   **`services/storage.ts`**: Wraps Firebase Firestore. Handles project and custom vocabulary creation, saving, and querying.
 *   **`utils/timeUtils.ts`**: Mathematical utilities for overlapping chunk windows (`clipStart`/`clipEnd` vs `primaryStart`/`primaryEnd`).
 *   **`components/AnalysisView.tsx`**: The core frontend orchestrator. Submits jobs to the backend, polls for updates, and hosts the `ReactPlayer` instance for video playback.
 *   **`components/ResultsTimeline.tsx`**: The renderer and compiler. It maps the relational tree, handles two-way video synchronization (auto-scrolling and seeking), and contains the `downloadPlaywright()` automation compiler.
