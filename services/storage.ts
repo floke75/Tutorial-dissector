@@ -157,7 +157,7 @@ export const createProject = async (): Promise<string> => {
     overlap: 30,
     customContext: '',
     softwareName: '',
-    glossaryPath: 'glossary/elements.json',
+    glossaryPath: 'cuez_rundown_vocabulary_v2.4.json',
     chunks: '[]',
     actions: '[]',
     annotations: '[]',
@@ -193,6 +193,36 @@ export const getProject = async (id: string): Promise<Project | null> => {
     
     const data = docSnap.data();
     
+    // Function to retrieve chunked large strings
+    const getLargeString = async (key: string, fallback: string): Promise<string> => {
+      if (data[key] && data[key] !== 'CHUNKED') {
+        return data[key]; // Backward compatibility
+      }
+      try {
+        const metaSnap = await getDoc(doc(db, 'projects', id, 'blobs', key));
+        if (!metaSnap.exists()) return fallback;
+        const numChunks = metaSnap.data().chunks;
+        let result = "";
+        for (let i = 0; i < numChunks; i++) {
+          const chunkSnap = await getDoc(doc(db, 'projects', id, 'blobs', `${key}_${i}`));
+          if (chunkSnap.exists()) {
+            result += chunkSnap.data().data;
+          }
+        }
+        return result || fallback;
+      } catch (e) {
+        console.warn(`Failed to load blob ${key}`, e);
+        return fallback;
+      }
+    };
+    
+    const chunksStr = await getLargeString('chunks', '[]');
+    const actionsStr = await getLargeString('actions', '[]');
+    const annotationsStr = await getLargeString('annotations', '[]');
+    const narrativeStepsStr = await getLargeString('narrativeSteps', '[]');
+    const procStateStr = await getLargeString('procState', JSON.stringify({ status: 'idle', logs: [] }));
+    const latestUIStateStr = await getLargeString('latestUIState', 'null');
+    
     // Parse JSON fields
     const parsed: Project = {
       id: data.id,
@@ -206,13 +236,13 @@ export const getProject = async (id: string): Promise<Project | null> => {
       overlap: data.overlap || 30,
       customContext: data.customContext || '',
       softwareName: data.softwareName || '',
-      glossaryPath: data.glossaryPath || 'glossary/elements.json',
-      chunks: data.chunks ? JSON.parse(data.chunks) : [],
-      actions: data.actions ? JSON.parse(data.actions) : [],
-      annotations: data.annotations ? JSON.parse(data.annotations) : [],
-      narrativeSteps: data.narrativeSteps ? JSON.parse(data.narrativeSteps) : [],
-      procState: data.procState ? JSON.parse(data.procState) : { status: 'idle', logs: [] },
-      latestUIState: data.latestUIState ? JSON.parse(data.latestUIState) : null
+      glossaryPath: data.glossaryPath || 'cuez_rundown_vocabulary_v2.4.json',
+      chunks: chunksStr ? JSON.parse(chunksStr) : [],
+      actions: actionsStr ? JSON.parse(actionsStr) : [],
+      annotations: annotationsStr ? JSON.parse(annotationsStr) : [],
+      narrativeSteps: narrativeStepsStr ? JSON.parse(narrativeStepsStr) : [],
+      procState: procStateStr ? JSON.parse(procStateStr) : { status: 'idle', logs: [] },
+      latestUIState: latestUIStateStr ? JSON.parse(latestUIStateStr) : null
     };
     
     // Backwards compatibility
@@ -231,29 +261,73 @@ export const saveProject = async (data: Project) => {
   
   const now = Date.now();
   
-  const firestoreData = {
-    id: data.id,
-    userId: auth.currentUser.uid,
-    name: data.name || 'Untitled Analysis',
-    updatedAt: now,
-    videoUrl: data.videoUrl || '',
-    status: data.procState?.status || data.status || 'idle',
-    actionCount: data.actions?.length || 0,
-    durationInput: data.durationInput || '',
-    chunkSize: data.chunkSize || 60,
-    overlap: data.overlap || 30,
-    customContext: data.customContext || '',
-    softwareName: data.softwareName || '',
-    glossaryPath: data.glossaryPath || 'glossary/elements.json',
-    chunks: JSON.stringify(data.chunks || []),
-    actions: JSON.stringify(data.actions || []),
-    annotations: JSON.stringify(data.annotations || []),
-    narrativeSteps: JSON.stringify(data.narrativeSteps || []),
-    procState: JSON.stringify(data.procState || { status: 'idle', logs: [] }),
-    latestUIState: JSON.stringify(data.latestUIState || null)
+  const saveLargeString = async (key: string, hugeString: string) => {
+     const chunkSize = 800000; // ~800KB
+     const numChunks = Math.ceil(hugeString.length / chunkSize);
+     
+     // write the metadata info
+     await setDoc(doc(db, 'projects', data.id, 'blobs', key), { chunks: numChunks, updatedAt: now });
+
+     // write chunks
+     for (let i = 0; i < numChunks; i++) {
+       const chunkStr = hugeString.slice(i * chunkSize, (i + 1) * chunkSize);
+       await setDoc(doc(db, 'projects', data.id, 'blobs', `${key}_${i}`), { data: chunkStr });
+     }
   };
   
   try {
+    const chunksStr = JSON.stringify(data.chunks || []);
+    const actionsStr = JSON.stringify(data.actions || []);
+    const annotationsStr = JSON.stringify(data.annotations || []);
+    const narrativeStepsStr = JSON.stringify(data.narrativeSteps || []);
+    const procStateStr = JSON.stringify(data.procState || { status: 'idle', logs: [] });
+    const latestUIStateStr = JSON.stringify(data.latestUIState || null);
+    
+    const firestoreData: any = {
+      id: data.id,
+      userId: auth.currentUser.uid,
+      name: data.name || 'Untitled Analysis',
+      updatedAt: now,
+      videoUrl: data.videoUrl || '',
+      status: data.procState?.status || data.status || 'idle',
+      actionCount: data.actions?.length || 0,
+      durationInput: data.durationInput || '',
+      chunkSize: data.chunkSize || 60,
+      overlap: data.overlap || 30,
+      customContext: data.customContext || '',
+      softwareName: data.softwareName || '',
+      glossaryPath: data.glossaryPath || 'cuez_rundown_vocabulary_v2.4.json'
+    };
+
+    const totalSize = chunksStr.length + actionsStr.length + annotationsStr.length + 
+                      narrativeStepsStr.length + procStateStr.length + latestUIStateStr.length;
+
+    // If total size easily fits in 1MB Firestore limit, do 1 write instead of 13!
+    if (totalSize < 800000) {
+      firestoreData.chunks = chunksStr;
+      firestoreData.actions = actionsStr;
+      firestoreData.annotations = annotationsStr;
+      firestoreData.narrativeSteps = narrativeStepsStr;
+      firestoreData.procState = procStateStr;
+      firestoreData.latestUIState = latestUIStateStr;
+    } else {
+      firestoreData.chunks = 'CHUNKED';
+      firestoreData.actions = 'CHUNKED';
+      firestoreData.annotations = 'CHUNKED';
+      firestoreData.narrativeSteps = 'CHUNKED';
+      firestoreData.procState = 'CHUNKED';
+      firestoreData.latestUIState = 'CHUNKED';
+      
+      await Promise.all([
+        saveLargeString('chunks', chunksStr),
+        saveLargeString('actions', actionsStr),
+        saveLargeString('annotations', annotationsStr),
+        saveLargeString('narrativeSteps', narrativeStepsStr),
+        saveLargeString('procState', procStateStr),
+        saveLargeString('latestUIState', latestUIStateStr)
+      ]);
+    }
+    
     await setDoc(doc(db, 'projects', data.id), firestoreData);
   } catch (e) {
     handleFirestoreError(e, OperationType.UPDATE, `projects/${data.id}`);

@@ -98,27 +98,57 @@ export async function processVideoJob(params: {
   softwareName?: string;
   glossaryPath?: string;
   vocabularyContent?: string;
+  resumeState?: any;
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
-  const existingState = jobs.get(jobId);
+  let existingState = jobs.get(jobId);
   if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
     return jobId; // Job is already running, do nothing
   }
 
-  const isResuming = !!(existingState &&
+  const fromScratchResuming = !!(params.resumeState && !existingState);
+
+  const isResuming = !!(fromScratchResuming || (existingState &&
                      (existingState.status === 'cancelled' || existingState.status === 'error') &&
                      existingState.videoUrl === params.videoUrl &&
                      existingState.chunkSize === params.chunkSize &&
                      existingState.overlap === params.overlap &&
                      existingState.narrationChunkSize ===
                        (params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5)) &&
-                     existingState.narrationChunkCount > 0 &&
-                     existingState.chunks.length > 0);
+                     // Remove constraint that narrationChunkCount > 0 so that it can resume if failed in visual phase
+                     existingState.chunks.length > 0));
 
   const runId = uuidv4();
 
-  if (!isResuming) {
+  if (fromScratchResuming) {
+    cancelTokens.delete(jobId);
+    jobs.set(jobId, {
+      ...params.resumeState,
+      id: jobId,
+      runId,
+      status: 'running_visual',
+      logs: [],
+      lastUpdatedAt: Date.now(),
+      stateVersion: 1,
+      logCapOccurred: false,
+      actions: params.resumeState.actions || [],
+      annotations: params.resumeState.annotations || [],
+      narrativeSteps: params.resumeState.narrativeSteps || [],
+      videoUrl: params.resumeState.videoUrl || params.videoUrl,
+      duration: params.resumeState.duration || 0,
+      chunks: params.resumeState.chunks || [],
+      currentChunkIndex: params.resumeState.currentChunkIndex || 0,
+      narrationChunkIndex: params.resumeState.narrationChunkIndex || 0,
+      narrationChunkCount: params.resumeState.narrationChunkCount || 0,
+      chatHistory: params.resumeState.chatHistory || [],
+      chunkSize: params.resumeState.chunkSize || params.chunkSize,
+      overlap: params.resumeState.overlap || params.overlap,
+      narrationChunkSize: params.resumeState.narrationChunkSize || (params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5)),
+      learnedContext: params.resumeState.learnedContext || ""
+    });
+    existingState = jobs.get(jobId);
+  } else if (!isResuming) {
     cancelTokens.delete(jobId);
     jobs.set(jobId, {
       id: jobId,
@@ -200,6 +230,7 @@ export function cancelJob(jobId: string): boolean {
   apiKey: string;
   softwareName?: string;
   glossaryPath?: string;
+  vocabularyContent?: string;
 }, isResuming: boolean) {
   const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;
   
@@ -241,7 +272,7 @@ export function cancelJob(jobId: string): boolean {
   try {
     let duration = state.duration;
     
-    if (!isResuming) {
+    if (!isResuming || state.chunks.length === 0) {
       addLog('info', 'Fetching video metadata...', { url: videoUrl });
       
       if (durationInput) {
@@ -298,7 +329,7 @@ export function cancelJob(jobId: string): boolean {
     const narrationOverlap = Math.round(narrationChunkSize * narrationOverlapRatio);
     const narrationChunks = computeChunkWindows(duration, narrationChunkSize, narrationOverlap);
     
-    if (isResuming && state.narrationChunkCount !== narrationChunks.length) {
+    if (isResuming && state.narrationChunkCount > 0 && state.narrationChunkCount !== narrationChunks.length) {
       throw new Error(`Narration chunk layout drift detected on resume. Expected ${state.narrationChunkCount} chunks, but computed ${narrationChunks.length}. Please start a new job.`);
     }
     
@@ -311,9 +342,38 @@ export function cancelJob(jobId: string): boolean {
     let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
     let latestUIState: UIState | null = state.uiState || null;
 
-    const glossaryPath = params.glossaryPath ?? 'glossary/elements.json';
+    const glossaryPath = params.glossaryPath ?? 'cuez_rundown_vocabulary_v2.4.json';
     const vocabulary = params.softwareName ? generateExtractionVocabulary(glossaryPath, params.softwareName, params.vocabularyContent) : '';
     const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
+
+    if ((state as any).isRawExport) {
+      let maxChunkIndex = -1;
+      let maxTimestamp = 0;
+      
+      for (const action of cumulativeActions) {
+        if (action.chunkIndex !== undefined && action.chunkIndex > maxChunkIndex) maxChunkIndex = action.chunkIndex;
+        const sec = parseMMSS(action.timestamp);
+        if (sec > maxTimestamp) maxTimestamp = sec;
+      }
+      for (const ann of cumulativeAnnotations) {
+        if (ann.chunkIndex !== undefined && ann.chunkIndex > maxChunkIndex) maxChunkIndex = ann.chunkIndex;
+        const sec = parseMMSS(ann.timestamp);
+        if (sec > maxTimestamp) maxTimestamp = sec;
+      }
+      
+      if (maxChunkIndex >= 0) {
+        state.currentChunkIndex = Math.min(maxChunkIndex + 1, Math.max(0, state.chunks.length - 1));
+      } else {
+        let calcIndex = Math.floor(maxTimestamp / Math.max(1, chunkSize - overlap));
+        state.currentChunkIndex = Math.min(calcIndex, Math.max(0, state.chunks.length - 1));
+      }
+      
+      let calcNarrIndex = Math.floor(maxTimestamp / Math.max(1, narrationChunkSize - narrationOverlap));
+      state.narrationChunkIndex = Math.min(calcNarrIndex, Math.max(0, narrationChunks.length - 1));
+      
+      addLog('info', `Resuming from raw export. Inferred visual chunk ${state.currentChunkIndex + 1} and narrative chunk ${state.narrationChunkIndex + 1}.`);
+      (state as any).isRawExport = false;
+    }
 
     const startIndex = isResuming ? state.currentChunkIndex : 0;
 
@@ -800,10 +860,10 @@ export function cancelJob(jobId: string): boolean {
               // Tie-breaker: find the most similar original action
               keptAction = candidates.reduce((best, current) => {
                 const scoreCurrent = (current.target?.element === oldAction.target?.element ? 2 : 0) + 
-                                     (current.target?.panel === oldAction.target?.panel ? 1 : 0) +
+                                     (current.target?.container === oldAction.target?.container ? 1 : 0) +
                                      (current.detail === oldAction.detail ? 3 : 0);
                 const scoreBest = (best.target?.element === oldAction.target?.element ? 2 : 0) + 
-                                  (best.target?.panel === oldAction.target?.panel ? 1 : 0) +
+                                  (best.target?.container === oldAction.target?.container ? 1 : 0) +
                                   (best.detail === oldAction.detail ? 3 : 0);
                 return scoreCurrent > scoreBest ? current : best;
               });
@@ -895,7 +955,8 @@ export function cancelJob(jobId: string): boolean {
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
     state.status = 'error';
-    state.error = error.message || 'Unknown error occurred';
+    const stackStr = error.stack ? `\nStack: ${error.stack}` : '';
+    state.error = (error.message || 'Unknown error occurred') + stackStr;
     addLog('error', `Fatal error: ${state.error}`);
 
     // Mark the current chunk as errored

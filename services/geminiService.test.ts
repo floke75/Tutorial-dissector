@@ -101,10 +101,11 @@ describe('Real-world Gemini 3.1 Usage Tests', () => {
       actor: "user",
       target: {
         element: "Submit Button",
-        location: "Bottom Right",
-        panel: "Main Form",
-        visual: "Blue button with white text",
-        spatial_bounding_box: [900, 800, 950, 900]
+        element_type: "button",
+        container: "Main Form",
+        nearest_landmark: "Bottom Right corner",
+        relation_to_landmark: "inside",
+        visual: "Blue button with white text"
       },
       interacted_components: [
         {
@@ -157,8 +158,10 @@ describe('Real-world Gemini 3.1 Usage Tests', () => {
           actor: "user",
           target: {
             element: "File",
-            location: "Top Menu",
-            panel: "Menu Bar",
+            element_type: "dropdown",
+            container: "Menu Bar",
+            nearest_landmark: "Top Menu",
+            relation_to_landmark: "inside",
             visual: "Text 'File'"
           },
           detail: "Clicked File menu",
@@ -170,6 +173,9 @@ describe('Real-world Gemini 3.1 Usage Tests', () => {
     };
 
     const result = phaseBResponseSchema.safeParse(mockResponse);
+    if (!result.success) {
+      console.error(result.error);
+    }
     expect(result.success).toBe(true);
   });
 });

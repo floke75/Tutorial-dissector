@@ -12,11 +12,11 @@ actor System
 
 value ActionTarget {
     element: String
-    location: String
-    panel: String
+    element_type: String
+    container: String
+    nearest_landmark: String
+    relation_to_landmark: String
     visual: String
-    -- Normalized bounding box [ymin, xmin, ymax, xmax] on a 0-1000 scale
-    spatial_bounding_box: List<Decimal>?
 }
 
 value UIComponent {
@@ -90,7 +90,7 @@ enum AnnotationType {
     transition | illustration | bullet_points | other
 }
 enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
-enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
+enum UIComponentType { button | input | link | dropdown | checkbox | radio | icon | text | menu_item | tab | toggle | slider | image | video | canvas | list_item | modal | panel | other }
 enum LogLevel { info | warn | error | success }
 
 ------------------------------------------------------------

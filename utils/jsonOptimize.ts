@@ -59,7 +59,7 @@ export interface CleanOptions {
 }
 
 /**
- * Removes: confidence, chunkIndex, and target.spatial_bounding_box.
+ * Removes: confidence, chunkIndex, and ui_context.
  * Applies to both actions and annotations.
  */
 export function stripExtractionMeta(obj: any, options?: CleanOptions): any {
@@ -71,12 +71,6 @@ export function stripExtractionMeta(obj: any, options?: CleanOptions): any {
   }
   delete result.chunkIndex;
   delete result.ui_context;
-  
-  if (result.target && typeof result.target === 'object') {
-    const targetCopy = { ...result.target };
-    delete targetCopy.spatial_bounding_box;
-    result.target = targetCopy;
-  }
   
   return result;
 }

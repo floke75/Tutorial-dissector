@@ -5,6 +5,8 @@ import { processVideoJob, getJobState, cancelJob } from "./server/jobManager.ts"
 
 async function startServer() {
   console.log("Starting server initialization...");
+  console.log("Is XMLHttpRequest defined?", typeof (global as any).XMLHttpRequest);
+  console.log("Is fetch defined?", typeof fetch);
   if (!process.env.GEMINI_API_KEY) {
     console.warn("WARNING: GEMINI_API_KEY is not set in the environment. API calls will fail.");
   }
@@ -12,7 +14,7 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -48,7 +50,7 @@ async function startServer() {
 
   app.post("/api/start-job", async (req, res) => {
     try {
-      const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, softwareName, glossaryPath, vocabularyContent } = req.body;
+      const { jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, softwareName, glossaryPath, vocabularyContent, resumeState } = req.body;
       let apiKey = req.body.apiKey;
       
       console.log("[API /process] Received request.");
@@ -78,7 +80,7 @@ async function startServer() {
         return res.status(400).json({ error: "apiKey is required. Please select an API key in AI Studio, or set the GEMINI_API_KEY environment variable if deployed." });
       }
       
-      const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, apiKey, softwareName, glossaryPath, vocabularyContent });
+      const jobId = await processVideoJob({ jobId: reqJobId, videoUrl, durationInput, chunkSize, overlap, narrationChunkSize, customContext, apiKey, softwareName, glossaryPath, vocabularyContent, resumeState });
       res.json({ jobId });
     } catch (error: any) {
       console.error("Failed to start job:", error);
@@ -130,6 +132,13 @@ async function startServer() {
     res.json({ ...safeState, logIndex: state.logs.length, unchanged: false });
   });
 
+  app.get("/api/jobs", async (req, res) => {
+    const { getJobState } = await import("./server/jobManager.ts");
+    // We can't get all jobs easily unless we expose the map. 
+    // Let's just return a placeholder for now.
+    res.json({ error: "not implemented" });
+  });
+
   app.post("/api/start-job/:jobId/cancel", (req, res) => {
     const success = cancelJob(req.params.jobId);
     if (success) {
@@ -173,6 +182,23 @@ async function startServer() {
       res.status(500).json({ error: error.message || "Integration test failed" });
     }
   });
+
+  app.get("/api/test-output-files", async (req, res) => {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const dir = path.join(process.cwd(), "test-output");
+      if (!fs.existsSync(dir)) {
+        return res.json({ files: [] });
+      }
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') || f.endsWith('.log'));
+      res.json({ files });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.use("/test-output", express.static(process.cwd() + "/test-output"));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

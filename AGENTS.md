@@ -20,7 +20,7 @@ The application is a **full-stack** application: a React 19 SPA frontend backed 
 This app doesn't output flat text; it builds a highly normalized relational database:
 
 1.  **`ActionItem` (Mechanics):** Represents exact user interactions (clicks, types).
-    *   *Crucial properties:* `target.spatial_bounding_box` (normalized 0-1000 `[y1, x1, y2, x2]`), `input_data.keys_pressed` (e.g. `["Ctrl", "C"]`), and `is_error_recovery` (boolean flagging human mistakes).
+    *   *Crucial properties:* `target` (semantic locator with `element_type`, `container`, `nearest_landmark`, `relation_to_landmark`), `input_data.keys_pressed` (e.g. `["Ctrl", "C"]`), and `is_error_recovery` (boolean flagging human mistakes).
 2.  **`NarrativeStep` (Intent):** Represents high-level BDD steps.
     *   *Crucial properties:* `precondition` (Given), `postcondition` (Then), and `linked_visual_action_ids` (Foreign Keys pointing to `ActionItem.id`).
 

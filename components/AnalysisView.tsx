@@ -25,7 +25,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const [overlap, setOverlap] = useState(30);
   const [customContext, setCustomContext] = useState('');
   const [softwareName, setSoftwareName] = useState('');
-  const [glossaryPath, setGlossaryPath] = useState('glossary/elements.json');
+  const [glossaryPath, setGlossaryPath] = useState('cuez_rundown_vocabulary_v2.4.json');
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -157,7 +157,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         setOverlap(data.overlap);
         setCustomContext(data.customContext || '');
         setSoftwareName(data.softwareName || '');
-        setGlossaryPath(data.glossaryPath || 'glossary/elements.json');
+        setGlossaryPath(data.glossaryPath || 'cuez_rundown_vocabulary_v2.4.json');
         setChunks(data.chunks);
         
         // Sanitize loaded actions to ensure unique IDs
@@ -211,6 +211,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
           ...data.procState,
           logs: sanitizedLogs
         });
+        if (data.procState?.narrationChunkIndex !== undefined) setNarrationChunkIndex(data.procState.narrationChunkIndex);
+        if (data.procState?.narrationChunkCount !== undefined) setNarrationChunkCount(data.procState.narrationChunkCount);
+        
         setLatestUIState(data.latestUIState);
         if (data.procState?.cleanedOutput) {
           setCleanedOutput(data.procState.cleanedOutput);
@@ -226,6 +229,21 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   }, [projectId]);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSaveTimeRef = useRef<number>(0);
+
+  const stateRefForSave = useRef<{
+    projectId: string; projectName: string; videoUrl: string; durationInput: string;
+    chunkSize: number; overlap: number; customContext: string; softwareName: string; glossaryPath: string;
+    chunks: any[]; actions: any[]; annotations: any[]; narrativeSteps: any[];
+    procState: ProcessingState; latestUIState: any;
+  }>();
+
+  useEffect(() => {
+    stateRefForSave.current = {
+      projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath,
+      chunks, actions, annotations, narrativeSteps, procState, latestUIState
+    };
+  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath, chunks, actions, annotations, narrativeSteps, procState, latestUIState]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -235,39 +253,45 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
                      procState.status === 'running_dedup';
 
     const doSave = () => {
+      const state = stateRefForSave.current;
+      if (!state) return;
+      
+      // Map state properties to Project interface expected by saveProject
+      const { projectId, projectName, ...restState } = state;
       const saveData: Project = {
+        ...restState,
         id: projectId,
         name: projectName,
         updatedAt: Date.now(),
-        videoUrl,
-        durationInput,
-        chunkSize,
-        overlap,
-        customContext,
-        softwareName,
-        glossaryPath,
-        chunks,
-        actions,
-        annotations,
-        narrativeSteps,
-        procState,
-        latestUIState,
-        status: procState.status, 
-        actionCount: actions.length
+        status: state.procState.status,
+        actionCount: state.actions.length
       };
-      saveProject(saveData);
+      
+      if (saveData.id) {
+        saveProject(saveData).catch(err => console.error("Failed to save project:", err));
+        lastSaveTimeRef.current = Date.now();
+      }
     };
 
     if (isActive) {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(doSave, 5000);
+      if (!saveTimeoutRef.current) {
+        saveTimeoutRef.current = setInterval(doSave, 120000); // Increased from 15s to 120s to protect Firebase quotas
+      }
     } else {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+        clearInterval(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
       doSave();
     }
+  }, [isLoaded, procState.status]);
 
-    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath, chunks, actions, annotations, narrativeSteps, procState, latestUIState, projectId, isLoaded]);
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearInterval(saveTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -275,22 +299,24 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
       const isActive = procState.status === 'running_visual' ||
                        procState.status === 'running_narrative' ||
                        procState.status === 'running_dedup';
-      if (!isActive) return; // Only emergency-save during active processing
+      if (!isActive) return;
 
       try {
+        const state = stateRefForSave.current;
+        if (!state) return;
         const saveData: Project = {
-          id: projectId, name: projectName, updatedAt: Date.now(),
-          videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath,
-          chunks, actions, annotations, narrativeSteps, procState, latestUIState,
-          status: procState.status, actionCount: actions.length
+          ...state,
+          updatedAt: Date.now(),
+          status: state.procState.status,
+          actionCount: state.actions.length
         };
         localStorage.setItem(`td_emergency_save_${projectId}`, JSON.stringify(saveData));
-      } catch (e) { /* localStorage might be full */ }
+      } catch (e) { /* ignore */ }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [projectId, projectName, videoUrl, durationInput, chunkSize, overlap, customContext, softwareName, glossaryPath, chunks, actions, annotations, narrativeSteps, procState, latestUIState, isLoaded]);
+  }, [projectId, isLoaded, procState.status]);
 
   // Local chunk computation removed as it's now handled by the server
 
@@ -363,7 +389,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             // Job gone from server — check if we have usable results
             if (actionsRef.current.length > 0 || stateRef.current.status === 'running_dedup') {
               handleLog('warn', 'Server lost job state (possible restart). Using last known results.');
-              setProcState(prev => ({ ...prev, status: 'completed' }));
+              setProcState(prev => ({ ...prev, status: 'error' }));
             } else {
               handleLog('error', 'Server lost job state. No results available.');
               setProcState(prev => ({ ...prev, status: 'error' }));
@@ -412,6 +438,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
             status: state.status,
             progress: state.progress,
             currentChunkIndex: state.currentChunkIndex,
+            narrationChunkIndex: state.narrationChunkIndex,
+            narrationChunkCount: state.narrationChunkCount,
+            narrationChunkSize: state.narrationChunkSize,
             totalActions: state.actions?.length || 0,
             duration: state.duration,
             learnedContext: state.learnedContext,
@@ -523,36 +552,70 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
   const startPollingRef = useRef(startPolling);
   useEffect(() => { startPollingRef.current = startPolling; }, [startPolling]);
 
-  const handleStart = async () => {
-    if (!videoUrl) {
+  const handleStart = async (isResumingFromParam = false, uploadedState?: any, forceRestart = false) => {
+    const activeVideoUrl = uploadedState?.videoUrl || videoUrl;
+    if (!activeVideoUrl) {
       alert("Please enter a YouTube URL");
       return;
     }
 
-    if (procState.status === 'idle' || procState.status === 'completed' || procState.status === 'error' || procState.status === 'cancelled') {
-       const isResuming = (procState.status === 'cancelled' || procState.status === 'error') && chunks.length > 0;
-       
-       handleLog('info', isResuming ? 'Resuming analysis pipeline locally...' : 'Initializing new analysis pipeline locally...', { chunkSize, overlap });
-       
-       if (!isResuming) {
-         setActions([]);
-         setAnnotations([]);
-         setNarrativeSteps([]);
-         setChunks([]);
-       }
-       
-       setProcState(prev => ({
-        ...prev,
-        status: 'running_visual',
-        currentChunkIndex: isResuming ? prev.currentChunkIndex : 0,
-        totalActions: isResuming ? prev.totalActions : 0,
-        totalTokens: isResuming ? prev.totalTokens : 0,
-        startTime: isResuming ? prev.startTime : Date.now(),
-        lastInteractionId: isResuming ? prev.lastInteractionId : null,
-        chatHistory: isResuming ? prev.chatHistory : [],
-        logs: prev.logs, // retain logs on restart
-        jobId: isResuming ? prev.jobId : null
-      }));
+    if (procState.status === 'idle' || procState.status === 'completed' || procState.status === 'error' || procState.status === 'cancelled' || isResumingFromParam || forceRestart) {
+        const isResumingLocally = (procState.status === 'cancelled' || procState.status === 'error' || procState.status === 'completed') && chunks.length > 0;
+        const isResuming = (isResumingLocally || isResumingFromParam) && !forceRestart;
+        
+        // If it's a completely fresh start explicitly requested, bypass resume
+        if (forceRestart) {
+            handleLog('info', 'Forcing restart of analysis pipeline...', { chunkSize, overlap });
+            setActions([]);
+            setAnnotations([]);
+            setNarrativeSteps([]);
+            setChunks([]);
+            setProcState(prev => ({
+              ...prev,
+              status: 'running_visual',
+              currentChunkIndex: 0,
+              narrationChunkIndex: 0,
+              totalActions: 0,
+              totalTokens: 0,
+              startTime: Date.now(),
+              lastInteractionId: null,
+              chatHistory: [],
+              logs: prev.logs,
+              jobId: null
+            }));
+        } else {
+            handleLog('info', isResuming ? 'Resuming analysis pipeline locally...' : 'Initializing new analysis pipeline locally...', { chunkSize, overlap });
+            
+            if (uploadedState) {
+              setActions(uploadedState.actions || []);
+              setAnnotations(uploadedState.annotations || []);
+              setNarrativeSteps(uploadedState.narrativeSteps || []);
+              setChunks(uploadedState.chunks || []);
+            } else if (!isResuming) {
+              setActions([]);
+              setAnnotations([]);
+              setNarrativeSteps([]);
+              setChunks([]);
+            }
+            
+            setProcState(prev => {
+              const base = uploadedState ? uploadedState : prev;
+              return {
+                ...base,
+                status: 'running_visual',
+                currentChunkIndex: isResuming ? (uploadedState ? uploadedState.currentChunkIndex : prev.currentChunkIndex) : 0,
+                narrationChunkIndex: isResuming ? (uploadedState ? (uploadedState.narrationChunkIndex || 0) : (prev.narrationChunkIndex || 0)) : 0,
+                narrationChunkCount: isResuming ? (uploadedState ? (uploadedState.narrationChunkCount || 0) : (prev.narrationChunkCount || 0)) : 0,
+                totalActions: isResuming ? (uploadedState ? uploadedState.totalActions : prev.totalActions) : 0,
+                totalTokens: isResuming ? (uploadedState ? uploadedState.totalTokens : prev.totalTokens) : 0,
+                startTime: isResuming ? (uploadedState ? uploadedState.startTime : prev.startTime) : Date.now(),
+                lastInteractionId: isResuming ? (uploadedState ? uploadedState.lastInteractionId : prev.lastInteractionId) : null,
+                chatHistory: isResuming ? (uploadedState ? uploadedState.chatHistory : prev.chatHistory) : [],
+                logs: uploadedState ? (uploadedState.logs || prev.logs) : prev.logs, // retain logs on restart
+                jobId: isResuming ? (uploadedState ? uploadedState.jobId : prev.jobId) : null
+              };
+            });
+        }
 
       // Get API key from state or server
       let currentApiKey = apiKey;
@@ -621,28 +684,62 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
         handleLog('info', 'Starting analysis job on server...', { url: videoUrl });
         
         let vocabularyContent = undefined;
-        if (glossaryPath && glossaryPath !== 'glossary/elements.json') {
+        if (glossaryPath && glossaryPath !== 'cuez_rundown_vocabulary_v2.4.json') {
           const vocab = vocabularies.find(v => v.id === glossaryPath);
           if (vocab) {
             vocabularyContent = vocab.content;
           }
         }
         
+        const payload: any = {
+          jobId: projectId,
+          videoUrl: activeVideoUrl,
+          durationInput: uploadedState?.duration ? `${Math.floor(uploadedState.duration / 60)}:${uploadedState.duration % 60}` : durationInput,
+          chunkSize,
+          overlap,
+          customContext,
+          softwareName,
+          glossaryPath,
+          vocabularyContent,
+          apiKey: currentApiKey
+        };
+        
+        if (isResuming) {
+          if (uploadedState) {
+             payload.resumeState = uploadedState;
+          } else {
+            payload.resumeState = {
+              progress: (procState as any).progress || 0,
+              actions,
+              annotations,
+              narrativeSteps,
+              uiState: latestUIState,
+              videoUrl,
+              duration: procState.duration,
+              chunks,
+              currentChunkIndex: procState.currentChunkIndex,
+              narrationChunkIndex: procState.narrationChunkIndex ?? narrationChunkIndex ?? 0,
+              narrationChunkSize: procState.narrationChunkSize ?? Math.floor(chunkSize * 2.5),
+              narrationChunkCount: procState.narrationChunkCount ?? narrationChunkCount ?? 0,
+              chatHistory: procState.chatHistory || [],
+              chunkSize,
+              overlap,
+              learnedContext: procState.learnedContext || "",
+              softwareName,
+              glossaryPath,
+              totalActions: procState.totalActions || 0,
+              totalTokens: procState.totalTokens || 0,
+              startTime: procState.startTime || Date.now(),
+              lastInteractionId: procState.lastInteractionId || null,
+              logs: procState.logs || []
+            };
+          }
+        }
+        
         const res = await fetch('/api/start-job', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jobId: projectId,
-            videoUrl,
-            durationInput,
-            chunkSize,
-            overlap,
-            customContext,
-            softwareName,
-            glossaryPath,
-            vocabularyContent,
-            apiKey: currentApiKey
-          })
+          body: JSON.stringify(payload)
         });
         
         const data = await res.json();
@@ -851,13 +948,50 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ projectId, onBack })
               setGlossaryPath={setGlossaryPath}
               vocabularies={vocabularies}
               setVocabularies={setVocabularies}
-              onStart={handleStart}
+              onStart={(forceRestart) => handleStart(false, undefined, forceRestart)}
+              onResume={(resumeState) => {
+                if (resumeState.isRawExport) {
+                  // For raw export, we just supply the accumulated actions and let the backend fill the rest
+                  handleStart(true, resumeState);
+                } else {
+                  setProcState(resumeState);
+                  if (resumeState.narrationChunkIndex !== undefined) setNarrationChunkIndex(resumeState.narrationChunkIndex);
+                  if (resumeState.narrationChunkCount !== undefined) setNarrationChunkCount(resumeState.narrationChunkCount);
+                  // Also update local URL and settings to match if present
+                  if (resumeState.videoUrl) setVideoUrl(resumeState.videoUrl);
+                  if (resumeState.softwareName) setSoftwareName(resumeState.softwareName);
+                  if (resumeState.glossaryPath) setGlossaryPath(resumeState.glossaryPath);
+                  
+                  handleStart(true, resumeState);
+                }
+              }}
               disabled={isProcessingActive}
+              hasLocalResumeState={chunks.length > 0 && procState.status !== 'idle'}
             />
             
             {procState.status !== 'idle' && (
-              <div className="bg-white/70 dark:bg-gray-850/70 backdrop-blur-md p-6 rounded-2xl border border-gray-200/50 dark:border-gray-800/50 shadow-md dark:shadow-black/20">
-                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wider">Processing Stats</h3>
+              <div className="bg-white/70 dark:bg-gray-850/70 backdrop-blur-md p-6 rounded-2xl border border-gray-200/50 dark:border-gray-800/50 shadow-md dark:shadow-black/20 mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Processing Stats</h3>
+                  <button 
+                    onClick={() => {
+                        const saveData = {
+                          videoUrl, softwareName, glossaryPath, durationInput, chunkSize, overlap, customContext,
+                          chunks, actions, annotations, narrativeSteps, procState, latestUIState,
+                          status: procState.status, actionCount: actions.length
+                        };
+                        const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `td_state_backup_${projectId}.json`;
+                        a.click();
+                    }}
+                    className="text-[10px] bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-2 py-1 rounded shadow-sm flex items-center transition-colors"
+                  >
+                    💾 Download Backup
+                  </button>
+                </div>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-500">Status</span>

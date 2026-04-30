@@ -181,7 +181,7 @@ describe('cleanFinalOutput', () => {
       { 
         id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', 
         confidence: 'high', chunkIndex: 1, ui_context: { active_panel: '', active_tool: '', open_dialogs: [] }, 
-        target: { element: 'button', location: '', panel: '', visual: '', spatial_bounding_box: [0, 0, 10, 10] },
+        target: { element: 'button', element_type: 'button', container: '', nearest_landmark: '', relation_to_landmark: 'inside', visual: '' },
         actor: 'user', result: null, context_note: null
       }
     ];
@@ -196,6 +196,5 @@ describe('cleanFinalOutput', () => {
     expect(action.confidence).toBeUndefined();
     expect(action.chunkIndex).toBeUndefined();
     expect(action.ui_context).toBeUndefined();
-    expect(action.target.spatial_bounding_box).toBeUndefined();
   });
 });

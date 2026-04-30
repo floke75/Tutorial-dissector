@@ -73,11 +73,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onOpenProject }) => {
     try {
       const content = await file.text();
       // Basic validation
-      JSON.parse(content);
+      const parsed = JSON.parse(content);
+      const keys = Object.keys(parsed);
+      const detectedSoftwareName = keys.length > 0 ? keys[0] : 'Unknown Software';
       
       const newVocab = {
         name: file.name,
-        softwareName: 'Unknown Software', // User can edit this later if we add an edit UI
+        softwareName: detectedSoftwareName,
         content
       };
       

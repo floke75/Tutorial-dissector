@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { AnalysisView } from './components/AnalysisView';
 import { AuthProvider } from './components/AuthProvider';
+import { TestOutputBrowser } from './components/TestOutputBrowser';
 
 function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -29,6 +30,7 @@ function App() {
           />
         )}
       </div>
+      <TestOutputBrowser />
     </AuthProvider>
   );
 }
