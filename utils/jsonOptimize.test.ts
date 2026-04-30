@@ -197,4 +197,41 @@ describe('cleanFinalOutput', () => {
     expect(action.chunkIndex).toBeUndefined();
     expect(action.ui_context).toBeUndefined();
   });
+
+  it('Conditional metadata preserved', () => {
+    const actions: ActionItem[] = [
+      { 
+        id: 'a1', timestamp: '0:10', action_type: 'click', detail: 'click 1', 
+        confidence: 'low', chunkIndex: 1, ui_context: { active_panel: 'sidebar', active_tool: 'pen', open_dialogs: ['modal 1'] }, 
+        target: { element: 'button', element_type: 'button', container: '', nearest_landmark: '', relation_to_landmark: 'inside', visual: '' },
+        actor: 'user', result: null, context_note: null,
+        is_error_recovery: true,
+        interacted_components: [{ type: 'checkbox', label: 'Notes', state_before: 'unchecked', state_after: 'checked' }]
+      }
+    ];
+    const steps: NarrativeStep[] = [
+      { id: 's1', timestamp: '0:10', intent: '', precondition: '', postcondition: '', topics: [], explanation: 'step 1', linked_visual_action_ids: ['a1'], insight_type: 'explanation' }
+    ];
+
+    const { result } = cleanFinalOutput({ actions, annotations: [], narrativeSteps: steps });
+
+    expect(result.steps.length).toBe(1);
+    const action = result.steps[0].actions[0];
+    // Should preserve confidence because it's not 'high'
+    expect(action.confidence).toBe('low');
+    // chunkIndex always stripped
+    expect(action.chunkIndex).toBeUndefined();
+    // ui_context should survive when not empty
+    expect(action.ui_context).toBeDefined();
+    expect(action.ui_context.active_panel).toBe('sidebar');
+    expect(action.ui_context.open_dialogs[0]).toBe('modal 1');
+    // is_error_recovery should survive when true
+    expect(action.is_error_recovery).toBe(true);
+    // interacted_components should maintain object form, not pipe-delimited
+    expect(action.interacted_components).toBeDefined();
+    expect(Array.isArray(action.interacted_components)).toBe(true);
+    expect(action.interacted_components[0].type).toBe('checkbox');
+    // exported_at should be added to the root
+    expect(result.exported_at).toBeDefined();
+  });
 });

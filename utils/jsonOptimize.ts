@@ -10,18 +10,9 @@ export function compactStringify(obj: unknown, indent: number = 1): string {
   return JSON.stringify(obj, null, indent);
 }
 
-function compactInteractedComponents(components: any[]): string[] {
-  return components.map((c: any) => {
-    const parts = [c.type || '', c.label || ''];
-    if (c.state_before && c.state_after) {
-      parts.push(`${c.state_before}->${c.state_after}`);
-    } else if (c.state_after) {
-      parts.push(c.state_after);
-    } else if (c.state_before) {
-      parts.push(c.state_before);
-    }
-    return parts.join('|');
-  });
+function compactInteractedComponents(components: any[]): any {
+  // Disabling pipe-delimited compaction based on spec to retain original object
+  return components;
 }
 
 /**
@@ -67,10 +58,11 @@ export function stripExtractionMeta(obj: any, options?: CleanOptions): any {
   
   const result = { ...obj };
   if (!options?.keepConfidence) {
-    delete result.confidence;
+    if (result.confidence === 'high') {
+      delete result.confidence;
+    }
   }
   delete result.chunkIndex;
-  delete result.ui_context;
   
   return result;
 }
@@ -206,6 +198,7 @@ export function cleanFinalOutput(data: {
     .map(a => cleanForPrompt(a));
     
   const rawResult: any = { steps };
+  rawResult.exported_at = new Date().toISOString();
   if (metadata && Object.keys(metadata).length > 0) {
     rawResult.metadata = metadata;
   }

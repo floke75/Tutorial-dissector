@@ -135,7 +135,6 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
   };
 
   const getCleanedOutput = () => {
-    if (cleanedOutput) return cleanedOutput;
     const { result } = cleanFinalOutput({
       actions,
       annotations: annotations || [],
@@ -143,7 +142,7 @@ export const ResultsTimeline: React.FC<ResultsTimelineProps> = ({ actions, annot
       learnedContext,
       metadata: {
         videoUrl,
-        duration,
+        duration: duration ? parseMMSS(duration) : undefined,
         total_actions: actions.length,
         total_steps: narrativeSteps.length,
         total_annotations: annotations?.length || 0,

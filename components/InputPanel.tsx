@@ -145,6 +145,57 @@ export const InputPanel: React.FC<InputPanelProps> = ({
           annotations: parsed.video_annotations || parsed.annotations || [],
           narrativeSteps: parsed.narrative_steps || parsed.narrativeSteps || []
         });
+      } else if (parsed.steps && Array.isArray(parsed.steps)) {
+        // Handle Cleaned Export format by flattening it back to Raw representation
+        const actions: any[] = [];
+        const annotations: any[] = [];
+        const steps: any[] = [];
+
+        parsed.steps.forEach((step: any, sIdx: number) => {
+          const s: any = { ...step };
+          s.id = s.id || `reconstructed_step_${sIdx}`;
+          s.linked_visual_action_ids = [];
+          s.linked_annotation_ids = [];
+
+          if (step.actions && Array.isArray(step.actions)) {
+            step.actions.forEach((a: any, aIdx: number) => {
+              const aId = a.id || `reconstructed_evt_${sIdx}_${aIdx}`;
+              s.linked_visual_action_ids.push(aId);
+              actions.push({ ...a, id: aId });
+            });
+            delete s.actions;
+          }
+
+          if (step.annotations && Array.isArray(step.annotations)) {
+            step.annotations.forEach((a: any, aIdx: number) => {
+              const aId = a.id || `reconstructed_ann_${sIdx}_${aIdx}`;
+              s.linked_annotation_ids.push(aId);
+              annotations.push({ ...a, id: aId });
+            });
+            delete s.annotations;
+          }
+          steps.push(s);
+        });
+
+        if (parsed.unlinked_actions && Array.isArray(parsed.unlinked_actions)) {
+          parsed.unlinked_actions.forEach((a: any, idx: number) => {
+            actions.push({ ...a, id: a.id || `reconstructed_unlinked_evt_${idx}` });
+          });
+        }
+        if (parsed.unlinked_annotations && Array.isArray(parsed.unlinked_annotations)) {
+          parsed.unlinked_annotations.forEach((a: any, idx: number) => {
+            annotations.push({ ...a, id: a.id || `reconstructed_unlinked_ann_${idx}` });
+          });
+        }
+
+        onResume({
+          isRawExport: true,
+          actions,
+          annotations,
+          narrativeSteps: steps,
+          videoUrl: parsed.metadata?.videoUrl || '',
+          softwareName: parsed.metadata?.softwareName || '',
+        });
       } else {
         alert("Invalid resume state JSON. Use a partially completed job state or a Raw Export.");
       }
