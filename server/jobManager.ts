@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { analyzeChunkPhaseA, accumulateChunkPhaseB, analyzeNarrationSegment, analyzeGlobalDeduplication } from '../services/geminiService.ts';
 import type { ActionItem, VideoAnnotation, NarrativeStep, ProcessingState, UIState, LogLevel } from '../types.ts';
-import { computeChunkWindows, parseMMSS } from '../utils/timeUtils.ts';
+import { computeChunkWindows, parseMMSS, formatMMSS } from '../utils/timeUtils.ts';
 import type { Chunk } from '../types.ts';
 import { detectUnlinkedActions, detectRedundantSteps, cleanFinalOutput } from '../utils/jsonOptimize.ts';
 
@@ -20,6 +20,9 @@ export interface JobState {
   duration: number;
   chunks: Chunk[];
   currentChunkIndex: number;
+  narrationChunkIndex: number;
+  narrationChunkSize: number;
+  narrationChunkCount: number;
   chatHistory?: any[];
   chunkSize: number;
   overlap: number;
@@ -29,7 +32,12 @@ export interface JobState {
   lastUpdatedAt: number;
   stateVersion: number;
   logCapOccurred?: boolean;
+  softwareName?: string;
+  glossaryPath?: string;
 }
+
+import { detectViewportResolution } from '../utils/videoMeta.ts';
+import { generateExtractionVocabulary } from '../utils/extractionVocabulary.ts';
 
 const jobs = new Map<string, JobState>();
 const cancelTokens = new Set<string>();
@@ -84,26 +92,63 @@ export async function processVideoJob(params: {
   durationInput?: string;
   chunkSize: number;
   overlap: number;
+  narrationChunkSize?: number;
   customContext: string;
   apiKey: string;
+  softwareName?: string;
+  glossaryPath?: string;
+  vocabularyContent?: string;
+  resumeState?: any;
 }): Promise<string> {
   const jobId = params.jobId || uuidv4();
   
-  const existingState = jobs.get(jobId);
+  let existingState = jobs.get(jobId);
   if (existingState && (existingState.status === 'running_visual' || existingState.status === 'running_narrative' || existingState.status === 'running_dedup')) {
     return jobId; // Job is already running, do nothing
   }
 
-  const isResuming = !!(existingState && 
+  const fromScratchResuming = !!(params.resumeState && !existingState);
+
+  const isResuming = !!(fromScratchResuming || (existingState &&
                      (existingState.status === 'cancelled' || existingState.status === 'error') &&
                      existingState.videoUrl === params.videoUrl &&
                      existingState.chunkSize === params.chunkSize &&
                      existingState.overlap === params.overlap &&
-                     existingState.chunks.length > 0);
+                     existingState.narrationChunkSize ===
+                       (params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5)) &&
+                     // Remove constraint that narrationChunkCount > 0 so that it can resume if failed in visual phase
+                     existingState.chunks.length > 0));
 
   const runId = uuidv4();
 
-  if (!isResuming) {
+  if (fromScratchResuming) {
+    cancelTokens.delete(jobId);
+    jobs.set(jobId, {
+      ...params.resumeState,
+      id: jobId,
+      runId,
+      status: 'running_visual',
+      logs: [],
+      lastUpdatedAt: Date.now(),
+      stateVersion: 1,
+      logCapOccurred: false,
+      actions: params.resumeState.actions || [],
+      annotations: params.resumeState.annotations || [],
+      narrativeSteps: params.resumeState.narrativeSteps || [],
+      videoUrl: params.resumeState.videoUrl || params.videoUrl,
+      duration: params.resumeState.duration || 0,
+      chunks: params.resumeState.chunks || [],
+      currentChunkIndex: params.resumeState.currentChunkIndex || 0,
+      narrationChunkIndex: params.resumeState.narrationChunkIndex || 0,
+      narrationChunkCount: params.resumeState.narrationChunkCount || 0,
+      chatHistory: params.resumeState.chatHistory || [],
+      chunkSize: params.resumeState.chunkSize || params.chunkSize,
+      overlap: params.resumeState.overlap || params.overlap,
+      narrationChunkSize: params.resumeState.narrationChunkSize || (params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5)),
+      learnedContext: params.resumeState.learnedContext || ""
+    });
+    existingState = jobs.get(jobId);
+  } else if (!isResuming) {
     cancelTokens.delete(jobId);
     jobs.set(jobId, {
       id: jobId,
@@ -119,13 +164,18 @@ export async function processVideoJob(params: {
       duration: 0,
       chunks: [],
       currentChunkIndex: 0,
+      narrationChunkIndex: 0,
+      narrationChunkSize: params.narrationChunkSize ?? Math.floor(params.chunkSize * 2.5),
+      narrationChunkCount: 0,  // set after narration chunks are computed
       chatHistory: [],
       chunkSize: params.chunkSize,
       overlap: params.overlap,
       learnedContext: "",
       lastUpdatedAt: Date.now(),
       stateVersion: 1,
-      logCapOccurred: false
+      logCapOccurred: false,
+      softwareName: params.softwareName,
+      glossaryPath: params.glossaryPath
     });
   } else {
     if (existingState!.ttlTimerId) {
@@ -175,8 +225,12 @@ export function cancelJob(jobId: string): boolean {
   durationInput?: string;
   chunkSize: number;
   overlap: number;
+  narrationChunkSize?: number;
   customContext: string;
   apiKey: string;
+  softwareName?: string;
+  glossaryPath?: string;
+  vocabularyContent?: string;
 }, isResuming: boolean) {
   const { videoUrl, durationInput, chunkSize, overlap, customContext, apiKey } = params;
   
@@ -196,7 +250,7 @@ export function cancelJob(jobId: string): boolean {
       if (action.is_error_recovery === undefined) action.is_error_recovery = false;
       if (action.interacted_components === undefined) action.interacted_components = [];
       if (action.context_note === undefined) action.context_note = null;
-      if (action.confidence === undefined) action.confidence = 'high';
+      if (action.confidence === undefined) action.confidence = 'medium';
     }
   };
 
@@ -204,13 +258,21 @@ export function cancelJob(jobId: string): boolean {
   const runId = state.runId;
 
   if (isResuming) {
-    addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+    if (state.currentChunkIndex >= state.chunks.length && state.narrationChunkIndex > 0) {
+      if (state.narrationChunkIndex >= state.narrationChunkCount) {
+        addLog('info', `Resuming job from Phase D (all narration complete, dedup failed)...`);
+      } else {
+        addLog('info', `Resuming job from Phase C narration chunk ${state.narrationChunkIndex + 1}/${state.narrationChunkCount}...`);
+      }
+    } else {
+      addLog('info', `Resuming job from chunk ${state.currentChunkIndex + 1}...`);
+    }
   }
 
   try {
     let duration = state.duration;
     
-    if (!isResuming) {
+    if (!isResuming || state.chunks.length === 0) {
       addLog('info', 'Fetching video metadata...', { url: videoUrl });
       
       if (durationInput) {
@@ -260,11 +322,58 @@ export function cancelJob(jobId: string): boolean {
       addLog('info', `Calculated ${state.chunks.length} chunks for processing`);
     }
 
+    // Narration chunks: wider windows, non-aligned with A/B, reduced overlap
+    const narrationChunkSize = params.narrationChunkSize ?? Math.floor(chunkSize * 2.5);
+    const overlapRatio = overlap / chunkSize;
+    const narrationOverlapRatio = overlapRatio * 0.4;
+    const narrationOverlap = Math.round(narrationChunkSize * narrationOverlapRatio);
+    const narrationChunks = computeChunkWindows(duration, narrationChunkSize, narrationOverlap);
+    
+    if (isResuming && state.narrationChunkCount > 0 && state.narrationChunkCount !== narrationChunks.length) {
+      throw new Error(`Narration chunk layout drift detected on resume. Expected ${state.narrationChunkCount} chunks, but computed ${narrationChunks.length}. Please start a new job.`);
+    }
+    
+    state.narrationChunkCount = narrationChunks.length;
+    addLog('info', `Narration plan: ${narrationChunks.length} chunks (${narrationChunkSize}s window, ${narrationOverlap}s overlap)`);
+
     let chatHistory: any[] = state.chatHistory || [];
     let cumulativeActions: ActionItem[] = state.actions || [];
     let cumulativeAnnotations: VideoAnnotation[] = state.annotations || [];
     let cumulativeNarrative: NarrativeStep[] = state.narrativeSteps || [];
     let latestUIState: UIState | null = state.uiState || null;
+
+    const glossaryPath = params.glossaryPath ?? 'cuez_rundown_vocabulary_v2.4.json';
+    const vocabulary = params.softwareName ? generateExtractionVocabulary(glossaryPath, params.softwareName, params.vocabularyContent) : '';
+    const vocabularyContext = [customContext, vocabulary].filter(Boolean).join('\n\n');
+
+    if ((state as any).isRawExport) {
+      let maxChunkIndex = -1;
+      let maxTimestamp = 0;
+      
+      for (const action of cumulativeActions) {
+        if (action.chunkIndex !== undefined && action.chunkIndex > maxChunkIndex) maxChunkIndex = action.chunkIndex;
+        const sec = parseMMSS(action.timestamp);
+        if (sec > maxTimestamp) maxTimestamp = sec;
+      }
+      for (const ann of cumulativeAnnotations) {
+        if (ann.chunkIndex !== undefined && ann.chunkIndex > maxChunkIndex) maxChunkIndex = ann.chunkIndex;
+        const sec = parseMMSS(ann.timestamp);
+        if (sec > maxTimestamp) maxTimestamp = sec;
+      }
+      
+      if (maxChunkIndex >= 0) {
+        state.currentChunkIndex = Math.min(maxChunkIndex + 1, Math.max(0, state.chunks.length - 1));
+      } else {
+        let calcIndex = Math.floor(maxTimestamp / Math.max(1, chunkSize - overlap));
+        state.currentChunkIndex = Math.min(calcIndex, Math.max(0, state.chunks.length - 1));
+      }
+      
+      let calcNarrIndex = Math.floor(maxTimestamp / Math.max(1, narrationChunkSize - narrationOverlap));
+      state.narrationChunkIndex = Math.min(calcNarrIndex, Math.max(0, narrationChunks.length - 1));
+      
+      addLog('info', `Resuming from raw export. Inferred visual chunk ${state.currentChunkIndex + 1} and narrative chunk ${state.narrationChunkIndex + 1}.`);
+      (state as any).isRawExport = false;
+    }
 
     const startIndex = isResuming ? state.currentChunkIndex : 0;
 
@@ -279,10 +388,10 @@ export function cancelJob(jobId: string): boolean {
       state.status = 'running_visual';
       state.currentChunkIndex = i;
       const chunk = state.chunks[i];
-      const progressBase = (i / state.chunks.length) * 100;
+      const progressBase = (i / state.chunks.length) * 50;
       state.progress = progressBase;
 
-      const dynamicContext = customContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+      const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
 
       chunk.status = 'analyzing_phase_a';
       bumpVersion(state);
@@ -311,7 +420,7 @@ export function cancelJob(jobId: string): boolean {
         return;
       }
 
-      state.progress = progressBase + (100 / state.chunks.length) * 0.3;
+      state.progress = progressBase + (50 / state.chunks.length) * 0.3;
 
       // Phase B: Validation & State
       chunk.status = 'analyzing_phase_b';
@@ -352,7 +461,7 @@ export function cancelJob(jobId: string): boolean {
       // Append new validated actions
       const existingIds = new Set(cumulativeActions.map(a => a.id));
       const newValidatedEvents = (phaseBResult.result.validated_segment_events || []).map(action => {
-        if (!action.id || existingIds.has(action.id)) {
+        if (!action.id || existingIds.has(action.id) || !action.id.startsWith('evt_')) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
         }
         existingIds.add(action.id);
@@ -362,11 +471,21 @@ export function cancelJob(jobId: string): boolean {
 
       // Append new validated annotations
       const rawValidatedAnnotations = phaseBResult.result.validated_segment_annotations || [];
-      const PLACEHOLDER_RE = /^(no annotations|not extracted|none provided|no relevant annotations|none)\.?$/i;
+      const EXPLICIT_PLACEHOLDER_RE = /^(no annotations|not extracted|none provided|no relevant annotations)\.?$/i;
+      const GENERIC_PLACEHOLDER_RE = /^(none|n\/a|na|-)\.?$/i;
       
       const filteredAnnotations = rawValidatedAnnotations.filter(ann => {
-        if (!ann.content?.trim()) return false;
-        if (PLACEHOLDER_RE.test(ann.content.trim())) return false;
+        const content = ann.content?.trim() || '';
+        if (!content) return false;
+        
+        if (EXPLICIT_PLACEHOLDER_RE.test(content)) return false;
+        
+        if (GENERIC_PLACEHOLDER_RE.test(content)) {
+          const relevance = ann.relevance?.trim() || '';
+          if (!relevance || GENERIC_PLACEHOLDER_RE.test(relevance) || EXPLICIT_PLACEHOLDER_RE.test(relevance)) {
+            return false;
+          }
+        }
         return true;
       });
       
@@ -377,7 +496,7 @@ export function cancelJob(jobId: string): boolean {
 
       const existingAnnIds = new Set(cumulativeAnnotations.map(a => a.id));
       const newValidatedAnnotations = filteredAnnotations.map(ann => {
-        if (!ann.id || existingAnnIds.has(ann.id)) {
+        if (!ann.id || existingAnnIds.has(ann.id) || !ann.id.startsWith('ann_')) {
           ann.id = `ann_${uuidv4().substring(0, 8)}`;
         }
         existingAnnIds.add(ann.id);
@@ -385,30 +504,92 @@ export function cancelJob(jobId: string): boolean {
       });
       let nextCumulativeAnnotations = [...cumulativeAnnotations, ...newValidatedAnnotations];
       
-      // Phase C: Narrative Synthesis
-      state.status = 'running_narrative';
-      chunk.status = 'analyzing_phase_c';
-      bumpVersion(state);
-      addLog('info', `Phase C: Synthesizing narrative steps...`);
-      
-      const CONTEXT_BUFFER_SEC = 15;
-      const contextStart = chunk.clipStart - CONTEXT_BUFFER_SEC;
-      const contextEnd   = chunk.clipEnd   + CONTEXT_BUFFER_SEC;
+      // --- Commit Phase A/B results ---
+      chatHistory = nextChatHistory;
+      state.chatHistory = chatHistory;
 
-      const relevantActions = nextCumulativeActions.filter(a => {
+      const newActionsCount = nextCumulativeActions.length - cumulativeActions.length;
+      for (let j = cumulativeActions.length; j < nextCumulativeActions.length; j++) {
+        nextCumulativeActions[j].chunkIndex = i;
+      }
+      for (let j = cumulativeAnnotations.length; j < nextCumulativeAnnotations.length; j++) {
+        nextCumulativeAnnotations[j].chunkIndex = i;
+      }
+
+      chunk.phaseBAddedCount = newActionsCount;
+      chunk.actionCount = newActionsCount;
+      chunk.status = 'completed';
+
+      latestUIState = nextUIState;
+      state.uiState = latestUIState;
+
+      cumulativeActions = nextCumulativeActions;
+      state.actions = cumulativeActions;
+
+      cumulativeAnnotations = nextCumulativeAnnotations;
+      state.annotations = cumulativeAnnotations;
+
+      state.progress = ((i + 1) / state.chunks.length) * 50;
+      state.currentChunkIndex = i + 1;
+      addLog('success', `Chunk ${i + 1}/${state.chunks.length} Phase A/B complete. ${newActionsCount} new actions.`);
+      bumpVersion(state);
+    }
+
+    // === PHASE C LOOP: Narrative synthesis with full action visibility ===
+    const abComplete = state.currentChunkIndex >= state.chunks.length;
+    const resumingPhaseC = isResuming && abComplete && state.narrationChunkIndex > 0;
+
+    if (resumingPhaseC) {
+      addLog('info', `Resuming Phase C from narration chunk ${state.narrationChunkIndex + 1}/${narrationChunks.length}. Preserving ${cumulativeNarrative.length} existing steps.`);
+    } else {
+      // Fresh Phase C — reset narrative to avoid duplicates
+      cumulativeNarrative = [];
+      state.narrativeSteps = cumulativeNarrative;
+      state.learnedContext = "";
+      state.narrationChunkIndex = 0;
+    }
+
+    const narrationStartIndex = resumingPhaseC ? state.narrationChunkIndex : 0;
+
+    addLog('info', `Starting narrative synthesis: ${narrationChunks.length} narration chunks (starting at ${narrationStartIndex + 1}), ${cumulativeActions.length} total actions available.`);
+
+    for (let i = narrationStartIndex; i < narrationChunks.length; i++) {
+      if (cancelTokens.has(jobId)) {
+        state.status = 'cancelled';
+        bumpVersion(state);
+        addLog('warn', `Job cancelled before Phase C chunk ${i + 1}/${narrationChunks.length}`);
+        return;
+      }
+
+      const nChunk = narrationChunks[i];
+      state.status = 'running_narrative';
+      bumpVersion(state);
+      addLog('info', `Phase C (${i + 1}/${narrationChunks.length}): Narrating ${formatMMSS(nChunk.primaryStart)}–${formatMMSS(nChunk.primaryEnd)}...`);
+
+      const dynamicContext = vocabularyContext + (state.learnedContext ? "\n\nLearned Domain Knowledge:\n" + state.learnedContext : "");
+
+      // Buffer extends beyond clip window to catch actions near boundaries.
+      // For edge chunks (first/last), this may go negative or past duration —
+      // that's intentional: parseMMSS returns non-negative values, so t >= -15
+      // is always true, giving the edge chunk full visibility. Do NOT clamp to 0/duration.
+      const CONTEXT_BUFFER_SEC = 15;
+      const contextStart = nChunk.clipStart - CONTEXT_BUFFER_SEC;
+      const contextEnd = nChunk.clipEnd + CONTEXT_BUFFER_SEC;
+
+      const relevantActions = cumulativeActions.filter(a => {
         const t = parseMMSS(a.timestamp);
         return t >= contextStart && t <= contextEnd;
       });
-      
-      const relevantAnnotations = nextCumulativeAnnotations.filter(a => {
+
+      const relevantAnnotations = cumulativeAnnotations.filter(a => {
         const t = parseMMSS(a.timestamp);
         return t >= contextStart && t <= contextEnd;
       });
 
       let narrationResult = await analyzeNarrationSegment(
         videoUrl,
-        chunk.clipStart,
-        chunk.clipEnd,
+        nChunk.clipStart,
+        nChunk.clipEnd,
         relevantActions,
         relevantAnnotations,
         dynamicContext,
@@ -422,8 +603,8 @@ export function cancelJob(jobId: string): boolean {
         addLog('warn', `Phase C returned 0 steps despite having ${relevantActions.length} actions. Retrying...`);
         narrationResult = await analyzeNarrationSegment(
           videoUrl,
-          chunk.clipStart,
-          chunk.clipEnd,
+          nChunk.clipStart,
+          nChunk.clipEnd,
           relevantActions,
           relevantAnnotations,
           dynamicContext,
@@ -431,14 +612,30 @@ export function cancelJob(jobId: string): boolean {
           cumulativeNarrative.slice(-10),
           addLog
         );
+        if (narrationResult.steps.length > 0) {
+          addLog('success', `Phase C retry yielded ${narrationResult.steps.length} steps.`);
+        } else {
+          addLog('warn', `Phase C retry also returned 0 steps. Actions in this range may be unlinked.`);
+        }
       }
 
-      const { steps: newNarrativeStepsRaw, learned_insights } = narrationResult;
+      if (cancelTokens.has(jobId)) {
+        state.status = 'cancelled';
+        bumpVersion(state);
+        addLog('warn', `Job cancelled during Phase C (${i + 1}/${narrationChunks.length})`);
+        return;
+      }
 
+      const newNarrativeStepsRaw = narrationResult.steps;
+      const learned_insights = narrationResult.learned_insights;
+
+      // Accumulate learned context (with dedup)
       if (learned_insights) {
-        const currentInsights = state.learnedContext ? state.learnedContext.split('\n- ').map(i => i.replace(/^- /, '').trim().toLowerCase()) : [];
-        const newInsights = learned_insights.split('\n- ').map(i => i.replace(/^- /, '').trim());
-        
+        const currentInsights = state.learnedContext
+          ? state.learnedContext.split('\n- ').map(ins => ins.replace(/^- /, '').trim().toLowerCase())
+          : [];
+        const newInsights = learned_insights.split('\n- ').map(ins => ins.replace(/^- /, '').trim());
+
         let insightsAdded = false;
         for (const insight of newInsights) {
           if (insight && !currentInsights.includes(insight.toLowerCase())) {
@@ -448,54 +645,24 @@ export function cancelJob(jobId: string): boolean {
         }
         if (insightsAdded) bumpVersion(state);
       }
-      
+
+      // Assign step IDs
       const existingStepIds = new Set(cumulativeNarrative.map(s => s.id));
       const newNarrativeSteps = newNarrativeStepsRaw.map(step => {
-        // Unconditionally assign a consistent hex ID to avoid mixed formats from the model
-        step.id = `step_${uuidv4().substring(0, 8)}`;
+        if (!step.id || existingStepIds.has(step.id) || !step.id.startsWith('step_')) {
+          step.id = `step_${uuidv4().substring(0, 8)}`;
+        }
         existingStepIds.add(step.id);
         return step;
       });
 
-      if (cancelTokens.has(jobId)) {
-        state.status = 'cancelled';
-        bumpVersion(state);
-        addLog('warn', 'Job cancelled by user after Phase C');
-        return;
-      }
-
-      // Atomic state update for the chunk
-      chatHistory = nextChatHistory;
-      state.chatHistory = chatHistory;
-      
-      const newActionsCount = nextCumulativeActions.length - cumulativeActions.length;
-      for (let j = cumulativeActions.length; j < nextCumulativeActions.length; j++) {
-        nextCumulativeActions[j].chunkIndex = i;
-      }
-
-      for (let j = cumulativeAnnotations.length; j < nextCumulativeAnnotations.length; j++) {
-        nextCumulativeAnnotations[j].chunkIndex = i;
-      }
-      
-      chunk.phaseBAddedCount = newActionsCount;
-      chunk.actionCount = newActionsCount;
-      chunk.status = 'completed';
-
-      latestUIState = nextUIState;
-      state.uiState = latestUIState;
-      
-      cumulativeActions = nextCumulativeActions;
-      state.actions = cumulativeActions;
-
-      cumulativeAnnotations = nextCumulativeAnnotations;
-      state.annotations = cumulativeAnnotations;
-
       cumulativeNarrative = [...cumulativeNarrative, ...newNarrativeSteps];
       state.narrativeSteps = cumulativeNarrative;
 
-      state.progress = progressBase + (100 / state.chunks.length);
-      addLog('success', `Chunk ${i + 1} completed successfully.`);
-      state.currentChunkIndex = i + 1;
+      // Commit Phase C progress for resumability
+      state.narrationChunkIndex = i + 1;
+      state.progress = 50 + ((i + 1) / narrationChunks.length) * 40;
+      addLog('success', `Phase C (${i + 1}/${narrationChunks.length}): ${newNarrativeSteps.length} steps.`);
       bumpVersion(state);
     }
 
@@ -530,17 +697,18 @@ export function cancelJob(jobId: string): boolean {
 
     // [Change 1d: Merge computation]
     const mergeInstructions: { orphanIndex: number, neighborIndex: number }[] = [];
+    const orphanSet = new Set(orphans);
     
     for (let i = 0; i < cumulativeNarrative.length; i++) {
       const step = cumulativeNarrative[i];
-      if (orphans.includes(step)) {
+      if (orphanSet.has(step)) {
         let bestNeighborIndex = -1;
         let bestJaccard = -1;
         
         for (let j = 0; j < cumulativeNarrative.length; j++) {
           if (i === j) continue;
           const neighbor = cumulativeNarrative[j];
-          if (orphans.includes(neighbor)) continue; // Only merge into non-orphans
+          if (orphanSet.has(neighbor)) continue; // Only merge into non-orphans
           
           if (Math.abs(parseMMSS(neighbor.timestamp) - parseMMSS(step.timestamp)) <= 15) {
             const stepTopics = new Set((step.topics || []).map(t => t.toLowerCase()));
@@ -608,7 +776,7 @@ export function cancelJob(jobId: string): boolean {
         step.linked_annotation_ids = validAnnotationLinks;
       }
 
-      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && step.insight_type !== 'rationale') {
+      if (validLinks.length === 0 && (!step.linked_annotation_ids || step.linked_annotation_ids.length === 0) && !nonProceduralTypes.has(step.insight_type)) {
         unlinkedSteps++;
       }
     }
@@ -618,7 +786,7 @@ export function cancelJob(jobId: string): boolean {
     const unlinkedActions = userActions.filter(a => !linkedActionIds.has(a.id));
 
     const coveragePercent = userActions.length > 0 ? ((userActions.length - unlinkedActions.length) / userActions.length * 100).toFixed(1) : "100.0";
-    addLog('info', `Link coverage: ${coveragePercent}% of user actions linked. ${brokenLinks} broken refs removed. ${unlinkedSteps} non-rationale steps with no links.`);
+    addLog('info', `Link coverage: ${coveragePercent}% of user actions linked. ${brokenLinks} broken refs removed. ${unlinkedSteps} non-procedural steps with no links.`);
 
     if (unlinkedActions.length > userActions.length * 0.3) {
       addLog('warn', `Low link coverage (${coveragePercent}%). ${unlinkedActions.length} user actions have no narrative step.`);
@@ -643,7 +811,7 @@ export function cancelJob(jobId: string): boolean {
         cumulativeActions,
         cumulativeNarrative,
         latestUIState,
-        customContext,
+        vocabularyContext,
         apiKey,
         addLog,
         (pct) => {
@@ -652,9 +820,12 @@ export function cancelJob(jobId: string): boolean {
       );
       
       const seenDedupIds = new Set<string>();
+      const idRenames = new Map<string, string>();
       const deduplicatedActions = deduplicatedActionsRaw.map(action => {
-        if (!action.id || seenDedupIds.has(action.id)) {
+        const oldId = action.id;
+        if (!action.id || seenDedupIds.has(action.id) || !action.id.startsWith('evt_')) {
           action.id = `evt_${uuidv4().substring(0, 8)}`;
+          if (oldId) idRenames.set(oldId, action.id);
         }
         seenDedupIds.add(action.id);
         return action;
@@ -689,10 +860,10 @@ export function cancelJob(jobId: string): boolean {
               // Tie-breaker: find the most similar original action
               keptAction = candidates.reduce((best, current) => {
                 const scoreCurrent = (current.target?.element === oldAction.target?.element ? 2 : 0) + 
-                                     (current.target?.panel === oldAction.target?.panel ? 1 : 0) +
+                                     (current.target?.container === oldAction.target?.container ? 1 : 0) +
                                      (current.detail === oldAction.detail ? 3 : 0);
                 const scoreBest = (best.target?.element === oldAction.target?.element ? 2 : 0) + 
-                                  (best.target?.panel === oldAction.target?.panel ? 1 : 0) +
+                                  (best.target?.container === oldAction.target?.container ? 1 : 0) +
                                   (best.detail === oldAction.detail ? 3 : 0);
                 return scoreCurrent > scoreBest ? current : best;
               });
@@ -714,6 +885,16 @@ export function cancelJob(jobId: string): boolean {
           }
         }
       }
+
+      if (idRenames.size > 0) {
+        addLog('info', `Renamed ${idRenames.size} non-evt_ action IDs.`);
+        for (const step of cumulativeNarrative) {
+          step.linked_visual_action_ids = step.linked_visual_action_ids.map(
+            (id: string) => idRenames.get(id) ?? id
+          );
+        }
+      }
+
       phaseDSucceeded = true;
     } catch (dedupError: any) {
       addLog('warn', `Global deduplication failed, falling back to chunked actions. Error: ${dedupError.message}`);
@@ -733,7 +914,8 @@ export function cancelJob(jobId: string): boolean {
           total_actions: state.actions.length,
           total_steps: cumulativeNarrative.length,
           total_annotations: state.annotations.length,
-          deduplicated: phaseDSucceeded  // false = pre-dedup data, may contain duplicates
+          deduplicated: phaseDSucceeded,  // false = pre-dedup data, may contain duplicates
+          viewportResolution: await detectViewportResolution(state.videoUrl)
         }
       });
       state.cleanedOutput = cleaned;
@@ -773,7 +955,8 @@ export function cancelJob(jobId: string): boolean {
   } catch (error: any) {
     console.error(`Job ${jobId} failed:`, error);
     state.status = 'error';
-    state.error = error.message || 'Unknown error occurred';
+    const stackStr = error.stack ? `\nStack: ${error.stack}` : '';
+    state.error = (error.message || 'Unknown error occurred') + stackStr;
     addLog('error', `Fatal error: ${state.error}`);
 
     // Mark the current chunk as errored

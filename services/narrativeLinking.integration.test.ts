@@ -15,35 +15,28 @@ describe('Narrative Linking & Output Quality Integration Tests', () => {
     const startSec = 0;
     const endSec = 30;
 
-    // Mock some Phase B actions with state transitions
     const mockActions: ActionItem[] = [
       {
         id: 'evt_001',
-        timestamp: '00:05',
-        action_type: 'click',
+        timestamp: '00:07',
+        action_type: 'right_click',
         actor: 'user',
-        target: { element: 'Settings Button', location: 'Top Right', panel: 'Header', visual: 'Gear icon' },
-        detail: 'User clicked the settings button',
-        result: 'Settings menu opened',
+        target: { element: 'CLIP', element_type: 'list_item', container: 'Rundown panel', nearest_landmark: '1.2', relation_to_landmark: 'right_of', visual: 'purple block' },
+        detail: 'User right-clicks on the CLIP block',
+        result: 'Context menu opens',
         context_note: '',
-        confidence: 'high',
-        interacted_components: [
-          { type: 'button', label: 'Settings', state_before: 'default', state_after: 'active' }
-        ]
+        confidence: 'high'
       },
       {
         id: 'evt_002',
-        timestamp: '00:10',
+        timestamp: '00:12',
         action_type: 'click',
         actor: 'user',
-        target: { element: 'Dark Mode Toggle', location: 'Menu', panel: 'Settings', visual: 'Toggle switch' },
-        detail: 'User toggled dark mode',
-        result: 'Theme changed to dark',
+        target: { element: 'Manage block templates', element_type: 'menu_item', container: 'Episode Menu', nearest_landmark: 'Trash', relation_to_landmark: 'below', visual: 'text item in dropdown list' },
+        detail: 'User clicks on Manage block templates',
+        result: 'Modal dialog opens',
         context_note: '',
-        confidence: 'high',
-        interacted_components: [
-          { type: 'toggle', label: 'Dark Mode', state_before: 'unchecked', state_after: 'checked' }
-        ]
+        confidence: 'high'
       }
     ];
 
@@ -96,7 +89,7 @@ describe('Narrative Linking & Output Quality Integration Tests', () => {
       timestamp: '00:05',
       action_type: 'click',
       actor: 'user',
-      target: { element: 'Button', location: 'Center', panel: 'Main', visual: 'Blue button' },
+      target: { element: 'Button', element_type: 'button', container: 'Main', nearest_landmark: 'Center', relation_to_landmark: 'inside', visual: 'Blue button' },
       detail: 'User clicked button',
       result: 'Action performed'
       // Missing: interacted_components, input_data, is_error_recovery, context_note, confidence

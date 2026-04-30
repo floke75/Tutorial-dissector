@@ -1,49 +1,45 @@
-# Improve Narrative-Action Linking and Output Quality
+# Pull Request: Cloud Persistence & Custom Vocabularies
 
-## 🎯 Context & Symptoms
-This PR implements the comprehensive fixes outlined in `IMPLEMENTATION_PLAN_NARRATIVE_ACTION_LINKING.md`. 
+## 🎯 Motivation & Context
+**The Problem:** Previously, the application relied on browser `IndexedDB` (via `idb-keyval`) for storing project data. This meant that projects were tied to a specific browser and device, making it impossible for users to access their analysis sessions across different machines. Additionally, the application relied on a hardcoded `glossary/elements.json` file for UI element vocabularies, which restricted users from easily adding or managing custom vocabularies for different software applications.
 
-Previously, test runs exposed several critical defects in the execution graph:
-- **Low Link Coverage:** ~58% of visual actions were never referenced by any narrative step because Phase C only saw the current chunk's actions.
-- **Duplicate Steps:** The model generated intra-chunk near-duplicate steps (e.g., a conceptual step immediately followed by a mechanical step for the same activity).
-- **Contradictory Narration:** The narration sometimes contradicted actual user actions because the model couldn't see underlying UI state transitions.
-- **Inconsistent Schemas:** Optional fields (`interacted_components`, `input_data`) were inconsistently present across visual actions, and `insight_type` drifted from its defined enum values.
+**The Solution:** 
+1. **Cloud Persistence:** Integrate Firebase Authentication (Google Sign-In) and Firestore to securely store and sync user projects across devices.
+2. **Custom Vocabularies:** Introduce a new UI and backend flow allowing users to upload, manage, and apply custom JSON vocabularies on a per-project basis.
 
-## ✨ Key Changes
+---
 
-### 1. Widened Action Context Window (Phase C)
-- **File:** `server/jobManager.ts`
-- **Change:** Phase C now receives a time-filtered slice of `cumulativeActions` (buffered by 15 seconds) rather than just the current chunk's actions.
-- **Impact:** Narrative steps can now successfully link to actions across chunk boundaries, drastically improving link coverage.
+## 🏗️ Architecture & Logic Changes
 
-### 2. State Transition Grounding
-- **File:** `services/geminiService.ts`
-- **Change:** Enriched the `simplifiedActions` payload sent to the narration model by adding a `state_change` summary derived from `interacted_components` (e.g., `{ label: "Setting", from: "unchecked", to: "checked" }`).
-- **Impact:** The model now has ground-truth data on what the user *actually changed*, preventing narration from contradicting the mechanical UI state.
+### 1. Firebase Integration (`firebase.ts`, `services/storage.ts`)
+- **Authentication:** Added Google Sign-In via Firebase Auth. Only authenticated users can create, view, and manage projects.
+- **Firestore Migration:** Replaced `idb-keyval` with Firestore. Projects are now stored in a `projects` collection, keyed by the user's UID.
+- **Data Models:** Updated the `Project` and `ProjectSummary` interfaces to align with Firestore document structures.
 
-### 3. Prompt Refinements (Duplicate Prevention)
-- **File:** `constants.ts`
-- **Change:** Tightened `PASS_2_SYSTEM_PROMPT`. Revised Rule 7 to make standalone conceptual steps conditional (only if no adjacent linked step exists) and added Rule 9 to explicitly forbid consecutive steps with synonymous intents.
-- **Impact:** Eliminates redundant intra-chunk narrative steps.
+### 2. Custom Vocabularies Management (`components/Dashboard.tsx`, `services/storage.ts`)
+- **Dashboard UI:** Added a new "Custom Vocabularies" section to the Dashboard.
+- **Upload Flow:** Users can upload `.json` files containing custom UI element definitions. These are validated and stored in a new `vocabularies` Firestore collection.
+- **Deletion:** Added confirmation-based deletion for custom vocabularies to prevent accidental data loss.
 
-### 4. Strict Schema Enforcement
-- **File:** `services/geminiService.ts`
-- **Change:** Enforced `insight_type` strictly via a Zod enum in the `responseSchema`.
-- **Impact:** Prevents the model from hallucinating invalid insight types (e.g., "instructional").
+### 3. Project Configuration (`components/InputPanel.tsx`, `components/AnalysisView.tsx`)
+- **Vocabulary Selection:** Replaced the static text input for `glossaryPath` with a dynamic dropdown in the `InputPanel`. Users can now select either the default `glossary/elements.json` or any of their uploaded custom vocabularies.
+- **State Threading:** Threaded the selected vocabulary content through the `AnalysisView` and into the backend job submission.
 
-### 5. Global Deduplication Normalization
-- **File:** `constants.ts`
-- **Change:** Added a schema normalization rule to `GLOBAL_DEDUPLICATION_PROMPT` to enforce default values for `interacted_components`, `input_data`, `is_error_recovery`, `context_note`, and `confidence`.
-- **Impact:** Guarantees a stable, uniform field contract for all downstream consumers (Playwright compiler, React timeline).
+### 4. Backend Processing (`server/jobManager.ts`, `utils/extractionVocabulary.ts`)
+- **Dynamic Vocabulary Injection:** Updated the `/api/start-job` endpoint to accept `vocabularyContent`.
+- **Extraction Logic:** Modified `generateExtractionVocabulary` to prioritize the provided `vocabularyContent` over reading from the local filesystem. This allows the LLM to use the user's custom definitions during Phase A and Phase B extraction.
 
-### 6. Coverage Validation & Link Remapping
-- **File:** `server/jobManager.ts`
-- **Change:** Added a post-Phase-C validation pass that calculates link coverage, logs warnings if coverage drops below 70%, and prunes broken references. Also added logic to remap `linked_visual_action_ids` if Phase D (Global Dedup) reassigns action IDs.
-- **Impact:** Detects and repairs broken links automatically before the pipeline completes.
+### 5. Specification Updates (`tutorial-dissector.allium.md`, `PLAN.md`, `PROGRESS.md`)
+- **Allium Spec:** Added `UserProfile` and `Vocabulary` entities. Updated the `Project` entity to link to `UserProfile`. Added the `ProjectDashboard` surface.
+- **Documentation:** Updated `PLAN.md` and `PROGRESS.md` to reflect the shift from `IndexedDB` to Firebase Firestore and the addition of the custom vocabulary feature.
 
-## 🧪 Verification Protocol
-Reviewers should verify the following on test runs (both short and long videos):
-- [ ] **Coverage:** ≥80% of `actor: "user"` actions are linked by at least one narrative step.
-- [ ] **Integrity:** 0 narrative steps have `linked_visual_action_ids` referencing nonexistent action IDs.
-- [ ] **Deduplication:** 0 consecutive step pairs with synonymous intent within ≤10s.
-- [ ] **Schema:** Every step's `insight_type` strictly matches the `InsightType` enum, and every action has all normalized fields present.
+---
+
+## 🧪 Testing & Verification Guide for Reviewer
+
+### Manual Verification Steps
+1. **Authentication:** Open the app in an incognito window. Verify that you are prompted to sign in with Google before accessing the dashboard.
+2. **Project Sync:** Create a project on one device/browser, then log in on another. Verify that the project appears and loads correctly.
+3. **Vocabulary Upload:** Upload a valid JSON vocabulary file from the dashboard. Verify it appears in the "Custom Vocabularies" list.
+4. **Vocabulary Application:** Open a project, select the newly uploaded vocabulary from the "Vocabulary Source" dropdown, and start an analysis. Verify in the backend logs that the custom vocabulary content is being passed to the LLM.
+5. **Deletion:** Delete a project and a custom vocabulary. Verify they are removed from the UI and Firestore.

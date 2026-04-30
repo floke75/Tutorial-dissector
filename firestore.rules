@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - User's ID
+    //   - email: string (required) - User's email
+    //   - displayName: string (optional) - User's name
+    //   - photoURL: string (optional) - User's photo
+    //   - createdAt: string (required) - ISO 8601 date string
+    //
+    // Collection: projects
+    // Document ID: {projectId}
+    // Fields:
+    //   - id: string (required) - Project ID
+    //   - userId: string (required) - Owner's user ID
+    //   - name: string (required) - Project name
+    //   - updatedAt: number (required) - Last updated timestamp
+    //   - videoUrl: string (optional)
+    //   - durationInput: string (optional)
+    //   - chunkSize: number (optional)
+    //   - overlap: number (optional)
+    //   - customContext: string (optional)
+    //   - softwareName: string (optional)
+    //   - glossaryPath: string (optional)
+    //   - chunks: string (optional) - JSON stringified
+    //   - actions: string (optional) - JSON stringified
+    //   - annotations: string (optional) - JSON stringified
+    //   - narrativeSteps: string (optional) - JSON stringified
+    //   - procState: string (optional) - JSON stringified
+    //   - latestUIState: string (optional) - JSON stringified
+    //   - status: string (required)
+    //   - actionCount: number (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function userIdUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function userIdNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             isValidEmail(data.email) &&
+             isValidDateString(data.createdAt) &&
+             isValidOptionalString('displayName', 0, 100) &&
+             isValidOptionalString('photoURL', 0, 2000);
+    }
+
+    function isValidProject(data) {
+      return hasRequiredFields(['id', 'userId', 'name', 'updatedAt', 'status']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.updatedAt is number &&
+             data.status is string && data.status.size() > 0 && data.status.size() < 50 &&
+             isValidOptionalString('videoUrl', 0, 2000) &&
+             isValidOptionalString('durationInput', 0, 50) &&
+             (!( 'chunkSize' in data ) || data.chunkSize is number) &&
+             (!( 'overlap' in data ) || data.overlap is number) &&
+             isValidOptionalString('customContext', 0, 10000) &&
+             isValidOptionalString('softwareName', 0, 100) &&
+             isValidOptionalString('glossaryPath', 0, 500) &&
+             isValidOptionalString('chunks', 0, 1048576) &&
+             isValidOptionalString('actions', 0, 1048576) &&
+             isValidOptionalString('annotations', 0, 1048576) &&
+             isValidOptionalString('narrativeSteps', 0, 1048576) &&
+             isValidOptionalString('procState', 0, 1048576) &&
+             isValidOptionalString('latestUIState', 0, 1048576) &&
+             (!( 'actionCount' in data ) || data.actionCount is number);
+    }
+
+    function isValidVocabulary(data) {
+      return hasRequiredFields(['id', 'userId', 'name', 'softwareName', 'content', 'updatedAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.softwareName is string && data.softwareName.size() > 0 && data.softwareName.size() < 100 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 1048576 &&
+             data.updatedAt is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
+    match /projects/{projectId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidProject(request.resource.data) && userIdUnchanged();
+      allow update: if isDocOwner() && isValidProject(request.resource.data) && userIdNotModified();
+      allow delete: if isDocOwner();
+    }
+
+    match /vocabularies/{vocabularyId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidVocabulary(request.resource.data) && userIdUnchanged();
+      allow update: if isDocOwner() && isValidVocabulary(request.resource.data) && userIdNotModified();
+      allow delete: if isDocOwner();
+    }
+  }
+}

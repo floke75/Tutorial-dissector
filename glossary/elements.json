@@ -1,0 +1,944 @@
+{
+  "Cuez Rundown": {
+    "_meta": {
+      "version": "2.4",
+      "scope": "Cuez Rundown web application UI elements (app.cuez.live) — STRICT SCOPE for this top-level key",
+      "scope_exclusions": "This top-level key covers ONLY the Cuez Rundown web application. Cuez Storiez is a SEPARATE software product with its own UI surface (News Desk, Story Tray, Stories, Sub-stories, Dossiers, Publishing Points, News Feeds, Mailboxes, Story Categories, etc.) — NONE of those terms belong under this key. Cuez Gateway and MOStomator are also separate and excluded. Cuez Automator IS covered, but under a SEPARATE peer top-level key 'Cuez Automator' in this same file (the parser routes by Software Name input matching the top-level key). Browser-native UI (print dialog), Google Slides, and Intercom support widget contents are out of scope.",
+      "file_structure_note": "This vocabulary file contains TWO top-level keys: 'Cuez Rundown' (this section) and 'Cuez Automator' (the desktop automation app). The pipeline's 'Software Name' input determines which top-level key is used as the canonical source. Each top-level key is self-contained and the canonicals do not cross-reference each other. Items with shared names (e.g. 'Block Row' exists in both, 'Play' button in both) are independent entries within their respective scopes.",
+      "v2_4_changes": "Cross-referenced with the official Cuez Help Centre Cuez Lexicon (https://intercom.help/cuez/en/articles/6940949). Renamed 'Side Panel Details' → 'Side Panel View' to match the official term. Added new canonicals: 'Upgrade' button (top-right, opens plan selector), 'Confirmation Code' input (6-digit email confirmation field used in 2FA and account-locked flows), 'Locked Account' state (account locked after multiple failed login attempts). Added three new reference concepts to content_hierarchy: 'Heading' (collective term for Parts and Items), 'Badge' (generic block label), 'Action Menu' (generic 3-vertical-dots menu pattern). The lexicon confirmed nearly all existing canonicals as accurate.",
+      "v2_3_changes": "Added 'Automator' button (and the Automator Pairing Screen it opens) to dashboard_elements — discovered via Cuez Help Centre's Automator Lexicon article, which documented the pairing flow originating from the Cuez Rundown dashboard.",
+      "notes": "Canonical names for every user-facing UI element in the Cuez Rundown web app. British spelling ('Colour') used throughout. 'On Air' written without hyphen to match UI labels.",
+      "schema_v2_changes": "Each entry now carries an explicit 'type' field. Canonicals have been stripped of redundant type suffixes (e.g. 'My Account Button' → canonical 'My Account', type 'button'). Names retain disambiguating context when the bare term would clash AND the types are also identical. The parser should pass canonical+type to the LLM as 'use these exact names with these types'.",
+      "v2_1_changes": "Layout system corrected after tutorial audit: the toolbar layout selector is a single Layout dropdown with menu items 'Rundown only', 'Script only', 'Rundown & Script', and 'Tablet' (in shared view) — not three separate toggles as v2.0 modelled. Old toggle canonicals (Script Layout / Rundown Layout / Side-by-side Layout) kept as aliases on the menu items for backward compatibility. Added new canonicals for Edit Block Template View interactions (field rows, delete field, field visibility toggle, edit name pencil), Edit Field Modal expansions (Field Name, Cancel, Aa Uppercase/Lowercase/Original, Customize Option Popover, Option Name, Add field confirm), Create Block Template Modal, Block Visibility Filter Select All, media field Upload or Select File icon, dashboard Create new episode, toolbar Back, content structure + Add block, and Help Article Modal.",
+      "canonical_uniqueness": "(canonical, type) together form the unique key for a UI element. The same canonical may appear with different types in different UI surfaces — e.g. 'Off Air Time' is both an input (toolbar field) and a display (timings column); 'Share' is both a button (toolbar) and a checkbox (prompter master/slave); 'Series' is both a folder (sidebar) and a reference (content hierarchy concept); 'Edit Field' is both a menu_item (action) and a modal (the dialog it opens). These intentional same-label-different-type duplicates accurately reflect the live UI and rely on the type field to disambiguate.",
+      "type_vocabulary": "Types in use: button, icon, menu_item, input, checkbox, panel, dropdown, text, tab, canvas, list_item, toggle, slider, link, picker, container, state, badge, role, shortcut, layout, modal, counter, timer, countdown, indicator, display, bar, row, swatch, action, switch, view, folder, scope, colour_status, reference. The first 15 are taken directly from the tutorial extraction's element_type field; the rest are extensions for UI patterns the tutorial doesn't currently distinguish.",
+      "terminology_note": "The live UI uses 'block template' as the visible label (e.g. 'Manage block templates', '+ Create block template', 'Edit block template'), while older Help Centre documentation uses 'block configuration'. Both terms refer to the same concept. Canonicals here favor the live UI text where it's clearly displayed; both terminologies are kept as aliases for narrator coverage.",
+      "support_widget_note": "The Support Chat Panel that opens via the Support Chat Icon is rendered by Intercom (a third-party service), not by Cuez. Its internal tabs (Home, Messages, Help), category lists, and article links are out of scope. The Support Chat Icon and the Help Article Modal that opens from clicking an article are part of the in-Cuez chrome experience.",
+      "user_content_note": "User-typed content (Episode names, Item titles, Part titles, organisation names, comment text) and user-configured Column instances (e.g. a column the user names 'Notes', 'Sound', 'EVS', 'GFX'), user-named Block Templates (e.g. 'PRESENTER A', 'PRESENTER B'), user-defined Label option values (e.g. 'Live', 'Replay', 'OFF', 'Portrait'), and user-named field rows (e.g. 'Title', 'Sound', 'Last Words', 'Type', 'Zoom', 'Link') are not Cuez UI elements and are not canonicalised. The CONTAINERS for that content (Episode Name, Part Row, Text Column, Field Row, etc.) are canonicalised. Default placeholder strings ('Untitled Part', 'Untitled Item') are also user-content surfaces, not canonical UI elements."
+    },
+
+    "structural_containers": {
+      "episode_editor": { "canonical": "Episode Editor", "type": "container", "aliases": ["editor view", "main editor"] },
+      "top_toolbar": { "canonical": "Top Toolbar", "type": "container", "aliases": ["toolbar"] },
+      "sidebar": { "canonical": "Sidebar", "type": "container", "aliases": ["left sidebar"] },
+      "dashboard": { "canonical": "Dashboard", "type": "container", "aliases": ["project overview", "project home"] },
+      "main_screen": { "canonical": "Main Screen", "type": "container" },
+      "organisation_page": { "canonical": "Organisation Page", "type": "container", "aliases": ["organization page"] },
+      "support_chat_panel": { "canonical": "Support Chat Panel", "type": "panel", "aliases": ["support widget", "intercom panel"] }
+    },
+
+    "global_chrome": {
+      "project_switcher": { "canonical": "Project Switcher", "type": "dropdown", "aliases": ["project dropdown"] },
+      "projects_menu": { "canonical": "Projects Menu", "type": "dropdown", "aliases": ["projects", "projects dropdown", "projects button", "organisation menu", "org menu"] },
+      "my_account": { "canonical": "My Account", "type": "button", "aliases": ["my account button", "account button", "profile button"] },
+      "user_menu": { "canonical": "User Menu", "type": "dropdown", "aliases": ["account dropdown menu", "user dropdown menu"] },
+      "appearance_toggle": { "canonical": "Appearance", "type": "toggle", "aliases": ["appearance toggle", "theme toggle"] },
+      "light_mode": { "canonical": "Light Mode", "type": "menu_item" },
+      "dark_mode": { "canonical": "Dark Mode", "type": "menu_item" },
+      "system_appearance": { "canonical": "System Appearance", "type": "menu_item", "aliases": ["follow system"] },
+      "help_button": { "canonical": "Help", "type": "button", "aliases": ["help button", "question mark button", "? button"] },
+      "support_chat_icon": { "canonical": "Support Chat Icon", "type": "icon", "aliases": ["blue message icon", "chat widget icon", "intercom button"] },
+      "help_article_modal": { "canonical": "Help Article Modal", "type": "modal", "aliases": ["help article", "intercom help article modal"] },
+      "close_button": { "canonical": "Close", "type": "button", "aliases": ["close button", "x icon", "close icon", "dismiss button"] },
+      "loading_indicator": { "canonical": "Loading", "type": "indicator", "aliases": ["loading indicator", "loading spinner", "spinner", "loading screen"] }
+    },
+
+    "account_menu": {
+      "profile_picture_upload": { "canonical": "Profile Picture", "type": "input", "aliases": ["profile picture upload", "avatar upload"] },
+      "full_name_field": { "canonical": "Full Name", "type": "input", "aliases": ["full name field"] },
+      "email_address_field": { "canonical": "Email Address", "type": "input", "aliases": ["email address field"] },
+      "password_field": { "canonical": "Password", "type": "input", "aliases": ["password field"] },
+      "confirmation_code_input": { "canonical": "Confirmation Code", "type": "input", "aliases": ["confirmation code input", "confirmation code field", "6-digit code", "verification code"] },
+      "locked_account_state": { "canonical": "Locked Account", "type": "state", "aliases": ["locked", "account locked", "account locked state"] }
+    },
+
+    "organisation_settings": {
+      "organisation_settings_billing": { "canonical": "Organisation Settings", "type": "menu_item", "aliases": ["organization settings", "organisation settings & billing", "organization settings & billing"] },
+      "organisation_settings_tab": { "canonical": "Organisation Settings", "type": "tab", "aliases": ["organization settings tab", "organisation settings tab"] },
+      "organisation_members_tab": { "canonical": "Organisation Members", "type": "tab", "aliases": ["organization members tab", "organization members"] },
+      "payment_method": { "canonical": "Payment Method", "type": "panel" },
+      "add_payment_method_button": { "canonical": "Add Payment Method", "type": "button", "aliases": ["add payment method button"] },
+      "invoices": { "canonical": "Invoices", "type": "panel" },
+      "manage_organisation_members_button": { "canonical": "Manage Organisation Members", "type": "button", "aliases": ["organisation manage members"] },
+      "media_library": { "canonical": "Media Library", "type": "panel" },
+      "add_media_library_button": { "canonical": "Add Media Library", "type": "button", "aliases": ["add media library button"] },
+      "library_name_field": { "canonical": "Library Name", "type": "input", "aliases": ["library name field"] },
+      "library_type_dropdown": { "canonical": "Library Type", "type": "dropdown", "aliases": ["library type dropdown"] },
+
+      "roles": {
+        "owner": { "canonical": "Owner", "type": "role", "aliases": ["organisation owner", "org owner"] },
+        "member": { "canonical": "Member", "type": "role", "aliases": ["organisation member", "org member"] }
+      }
+    },
+
+    "dashboard_elements": {
+      "search_bar": { "canonical": "Search", "type": "input", "aliases": ["search bar", "episode search bar", "search field"] },
+      "sorting_filters": { "canonical": "Sorting Filters", "type": "dropdown", "aliases": ["sort dropdown"] },
+      "sort_episode_name": { "canonical": "Sort by Episode Name", "type": "menu_item" },
+      "sort_scheduled_date": { "canonical": "Sort by Scheduled Date", "type": "menu_item" },
+      "sort_date_created": { "canonical": "Sort by Date Created", "type": "menu_item" },
+      "create_project_button": { "canonical": "Create Project", "type": "button", "aliases": ["create project button", "new project button"] },
+      "create_new_episode_button": { "canonical": "Create new episode", "type": "button", "aliases": ["create new episode button", "new episode button"] },
+      "upgrade_button": { "canonical": "Upgrade", "type": "button", "aliases": ["upgrade button", "upgrade plan button"] },
+      "manage_members_button": { "canonical": "Manage Members", "type": "button", "aliases": ["manage members button", "manage project members"] },
+      "invite_members_to_project_button": { "canonical": "Invite Members to Project", "type": "button", "aliases": ["invite members to project button", "invite button"] },
+      "user_row_3_dots_menu": { "canonical": "User Row 3-Dots Menu", "type": "icon", "aliases": ["user row actions menu"] },
+      "project_actions_menu": { "canonical": "Project Actions Menu", "type": "icon", "aliases": ["project 3-dots menu"] },
+      "project_properties": { "canonical": "Project Properties", "type": "menu_item", "aliases": ["project properties menu item"] },
+      "change_role_action": { "canonical": "Change Role", "type": "menu_item" },
+      "reset_password_action": { "canonical": "Reset Password", "type": "menu_item" },
+      "remove_from_project_action": { "canonical": "Remove from Project", "type": "menu_item" },
+      "confirmation_toast": { "canonical": "Confirmation Toast", "type": "indicator", "aliases": ["toast notification"] },
+      "episode_row": { "canonical": "Episode Row", "type": "list_item", "aliases": ["episode list item"] },
+      "more_actions_button": { "canonical": "More Actions", "type": "button", "aliases": ["more actions button", "episode row 3-dots", "row 3-dots menu"] },
+      "template_edit_indicator": { "canonical": "Template Edit Indicator", "type": "indicator", "aliases": ["yellow header indicator"] },
+      "permanently_delete_button": { "canonical": "Permanently Delete", "type": "button", "aliases": ["permanently delete button"] },
+      "automator_pair_button": { "canonical": "Automator", "type": "button", "aliases": ["automator button", "pair automator button", "pair automator", "pair button"] },
+      "automator_pairing_screen": { "canonical": "Automator Pairing Screen", "type": "panel", "aliases": ["automator pairing", "available connections screen", "pair automator screen"] },
+
+      "sidebar_folders": {
+        "active_episodes_folder": { "canonical": "Active Episodes", "type": "folder", "aliases": ["active episodes folder", "episodes folder"] },
+        "archive_folder": { "canonical": "Archive", "type": "folder", "aliases": ["archive folder", "archived folder"] },
+        "deleted_folder": { "canonical": "Deleted", "type": "folder", "aliases": ["deleted folder"] },
+        "templates_folder": { "canonical": "Templates", "type": "folder", "aliases": ["templates folder"] },
+        "series_folder": { "canonical": "Series", "type": "folder", "aliases": ["series folder"] }
+      },
+
+      "episode_3_dots_menu": {
+        "create_template_from_episode": { "canonical": "Create Template from Episode", "type": "menu_item" },
+        "duplicate_episode": { "canonical": "Duplicate Episode", "type": "menu_item" },
+        "archive_episode": { "canonical": "Archive Episode", "type": "menu_item" },
+        "delete_episode": { "canonical": "Delete Episode", "type": "menu_item" },
+        "unarchive_episode": { "canonical": "Unarchive Episode", "type": "menu_item" },
+        "restore_episode": { "canonical": "Restore Episode", "type": "menu_item" },
+        "duplicate_episode_template": { "canonical": "Duplicate Episode Template", "type": "menu_item" },
+        "delete_episode_template": { "canonical": "Delete Episode Template", "type": "menu_item" }
+      },
+
+      "series_3_dots_menu": {
+        "edit_series": { "canonical": "Edit Series", "type": "menu_item" },
+        "archive_series": { "canonical": "Archive Series", "type": "menu_item" },
+        "delete_series": { "canonical": "Delete Series", "type": "menu_item" }
+      },
+
+      "project_creation_templates": {
+        "sports_template": { "canonical": "Sports Project Template", "type": "menu_item", "aliases": ["sports template", "sports starter"] },
+        "talkshow_template": { "canonical": "Talkshow Project Template", "type": "menu_item", "aliases": ["talkshow template"] },
+        "esports_template": { "canonical": "Esports Project Template", "type": "menu_item", "aliases": ["esports template"] },
+        "live_event_template": { "canonical": "Live Event Project Template", "type": "menu_item", "aliases": ["live event template"] },
+        "news_template": { "canonical": "News Project Template", "type": "menu_item", "aliases": ["news template"] },
+        "educational_template": { "canonical": "Educational Project Template", "type": "menu_item", "aliases": ["educational template"] }
+      },
+
+      "project_roles": {
+        "admin": { "canonical": "Admin", "type": "role", "aliases": ["project admin"] },
+        "contributor": { "canonical": "Contributor", "type": "role", "aliases": ["project contributor"] }
+      }
+    },
+
+    "content_hierarchy": {
+      "_note": "These are conceptual reference names for the entity hierarchy. They appear in narration but are not interactive UI controls themselves; the interactive controls are the rows, badges, and menus listed elsewhere.",
+      "organisation": { "canonical": "Organisation", "type": "reference", "aliases": ["organization"] },
+      "project": { "canonical": "Project", "type": "reference" },
+      "series": { "canonical": "Series", "type": "reference" },
+      "episode": { "canonical": "Episode", "type": "reference", "aliases": ["show"] },
+      "part": { "canonical": "Part", "type": "reference", "aliases": ["segment", "section"] },
+      "item": { "canonical": "Item", "type": "reference", "aliases": ["rundown row item"] },
+      "block": { "canonical": "Block", "type": "reference", "aliases": ["block instance"] },
+      "text_block": { "canonical": "Text Block", "type": "reference" },
+      "cue_block": { "canonical": "Cue Block", "type": "reference" },
+      "heading": { "canonical": "Heading", "type": "reference", "aliases": ["headings", "parts and items"] },
+      "badge": { "canonical": "Badge", "type": "reference", "aliases": ["block badge name"] },
+      "action_menu_generic": { "canonical": "Action Menu", "type": "reference", "aliases": ["3 vertical dots menu", "three dots menu"] }
+    },
+
+    "episode_editor_toolbar": {
+      "episode_name": { "canonical": "Episode Name", "type": "input", "aliases": ["episode name field", "episode title field"] },
+      "back_button": { "canonical": "Back", "type": "button", "aliases": ["back button", "back arrow"] },
+      "layout_dropdown": { "canonical": "Episode Layout", "type": "dropdown", "aliases": ["layout", "layout dropdown", "display layout dropdown", "display layout menu", "layout selector", "layout: rundown", "layout: script", "layout: tablet"] },
+      "layout_option_rundown_only": { "canonical": "Rundown only", "type": "menu_item", "aliases": ["rundown layout", "rundown view toggle", "rundown only layout"] },
+      "layout_option_script_only": { "canonical": "Script only", "type": "menu_item", "aliases": ["script layout", "script view toggle", "script only layout"] },
+      "layout_option_rundown_and_script": { "canonical": "Rundown & Script", "type": "menu_item", "aliases": ["side-by-side layout toggle", "side-by-side layout", "side-by-side", "side by side layout", "hybrid layout", "rundown and script"] },
+      "show_type_live": { "canonical": "Live Show Type", "type": "toggle", "aliases": ["live show type toggle", "live toggle", "live"] },
+      "show_type_recorded": { "canonical": "Recorded Show Type", "type": "toggle", "aliases": ["recorded show type toggle", "recorded toggle", "recorded"] },
+      "on_air_time_field": { "canonical": "On Air Time", "type": "input", "aliases": ["on air time field"] },
+      "off_air_time_field": { "canonical": "Off Air Time", "type": "input", "aliases": ["off air time field"] },
+      "cue_mode_switch": { "canonical": "Cue Mode", "type": "switch", "aliases": ["cue mode switch", "cue toggle"] },
+      "column_manager_button": { "canonical": "Column Manager Plus", "type": "button", "aliases": ["column manager plus button", "column visibility toggle", "show/hide columns button"] },
+      "add_a_new_column_button": { "canonical": "Add a New Column", "type": "button", "aliases": ["add a new column button", "create column button"] },
+      "block_filter_eye_icon": { "canonical": "Block Filter Eye", "type": "icon", "aliases": ["block filter eye icon", "filter icon", "eye icon"] },
+      "block_configuration_filter_menu": { "canonical": "Block Configuration Filter Menu", "type": "panel", "aliases": ["block visibility filter", "filter columns menu"] },
+      "block_filter_search_field": { "canonical": "Block Filter Search", "type": "input", "aliases": ["block filter search field"] },
+      "deselect_all_button": { "canonical": "Deselect All", "type": "button", "aliases": ["deselect all button"] },
+      "select_all_button": { "canonical": "Select all", "type": "button", "aliases": ["select all button"] },
+      "over_under_duration_display": { "canonical": "Over/Under Duration", "type": "display", "aliases": ["over/under duration display", "over under timer", "toolbar over under display"] },
+      "episode_time_display": { "canonical": "Episode Time", "type": "display", "aliases": ["episode time display", "current time display"] },
+      "search_icon": { "canonical": "Search", "type": "icon", "aliases": ["search icon", "magnifying glass icon"] },
+      "prompter_button": { "canonical": "Prompter", "type": "button", "aliases": ["prompter button", "prompter top toolbar button"] },
+      "share_button": { "canonical": "Share", "type": "button", "aliases": ["share button", "top toolbar share button"] },
+      "collapse_rundown_button": { "canonical": "Collapse Rundown", "type": "button", "aliases": ["collapse rundown button", "hide rundown button"] },
+      "expand_rundown_button": { "canonical": "Expand Rundown", "type": "button", "aliases": ["expand rundown button", "show rundown button"] },
+      "center_divider": { "canonical": "Center Divider", "type": "slider", "aliases": ["panel divider", "rundown script divider", "view separator"] },
+      "follow_cue_toggle": { "canonical": "Follow Cue", "type": "toggle", "aliases": ["follow cue toggle", "follow the cuer toggle"] }
+    },
+
+    "search_panel": {
+      "search_panel_container": { "canonical": "Search", "type": "panel", "aliases": ["search panel"] },
+      "search_input": { "canonical": "Search Input", "type": "input", "aliases": ["search input field"] },
+      "search_scope_dropdown": { "canonical": "Search Scope", "type": "dropdown", "aliases": ["search scope dropdown"] },
+      "scope_this_episode": { "canonical": "This Episode", "type": "scope", "aliases": ["this episode scope"] },
+      "scope_this_project": { "canonical": "This Project", "type": "scope", "aliases": ["this project scope"] },
+      "scope_all_projects": { "canonical": "All Projects", "type": "scope", "aliases": ["all projects scope"] },
+      "find_and_replace_mode": { "canonical": "Find and Replace Mode", "type": "panel" },
+      "global_search": { "canonical": "Global Search", "type": "panel" }
+    },
+
+    "episode_action_menu": {
+      "episode_action_menu_container": { "canonical": "Episode Action Menu", "type": "icon", "aliases": ["episode 3-dots menu", "episode three dots menu", "more actions menu"] },
+      "print_action": { "canonical": "Print", "type": "menu_item" },
+      "share_public_link_action": { "canonical": "Share Public Link", "type": "menu_item", "aliases": ["share menu item"] },
+      "copy_link_action": { "canonical": "Copy Link", "type": "menu_item" },
+      "duplicate_episode_action": { "canonical": "Duplicate Episode", "type": "menu_item" },
+      "create_template_from_episode_action": { "canonical": "Create Template from Episode", "type": "menu_item" },
+      "trash_action": { "canonical": "Open Trash", "type": "menu_item", "aliases": ["trash", "trash menu item"] },
+      "find_and_replace_action": { "canonical": "Find and Replace", "type": "menu_item" },
+      "freeze_item_and_block_number_action": { "canonical": "Freeze Item and Block Number", "type": "menu_item", "aliases": ["freeze numbers"] },
+      "block_and_columns_configuration_action": { "canonical": "Block & Columns Configuration", "type": "menu_item", "aliases": ["block and columns configuration menu item"] },
+      "episode_settings_action": { "canonical": "Episode Settings", "type": "menu_item" },
+
+      "share_popup": {
+        "share_public_link_popup": { "canonical": "Share Public Link Popup", "type": "modal" },
+        "public_access_toggle": { "canonical": "Public Access", "type": "toggle", "aliases": ["public access toggle"] },
+        "shareable_url_field": { "canonical": "Shareable URL", "type": "input", "aliases": ["shareable url field"] },
+        "public_link_shared_view": { "canonical": "Public Link Shared View", "type": "view", "aliases": ["external shared view", "read-only shared view"] },
+        "shared_view_layout_dropdown": { "canonical": "Shared View Layout", "type": "dropdown", "aliases": ["shared view layout dropdown", "public view layout dropdown"] },
+        "tablet_layout_option": { "canonical": "Tablet Layout", "type": "menu_item", "aliases": ["tablet"] },
+        "shared_view_previous_item_button": { "canonical": "Shared View Previous Item", "type": "button", "aliases": ["previous item button", "previous item"] },
+        "shared_view_next_item_button": { "canonical": "Shared View Next Item", "type": "button", "aliases": ["next item button"] }
+      },
+
+      "episode_settings_subpanel": {
+        "timezone_dropdown": { "canonical": "Timezone", "type": "dropdown", "aliases": ["timezone dropdown"] },
+        "time_format_toggle": { "canonical": "Time Format", "type": "toggle", "aliases": ["time format toggle"] },
+        "time_format_12_hour": { "canonical": "12-hour Time Format", "type": "menu_item" },
+        "time_format_24_hour": { "canonical": "24-hour Time Format", "type": "menu_item" },
+        "scheduled_date_picker": { "canonical": "Scheduled Date", "type": "picker", "aliases": ["scheduled date picker"] }
+      }
+    },
+
+    "content_structure": {
+      "part_row": { "canonical": "Part Row", "type": "row", "aliases": ["part header"] },
+      "item_row": { "canonical": "Item Row", "type": "row" },
+      "block_row": { "canonical": "Block Row", "type": "row" },
+      "add_content_plus_button": { "canonical": "Add Content +", "type": "button", "aliases": ["add content button", "add content + button", "inline plus button", "hover plus button"] },
+      "add_content_menu": { "canonical": "Add Content Menu", "type": "panel" },
+      "add_block_menu": { "canonical": "Add Block Menu", "type": "panel", "aliases": ["bottom add block bar"] },
+      "add_block_button": { "canonical": "+ Add block", "type": "button", "aliases": ["add block button", "add block"] },
+      "drag_handle": { "canonical": "Drag Handle", "type": "icon", "aliases": ["6 dots handle", "six dots handle", "grab handle"] },
+      "drag_drop_indicator": { "canonical": "Drag Drop Indicator", "type": "indicator", "aliases": ["blue line indicator", "drop position line"] },
+      "manage_block_templates_link": { "canonical": "Manage Block Templates", "type": "link", "aliases": ["manage block templates link", "manage block configurations link"] },
+      "expand_all_items_button": { "canonical": "Expand All Items", "type": "button", "aliases": ["expand all items button"] },
+      "collapse_all_items_button": { "canonical": "Collapse All Items", "type": "button", "aliases": ["collapse all items button"] },
+      "expand_item_button": { "canonical": "Expand Item", "type": "button", "aliases": ["expand item button", "item expand caret", "item expand toggle"] },
+      "colour_swatch": { "canonical": "Colour Swatch", "type": "swatch", "aliases": ["color swatch"] },
+
+      "element_action_menu": {
+        "element_action_menu_container": { "canonical": "Element Action Menu", "type": "icon", "aliases": ["6-dots menu", "drag handle menu"] },
+        "go_to_script_action": { "canonical": "Go to Script", "type": "menu_item" },
+        "go_to_rundown_action": { "canonical": "Go to Rundown", "type": "menu_item" },
+        "open_details_action": { "canonical": "Open Details", "type": "menu_item" },
+        "duplicate_action": { "canonical": "Duplicate", "type": "menu_item" },
+        "delete_action": { "canonical": "Delete", "type": "menu_item" },
+        "item_colour_action": { "canonical": "Item Colour", "type": "menu_item", "aliases": ["item color"] },
+        "item_colour_picker": { "canonical": "Item Colour", "type": "picker", "aliases": ["item colour picker", "item color picker"] },
+        "add_comment_action": { "canonical": "Add Comment", "type": "menu_item" },
+        "float_action": { "canonical": "Float", "type": "menu_item" },
+        "unfloat_action": { "canonical": "Unfloat", "type": "menu_item" },
+        "copy_action": { "canonical": "Copy", "type": "menu_item" },
+        "paste_clipboard_action": { "canonical": "Paste Clipboard", "type": "menu_item" }
+      },
+
+      "text_markup_menu": {
+        "text_markup_menu_container": { "canonical": "Text Markup Menu", "type": "panel", "aliases": ["inline formatting toolbar"] },
+        "bold_button": { "canonical": "Bold", "type": "button", "aliases": ["bold button"] },
+        "italic_button": { "canonical": "Italic", "type": "button", "aliases": ["italic button"] },
+        "underline_button": { "canonical": "Underline", "type": "button", "aliases": ["underline button"] },
+        "strikethrough_button": { "canonical": "Strikethrough", "type": "button", "aliases": ["strikethrough button"] },
+        "text_colour_picker": { "canonical": "Text Colour", "type": "picker", "aliases": ["text colour picker", "text color picker"] },
+        "background_colour_picker": { "canonical": "Background Colour", "type": "picker", "aliases": ["background colour picker", "background color picker", "highlight colour picker", "highlight color picker"] }
+      },
+
+      "trash_panel": { "canonical": "Trash", "type": "panel", "aliases": ["trash panel", "episode trash panel", "deleted content panel"] },
+
+      "visual_states": {
+        "floated_state": { "canonical": "Floated", "type": "state", "aliases": ["floated state", "greyed out state", "diagonal lines state"] },
+        "frozen_numbers_state": { "canonical": "Frozen Numbers", "type": "state", "aliases": ["frozen numbers state"] }
+      },
+
+      "badge_numbers": {
+        "item_badge_number": { "canonical": "Item Badge Number", "type": "badge" },
+        "item_index_number": { "canonical": "Item Index Number", "type": "badge" },
+        "cue_block_index_number": { "canonical": "Cue Block Index Number", "type": "badge" }
+      },
+
+      "comments": {
+        "comment_thread_panel": { "canonical": "Comment Thread", "type": "panel", "aliases": ["comment thread panel", "new comment dialog"] },
+        "new_comment_input": { "canonical": "New Comment", "type": "input", "aliases": ["new comment field", "comment input field"] },
+        "send_comment_button": { "canonical": "Send", "type": "button", "aliases": ["send button", "paper airplane button"] },
+        "resolve_comment_action": { "canonical": "Resolve Comment", "type": "menu_item" }
+      },
+
+      "item_history": {
+        "item_history_panel": { "canonical": "Item History", "type": "panel", "aliases": ["item history panel", "item revisions panel"] }
+      }
+    },
+
+    "block_system": {
+      "text_block_badge": { "canonical": "Text Block Badge", "type": "badge", "aliases": ["T badge"] },
+      "cue_block_badge": { "canonical": "Cue Block Badge", "type": "badge", "aliases": ["CUE badge"] },
+      "side_panel_view": { "canonical": "Side Panel View", "type": "panel", "aliases": ["side panel details", "block details panel", "cue block detail panel"] },
+
+      "default_text_block_configurations": {
+        "_note": "These are default Block Templates of type Text Block. They appear as labels in the Add Content menu and as badges on placed Blocks. The 'Prompter' default Text Block must be distinguished from the Prompter button (top toolbar) and the Cuez Prompter window — context disambiguates.",
+        "prompter_block": { "canonical": "Prompter (Text Block)", "type": "menu_item", "aliases": ["PROMPTER", "prompter block", "prompter text block"] },
+        "presenter_tablet_block": { "canonical": "Presenter Tablet (Text Block)", "type": "menu_item" },
+        "live_text_block": { "canonical": "Live (Text Block)", "type": "menu_item" },
+        "oov_block": { "canonical": "OOV (Text Block)", "type": "menu_item" },
+        "cams_block": { "canonical": "Cams (Text Block)", "type": "menu_item" },
+        "instructions_block": { "canonical": "Instructions (Text Block)", "type": "menu_item", "aliases": ["INSTRUCTION", "INSTRUCTIONS", "instructions block"] },
+        "reporter_block": { "canonical": "Reporter (Text Block)", "type": "menu_item" },
+        "host_1_block": { "canonical": "Host 1 (Text Block)", "type": "menu_item" },
+        "host_2_block": { "canonical": "Host 2 (Text Block)", "type": "menu_item" },
+        "guest_block": { "canonical": "Guest (Text Block)", "type": "menu_item" },
+        "presenter_1_block": { "canonical": "Presenter 1 (Text Block)", "type": "menu_item" },
+        "presenter_2_block": { "canonical": "Presenter 2 (Text Block)", "type": "menu_item" },
+        "stage_instruction_block": { "canonical": "Stage Instruction (Text Block)", "type": "menu_item", "aliases": ["STAGE INSTRUCTION", "stage instruction block"] },
+        "talk_block": { "canonical": "Talk (Text Block)", "type": "menu_item" },
+        "qa_block": { "canonical": "Q&A (Text Block)", "type": "menu_item" },
+        "item_text_block": { "canonical": "Item (Text Block)", "type": "menu_item" },
+        "talent_block": { "canonical": "Talent (Text Block)", "type": "menu_item" }
+      },
+
+      "default_cue_block_configurations": {
+        "clip_cue_block": { "canonical": "Clip (Cue Block)", "type": "menu_item", "aliases": ["CLIP", "clip block"] },
+        "graphic_cue_block": { "canonical": "Graphic (Cue Block)", "type": "menu_item", "aliases": ["GRAPHIC", "graphic block"] },
+        "camera_cue_block": { "canonical": "Camera (Cue Block)", "type": "menu_item" },
+        "audio_cue_block": { "canonical": "Audio (Cue Block)", "type": "menu_item" },
+        "strap_cue_block": { "canonical": "Strap (Cue Block)", "type": "menu_item", "aliases": ["lowerthird cue block", "lower third cue block"] },
+        "break_cue_block": { "canonical": "Break (Cue Block)", "type": "menu_item" },
+        "match_cue_block": { "canonical": "Match (Cue Block)", "type": "menu_item" },
+        "off_air_cue_block": { "canonical": "Off Air (Cue Block)", "type": "menu_item" },
+        "guest_show_cue_block": { "canonical": "Guest Show (Cue Block)", "type": "menu_item" },
+        "sponsor_cue_block": { "canonical": "Sponsor (Cue Block)", "type": "menu_item" },
+        "commercial_cue_block": { "canonical": "Commercial (Cue Block)", "type": "menu_item" },
+        "call_cue_block": { "canonical": "Call (Cue Block)", "type": "menu_item" },
+        "slide_cue_block": { "canonical": "Slide (Cue Block)", "type": "menu_item" },
+        "game_cue_block": { "canonical": "Game (Cue Block)", "type": "menu_item" },
+        "on_off_cue_block": { "canonical": "ON/OFF (Cue Block)", "type": "menu_item" },
+        "interview_cue_block": { "canonical": "Interview (Cue Block)", "type": "menu_item" }
+      },
+
+      "block_configurations_manager": {
+        "block_configurations_manager_container": { "canonical": "Block Configurations Manager", "type": "modal", "aliases": ["manage block configurations", "block templates manager", "block templates modal"] },
+        "active_tab": { "canonical": "Active", "type": "tab", "aliases": ["active tab"] },
+        "archived_tab": { "canonical": "Archived", "type": "tab", "aliases": ["archived tab"] },
+        "create_block_template_button": { "canonical": "+ Create Block Template", "type": "button", "aliases": ["create block configuration button", "create block template button", "+ create block configuration"] },
+        "configuration_actions_menu": { "canonical": "Configuration Actions Menu", "type": "icon", "aliases": ["block template actions menu", "template 3-dots menu"] },
+        "edit_configuration_action": { "canonical": "Edit Block Template", "type": "menu_item", "aliases": ["edit configuration", "edit template"] },
+        "duplicate_configuration_action": { "canonical": "Duplicate Block Template", "type": "menu_item", "aliases": ["duplicate configuration"] },
+        "archive_configuration_action": { "canonical": "Archive Block Template", "type": "menu_item", "aliases": ["archive configuration"] },
+        "unarchive_configuration_action": { "canonical": "Unarchive Block Template", "type": "menu_item", "aliases": ["unarchive configuration"] },
+
+        "edit_block_template_view": {
+          "edit_block_template_view_container": { "canonical": "Edit Block Template View", "type": "modal", "aliases": ["edit block template modal", "block template editor", "edit configuration modal"] },
+          "edit_block_template_name_icon": { "canonical": "Edit Block Template Name", "type": "icon", "aliases": ["block template name pencil icon", "edit name pencil"] },
+          "block_template_name_field": { "canonical": "Block Template Name", "type": "input", "aliases": ["configuration name field", "block template name field"] },
+          "block_type_selector": { "canonical": "Block Type", "type": "dropdown", "aliases": ["block type selector"] },
+          "block_colour_picker": { "canonical": "Block Colour", "type": "picker", "aliases": ["block colour picker", "block color picker"] },
+          "show_badge_on_script_toggle": { "canonical": "Show Badge on Script", "type": "checkbox", "aliases": ["show badge on script toggle"] },
+          "show_background_colour_toggle": { "canonical": "Show Background Colour", "type": "checkbox", "aliases": ["show background color toggle", "show background colour toggle"] },
+          "fields_list": { "canonical": "Fields List", "type": "panel", "aliases": ["fields panel", "block template fields list"] },
+          "field_row": { "canonical": "Field Row", "type": "row", "aliases": ["field list item", "block template field row"] },
+          "add_field_button": { "canonical": "+ Add Field", "type": "button", "aliases": ["add field button", "+ add field button"] },
+          "field_actions_menu": { "canonical": "Field Actions Menu", "type": "icon", "aliases": ["field 3-dots menu"] },
+          "edit_field_action": { "canonical": "Edit Field", "type": "menu_item", "aliases": ["edit field menu item"] },
+          "delete_field_action": { "canonical": "Delete field", "type": "menu_item", "aliases": ["delete field menu item"] },
+          "field_visibility_toggle": { "canonical": "Field Visibility Toggle", "type": "icon", "aliases": ["field visibility eye icon", "field eye icon", "hide field icon"] }
+        }
+      },
+
+      "edit_field_modal": {
+        "edit_field_modal_container": { "canonical": "Edit Field", "type": "modal", "aliases": ["edit field modal", "field configuration modal", "add plain text field", "add text area field", "edit text area column"] },
+        "field_name_input": { "canonical": "Field Name", "type": "input", "aliases": ["field name input"] },
+        "text_transform_dropdown": { "canonical": "Text Transform", "type": "dropdown", "aliases": ["aa", "aa dropdown", "case dropdown", "text case selector", "text transform dropdown"] },
+        "text_transform_uppercase": { "canonical": "Aa Uppercase", "type": "menu_item", "aliases": ["uppercase", "aa uppercase option"] },
+        "text_transform_lowercase": { "canonical": "Aa Lowercase", "type": "menu_item", "aliases": ["lowercase", "aa lowercase option"] },
+        "text_transform_original": { "canonical": "Aa Original", "type": "menu_item", "aliases": ["original case", "aa original option", "no transform"] },
+        "add_new_option_button": { "canonical": "+ Add New Option", "type": "button", "aliases": ["add new option", "add new option button", "+ add new option button", "add label option button"] },
+        "customize_option_popover": { "canonical": "Customize Option Popover", "type": "panel", "aliases": ["customise option popover", "label option customizer"] },
+        "option_name_input": { "canonical": "Option Name", "type": "input", "aliases": ["option name input", "label option name field"] },
+        "save_button": { "canonical": "Save", "type": "button", "aliases": ["save button"] },
+        "cancel_button": { "canonical": "Cancel", "type": "button", "aliases": ["cancel button"] },
+        "add_field_confirm_button": { "canonical": "Add field", "type": "button", "aliases": ["add field confirm button", "add field submit"] }
+      },
+
+      "create_block_template_modal": {
+        "create_block_template_modal_container": { "canonical": "Create block template modal", "type": "modal", "aliases": ["create block template", "create block configuration modal", "new block template modal"] },
+        "create_block_button": { "canonical": "Create block", "type": "button", "aliases": ["create block button", "create block submit"] }
+      },
+
+      "block_field_types": {
+        "_note": "These are the field types selectable when configuring a Block Template field. Each appears as an option in the field type dropdown of the Edit Field Modal.",
+        "title_field": { "canonical": "Title Field", "type": "menu_item" },
+        "plain_text_field": { "canonical": "Plain Text Field", "type": "menu_item" },
+        "text_area_field": { "canonical": "Text Area Field", "type": "menu_item" },
+        "label_field": { "canonical": "Label Field", "type": "menu_item", "aliases": ["dropdown field", "select field"] },
+        "media_field": { "canonical": "Media Field", "type": "menu_item" }
+      },
+
+      "block_field_settings": {
+        "default_field_style": { "canonical": "Default Field Style", "type": "panel" },
+        "default_field_value": { "canonical": "Default Field Value", "type": "input" },
+        "set_field_as_required_toggle": { "canonical": "Set Field as Required", "type": "checkbox", "aliases": ["set field as required toggle"] },
+        "display_field_in_separate_row_checkbox": { "canonical": "Display Field in a Separate Row", "type": "checkbox", "aliases": ["display field in a separate row checkbox", "always display field in a separate row"] },
+        "character_limit_toggle": { "canonical": "Character Limit", "type": "checkbox", "aliases": ["character limit toggle"] },
+        "maximum_characters_field": { "canonical": "Maximum Characters", "type": "input", "aliases": ["maximum characters field"] },
+        "character_counter": { "canonical": "Character Counter", "type": "indicator" },
+        "include_in_timings_toggle": { "canonical": "Include in Timings", "type": "checkbox", "aliases": ["include in timings toggle", "include content in timings"] },
+        "read_speed_field": { "canonical": "Read Speed", "type": "input", "aliases": ["read speed field"] },
+        "single_select_toggle": { "canonical": "Single-select", "type": "toggle", "aliases": ["single-select toggle"] },
+        "multi_select_toggle": { "canonical": "Multi-select", "type": "toggle", "aliases": ["multi-select toggle"] },
+        "label_options_list": { "canonical": "Label Options List", "type": "panel" },
+        "media_type_selector": { "canonical": "Media Type", "type": "dropdown", "aliases": ["media type selector"] },
+        "media_type_video": { "canonical": "Video Media Type", "type": "menu_item" },
+        "media_type_image": { "canonical": "Image Media Type", "type": "menu_item" },
+        "media_type_audio": { "canonical": "Audio Media Type", "type": "menu_item" },
+        "display_format_field": { "canonical": "Display Format", "type": "input", "aliases": ["display format field"] },
+        "width_field": { "canonical": "Width", "type": "input", "aliases": ["width field"] },
+        "height_field": { "canonical": "Height", "type": "input", "aliases": ["height field"] }
+      },
+
+      "media_upload": {
+        "upload_or_select_file_icon": { "canonical": "Upload or Select File", "type": "icon", "aliases": ["upload or select file icon", "media upload icon", "media field upload icon"] },
+        "add_video_button": { "canonical": "Add Video", "type": "button", "aliases": ["add video button"] },
+        "add_image_button": { "canonical": "Add Image", "type": "button", "aliases": ["add image button"] },
+        "add_audio_button": { "canonical": "Add Audio", "type": "button", "aliases": ["add audio button"] },
+        "media_library_browser": { "canonical": "Media Library Browser", "type": "modal" },
+        "upload_to_cuez_tab": { "canonical": "Upload to Cuez", "type": "tab", "aliases": ["upload to cuez tab"] },
+        "media_thumbnail": { "canonical": "Media Thumbnail", "type": "icon" },
+        "media_download_checkmark": { "canonical": "Media Download Checkmark", "type": "indicator", "aliases": ["green checkmark"] }
+      }
+    },
+
+    "columns": {
+      "_note": "Column names like 'Notes', 'Sound', 'EVS' that appear in tutorials are USER-CONFIGURED column instances, not Cuez UI elements per se. They are added via the Add a New Column flow and labelled by users. Don't canonicalise specific user-defined column names.",
+      "timing_column": { "canonical": "Timing Column", "type": "reference" },
+      "text_column": { "canonical": "Text Column", "type": "reference" },
+      "label_column": { "canonical": "Label Column", "type": "reference" },
+      "cue_column": { "canonical": "Cue Column", "type": "reference", "aliases": ["cue", "cue column option"] },
+      "column_header": { "canonical": "Column Header", "type": "row", "aliases": ["draggable column header"] },
+      "column_resizer": { "canonical": "Column Resizer", "type": "slider", "aliases": ["column resize handle", "column drag handle"] },
+      "column_cell": { "canonical": "Column Cell", "type": "input", "aliases": ["text column cell", "label column cell", "notes cell", "column input cell"] },
+      "timings_submenu": { "canonical": "Timings", "type": "menu_item", "aliases": ["timings submenu", "timings menu item"] },
+
+      "column_manager": {
+        "column_manager_container": { "canonical": "Column Manager", "type": "panel" },
+        "column_actions_menu": { "canonical": "Column Actions Menu", "type": "icon" },
+        "edit_column_action": { "canonical": "Edit Column", "type": "menu_item" },
+        "archive_column_action": { "canonical": "Archive Column", "type": "menu_item" },
+        "delete_column_action": { "canonical": "Delete Column", "type": "menu_item" },
+        "unarchive_column_action": { "canonical": "Unarchive Column", "type": "menu_item" },
+        "column_visibility_checkbox": { "canonical": "Column Visibility", "type": "checkbox", "aliases": ["column visibility checkbox", "column checkbox", "show column checkbox"] },
+
+        "column_configuration_panel": {
+          "column_name_field": { "canonical": "Column Name", "type": "input", "aliases": ["column name field"] },
+          "applies_to_level_selector": { "canonical": "Applies-to Level", "type": "dropdown", "aliases": ["applies-to level selector"] },
+          "default_cell_style": { "canonical": "Default Cell Style", "type": "panel" },
+          "default_cell_value": { "canonical": "Default Cell Value", "type": "input" }
+        }
+      }
+    },
+
+    "views": {
+      "_note": "Layout/view modes for the Episode Editor. The first three are toolbar toggles also represented in episode_editor_toolbar; here they represent the view mode itself as a state.",
+      "script_view": { "canonical": "Script View", "type": "layout" },
+      "rundown_view": { "canonical": "Rundown View", "type": "layout" },
+      "side_by_side_view": { "canonical": "Side-by-side View", "type": "layout" },
+      "custom_view": { "canonical": "Custom View", "type": "layout" },
+      "public_view": { "canonical": "Public View", "type": "layout" }
+    },
+
+    "timings": {
+      "_note": "Each entry here is a timing data field that can appear as a Timing Column. Values may be displayed inline in rows or in the Cue Overview Bar.",
+      "estimated_duration": { "canonical": "Estimated Duration", "type": "display", "aliases": ["est. duration", "est duration"] },
+      "on_air_time": { "canonical": "On Air Time", "type": "display" },
+      "off_air_time": { "canonical": "Off Air Time", "type": "display" },
+      "front_time": { "canonical": "Front Time", "type": "display" },
+      "back_time": { "canonical": "Back Time", "type": "display" },
+      "part_timer": { "canonical": "Part Timer", "type": "timer" },
+      "over_under_duration": { "canonical": "Over/Under Duration", "type": "display" },
+      "actual_duration": { "canonical": "Actual Duration", "type": "display" },
+      "actual_start_time": { "canonical": "Actual Start Time", "type": "display" },
+      "actual_end_time": { "canonical": "Actual End Time", "type": "display" },
+      "read_speed": { "canonical": "Read Speed", "type": "display" },
+      "timing_reset_icon": { "canonical": "Timing Reset", "type": "icon", "aliases": ["timing reset icon"] },
+
+      "over_under_colours": {
+        "on_time_green": { "canonical": "On Time Green", "type": "colour_status" },
+        "under_time_orange": { "canonical": "Under Time Orange", "type": "colour_status" },
+        "over_time_red": { "canonical": "Over Time Red", "type": "colour_status" }
+      },
+
+      "value_origin_colours": {
+        "auto_calculated_black": { "canonical": "Auto-calculated Black", "type": "colour_status" },
+        "stale_grey": { "canonical": "Stale Grey", "type": "colour_status" },
+        "manually_overwritten_blue": { "canonical": "Manually Overwritten Blue", "type": "colour_status" },
+        "needs_attention_red": { "canonical": "Needs Attention Red", "type": "colour_status" }
+      }
+    },
+
+    "cueing_engine": {
+      "cue_overview_bar": { "canonical": "Cue Overview Bar", "type": "bar", "aliases": ["cue overview row", "black overview bar"] },
+      "cue_overview_left_half": { "canonical": "Cue Overview Left Half", "type": "panel", "aliases": ["episode-level overview"] },
+      "cue_overview_right_half": { "canonical": "Cue Overview Right Half", "type": "panel", "aliases": ["active element overview"] },
+      "total_on_air_counter": { "canonical": "Total On Air", "type": "counter", "aliases": ["total on air counter"] },
+      "off_air_countdown": { "canonical": "Off Air Countdown", "type": "countdown" },
+      "over_under_timer": { "canonical": "Over/Under Timer", "type": "timer" },
+      "element_on_air_counter": { "canonical": "Element On Air", "type": "counter", "aliases": ["element on air counter"] },
+      "element_end_countdown": { "canonical": "Element End Countdown", "type": "countdown" },
+      "cue_progress_bar": { "canonical": "Cue Progress Bar", "type": "bar" },
+      "currently_cued_element_badge": { "canonical": "Currently Cued Element", "type": "badge", "aliases": ["currently cued element badge", "red pill badge", "active element badge", "current item badge"] },
+      "next_button": { "canonical": "Next", "type": "button", "aliases": ["next button"] },
+      "play_button": { "canonical": "Play", "type": "button", "aliases": ["play button", "cue play button", "cue button"] },
+      "on_cue_state": { "canonical": "On Cue", "type": "state", "aliases": ["on cue state", "cued state", "red border state", "active cue"] },
+      "blur_state": { "canonical": "Blur", "type": "state", "aliases": ["blur state"] },
+      "cue_reset": { "canonical": "Cue Reset", "type": "button" }
+    },
+
+    "prompter": {
+      "cuez_prompter": { "canonical": "Cuez Prompter", "type": "container", "aliases": ["prompter window", "teleprompter"] },
+      "prompter_url_dialog": { "canonical": "Prompter URL Dialog", "type": "modal" },
+      "prompter_settings_panel": { "canonical": "Prompter Settings", "type": "panel", "aliases": ["prompter settings panel"] },
+      "prompter_settings_gear_icon": { "canonical": "Prompter Settings Gear", "type": "icon", "aliases": ["prompter settings gear icon"] },
+      "font_size_control": { "canonical": "Font Size", "type": "input", "aliases": ["font size control"] },
+      "mirroring_toggle": { "canonical": "Mirroring", "type": "toggle", "aliases": ["mirroring toggle"] },
+      "spacing_control": { "canonical": "Spacing", "type": "input", "aliases": ["spacing control"] },
+      "scroll_speed_preset_input": { "canonical": "Scroll Speed Preset", "type": "input", "aliases": ["scroll speed control", "scroll speed preset input", "speed input", "speed 1", "speed 2", "speed 3", "speed 4", "speed 5", "numbered speed input"] },
+      "aspect_ratio_selector": { "canonical": "Aspect Ratio", "type": "dropdown", "aliases": ["aspect ratio selector"] },
+      "block_visibility_filter": { "canonical": "Prompter Block Visibility Filter", "type": "panel", "aliases": ["prompter block filter", "prompter visibility filter"] },
+      "share_checkbox": { "canonical": "Share", "type": "checkbox", "aliases": ["share checkbox", "master/slave share toggle"] },
+      "connected_clients_list": { "canonical": "Connected Clients List", "type": "panel" },
+      "multiple_masters_warning": { "canonical": "Multiple Masters Warning", "type": "indicator", "aliases": ["multiple masters warning indicator"] },      "master_prompter_instance": { "canonical": "Master Prompter Instance", "type": "state" },
+      "slave_prompter_instance": { "canonical": "Slave Prompter Instance", "type": "state" }
+    },
+
+    "keyboard_shortcuts": {
+      "_note": "Keyboard shortcuts are not visible UI elements but trigger actions on UI elements. Tutorial extractions targeting the action will typically reference the button/menu_item that the shortcut activates, not the shortcut name itself. These canonicals exist mainly for narration coverage when the narrator says 'use the bold shortcut'.",
+
+      "global": {
+        "shortcut_open_search": { "canonical": "Open Search Panel Shortcut", "type": "shortcut", "aliases": ["Cmd+F", "Ctrl+F"] },
+        "shortcut_find_and_replace": { "canonical": "Find and Replace Shortcut", "type": "shortcut", "aliases": ["Cmd+Option+F", "Ctrl+Alt+F"] },
+        "shortcut_global_search": { "canonical": "Global Search Shortcut", "type": "shortcut", "aliases": ["Cmd+K", "Ctrl+K"] },
+        "shortcut_horizontal_scroll": { "canonical": "Horizontal Scroll Shortcut", "type": "shortcut", "aliases": ["Shift+scroll wheel"] },
+        "shortcut_zoom_out": { "canonical": "Zoom Out Shortcut", "type": "shortcut", "aliases": ["Cmd+minus", "Ctrl+minus"] },
+        "shortcut_print": { "canonical": "Print Shortcut", "type": "shortcut", "aliases": ["Cmd+P", "Ctrl+P"] }
+      },
+
+      "episode_editor": {
+        "shortcut_focus_first_field": { "canonical": "Focus First Field Shortcut", "type": "shortcut", "aliases": ["Enter"] },
+        "shortcut_deselect": { "canonical": "Deselect Shortcut", "type": "shortcut", "aliases": ["Esc", "Escape"] },
+        "shortcut_navigate_elements": { "canonical": "Navigate Between Elements Shortcut", "type": "shortcut", "aliases": ["arrow keys"] },
+        "shortcut_move_element": { "canonical": "Move Element Shortcut", "type": "shortcut", "aliases": ["Cmd+up arrow", "Cmd+down arrow", "Ctrl+up arrow", "Ctrl+down arrow"] },
+        "shortcut_extend_selection": { "canonical": "Extend Selection Shortcut", "type": "shortcut", "aliases": ["Shift+up arrow", "Shift+down arrow"] },
+        "shortcut_add_block_below": { "canonical": "Add Block Below Shortcut", "type": "shortcut", "aliases": ["Alt+B", "Option+B"] },
+        "shortcut_add_part_below": { "canonical": "Add Part Below Shortcut", "type": "shortcut", "aliases": ["Alt+Shift+P", "Option+Shift+P"] },
+        "shortcut_add_item_below": { "canonical": "Add Item Below Shortcut", "type": "shortcut", "aliases": ["Alt+Shift+I", "Option+Shift+I"] },
+        "shortcut_copy": { "canonical": "Copy Shortcut", "type": "shortcut", "aliases": ["Cmd+C", "Ctrl+C"] },
+        "shortcut_paste": { "canonical": "Paste Shortcut", "type": "shortcut", "aliases": ["Cmd+V", "Ctrl+V"] },
+        "shortcut_cut": { "canonical": "Cut Shortcut", "type": "shortcut", "aliases": ["Cmd+X", "Ctrl+X"] },
+        "shortcut_duplicate": { "canonical": "Duplicate Shortcut", "type": "shortcut", "aliases": ["Cmd+D", "Ctrl+D"] },
+        "shortcut_delete": { "canonical": "Delete Shortcut", "type": "shortcut", "aliases": ["Backspace", "Delete key", "Del"] },
+        "shortcut_float_unfloat": { "canonical": "Float/Unfloat Shortcut", "type": "shortcut", "aliases": ["Cmd+Shift+F", "Ctrl+Shift+F"] },
+        "shortcut_insert_timestamp": { "canonical": "Insert Timestamp Shortcut", "type": "shortcut", "aliases": ["Alt+T", "Option+T"] }
+      },
+
+      "text_formatting": {
+        "shortcut_bold": { "canonical": "Bold Shortcut", "type": "shortcut", "aliases": ["Cmd+B", "Ctrl+B"] },
+        "shortcut_italic": { "canonical": "Italic Shortcut", "type": "shortcut", "aliases": ["Cmd+I", "Ctrl+I"] },
+        "shortcut_underline": { "canonical": "Underline Shortcut", "type": "shortcut", "aliases": ["Cmd+U", "Ctrl+U"] },
+        "shortcut_strikethrough": { "canonical": "Strikethrough Shortcut", "type": "shortcut", "aliases": ["Cmd+Shift+X", "Ctrl+Shift+X"] }
+      },
+
+      "cueing": {
+        "shortcut_cue_next": { "canonical": "Cue Next Element Shortcut", "type": "shortcut", "aliases": ["Spacebar (cueing)"] }
+      },
+
+      "prompter_shortcuts": {
+        "shortcut_prompter_start_stop": { "canonical": "Prompter Start/Stop Scroll Shortcut", "type": "shortcut", "aliases": ["Spacebar (prompter)", "B key"] },
+        "shortcut_prompter_return_to_top": { "canonical": "Prompter Return to Top Shortcut", "type": "shortcut", "aliases": ["D key", "S key"] },
+        "shortcut_prompter_overview": { "canonical": "Prompter Part/Item Overview Shortcut", "type": "shortcut", "aliases": ["L key"] },
+        "shortcut_prompter_block_navigation": { "canonical": "Prompter Block Navigation Shortcut", "type": "shortcut", "aliases": ["arrow keys (prompter)"] },
+        "shortcut_prompter_blackout": { "canonical": "Prompter Black Screen Shortcut", "type": "shortcut", "aliases": ["Esc (prompter)", "blackout shortcut"] }
+      }
+    }
+  },
+
+  "Cuez Automator": {
+    "_meta": {
+      "version": "1.2",
+      "scope": "Cuez Automator desktop application UI elements (Windows/Mac, runs at localhost:7070) — STRICT SCOPE",
+      "scope_relationship": "Cuez Automator is a SEPARATE desktop application from Cuez Rundown. It is keyed under its own top-level entry in this vocabulary file. The pipeline routes by 'Software Name' input to the matching top-level key. Cuez Storiez and Cuez Gateway are still excluded as separate products. Cuez Media Player (CMP) is a built-in device type within Automator and is included here. Automator Satellite is a remote secondary instance — its UI mirrors the main Automator and reuses these canonicals.",
+      "v1_2_changes": "Cross-referenced with the official Cuez Help Centre Automator Lexicon (https://intercom.help/cuez/en/articles/8166434). Renamed 'Panasonic' → 'Panasonic PTZ' to match official lexicon term. Added natural-phrasing aliases: 'neton.live' on NetOn.live, 'chyron-prime' (with hyphen) on Chyron PRIME, 'stream deck' on Elgato Stream Deck, 'ateliere' on Ateliere Creative Technologies. Removed redundant self-reference alias on UNO. Lexicon confirmed all device-type canonicals match the official supported integrations list.",
+      "v1_1_changes": "Cross-referenced with the official Cuez Help Centre Automator Lexicon. Added two new device integrations: Resolume (graphics_engines, includes Avenue and Arena variants) and Calrec (audio mixing console). Added aliases for natural narrator phrasing: 'NewTek TriCaster' on TriCaster, 'Singular.live' on SingularLive, 'SPX' on SPX Graphics, 'Uno (by Singular.live)' on UNO, 'Companion' on Bitfocus Companion. The lexicon confirmed all existing canonicals as accurate.",
+      "notes": "Canonical names for every user-facing UI element in the Cuez Automator desktop app. British spelling ('Colour') used throughout. Each entry carries an explicit 'type' field. The (canonical, type) tuple is the unique key — the same canonical may appear with different types in different surfaces.",
+      "type_vocabulary": "Same type system as Cuez Rundown. Types in use: button, icon, menu_item, input, checkbox, panel, dropdown, text, tab, canvas, list_item, toggle, slider, link, picker, container, state, badge, role, shortcut, modal, counter, timer, countdown, indicator, display, bar, row, swatch, switch, action, reference. Automator-specific types added: device_type (for the 34+ device integrations selectable in the Device Type dropdown), function (for device action commands like Play/Pause/Stop), action_row (for individual rows in the Automation Action Rows panel).",
+      "user_content_note": "User-typed content (Automator instance name, device names, macro names, variable names, step button labels like 'PLAY'/'STOP'/'IN'/'OUT', shortcut key labels, button names on CuezDeck) is not Cuez UI and is not canonicalised. The CONTAINERS for that content (Automator Name input, Device Name input, Macro Name input, Step Name input, etc.) are canonicalised. Hostname/Port/Token field VALUES are user content; the FIELDS themselves are canonical.",
+      "device_type_note": "Per-device-type configuration fields vary widely (some need only Hostname; others need Hostname + Port + Token + Password). The 34+ supported device types are canonicalised by name with type 'device_type'. Their per-device-type configuration field combinations are not enumerated individually — generic field canonicals (Hostname, HTTP Port, TCP Port, Token, etc.) cover them.",
+      "function_note": "The Function dropdown adapts to the selected device type. The standard cross-device functions (Play, Pause, Resume, Stop, Load Media, Load Template, Clear Layer, Clear, Set Opacity, Set Volume, Timecode) and System functions (System.Next, System.Previous, etc.) are canonicalised with type 'function'. Device-specific functions are not exhaustively enumerated."
+    },
+
+    "system_tray": {
+      "system_tray_icon": { "canonical": "System Tray Icon", "type": "icon", "aliases": ["menu bar icon", "automator tray icon"] },
+      "system_tray_panel": { "canonical": "System Tray Panel", "type": "panel", "aliases": ["menu bar panel", "tray popup"] },
+      "port_number_display": { "canonical": "Port Number", "type": "display", "aliases": ["port number display", "port 7070"] },
+      "ip_address_display": { "canonical": "IP Address", "type": "display", "aliases": ["ip address display", "127.0.0.1"] },
+      "open_gui_button": { "canonical": "Open GUI", "type": "button", "aliases": ["open gui button", "blue open gui button"] }
+    },
+
+    "first_run_setup": {
+      "first_run_setup_modal": { "canonical": "First Run Setup", "type": "modal", "aliases": ["first run setup modal", "initial setup", "automator setup"] },
+      "automator_name_input": { "canonical": "Automator Name", "type": "input", "aliases": ["automator name input", "automator instance name"] },
+      "pairing_code_input": { "canonical": "Pairing Code", "type": "input", "aliases": ["pairing code input", "pair code field"] }
+    },
+
+    "top_bar": {
+      "top_bar_container": { "canonical": "Top Bar", "type": "container", "aliases": ["automator top bar"] },
+      "hamburger_menu": { "canonical": "Hamburger Menu", "type": "icon", "aliases": ["hamburger menu icon", "burger menu", "menu icon", "three lines icon"] },
+      "choose_episode_list": { "canonical": "Choose Episode", "type": "panel", "aliases": ["choose episode list", "episode picker", "episode list"] },
+      "cuezdeck_button_area": { "canonical": "CuezDeck Button Area", "type": "container", "aliases": ["cuezdeck buttons row", "cuezdeck pinned bar"] },
+      "devices_button": { "canonical": "Devices", "type": "button", "aliases": ["devices button"] },
+      "connection_status_indicator": { "canonical": "Connection Status", "type": "indicator", "aliases": ["connection status indicator", "device connection status", "red green status"] },
+      "gear_icon": { "canonical": "Gear", "type": "icon", "aliases": ["gear icon", "settings gear", "cog icon", "⚙"] },
+      "settings_dropdown": { "canonical": "Settings Dropdown", "type": "panel", "aliases": ["gear dropdown", "settings menu"] },
+      "blue_script_icon": { "canonical": "Script Overlay Toggle", "type": "icon", "aliases": ["blue script icon", "script overlay icon", "script toggle icon"] },
+      "automatic_scrolling_toggle": { "canonical": "Automatic Scrolling", "type": "toggle", "aliases": ["automatic scrolling toggle", "auto-scroll toggle"] },
+
+      "settings_menu_items": {
+        "keyboard_shortcuts_menu_item": { "canonical": "Keyboard shortcuts", "type": "menu_item", "aliases": ["keyboard shortcuts menu item"] },
+        "macros_menu_item": { "canonical": "Macros", "type": "menu_item", "aliases": ["macros menu item"] },
+        "variables_menu_item": { "canonical": "Variables", "type": "menu_item", "aliases": ["variables menu item"] },
+        "rundown_events_menu_item": { "canonical": "Rundown events", "type": "menu_item", "aliases": ["rundown events menu item"] },
+        "automatic_scrolling_menu_item": { "canonical": "Automatic scrolling", "type": "menu_item", "aliases": ["automatic scrolling menu item"] },
+        "cuezdeck_menu_item": { "canonical": "CuezDeck", "type": "menu_item", "aliases": ["cuezdeck menu item"] },
+        "project_settings_menu_item": { "canonical": "Project Settings", "type": "menu_item", "aliases": ["project settings menu item"] }
+      }
+    },
+
+    "trigger_box": {
+      "trigger_box_container": { "canonical": "Trigger Box", "type": "container", "aliases": ["main trigger area", "trigger area", "automator main view"] },
+      "block_row": { "canonical": "Block Row", "type": "row", "aliases": ["automator block row", "trigger row"] },
+      "block_badge": { "canonical": "Block Badge", "type": "badge", "aliases": ["block badge label", "row badge"] },
+      "block_title_display": { "canonical": "Block Title", "type": "display", "aliases": ["block title display", "row title"] },
+      "block_subtitle_display": { "canonical": "Block Subtitle", "type": "display", "aliases": ["block subtitle display", "row subtitle"] },
+      "block_thumbnail": { "canonical": "Block Thumbnail", "type": "icon", "aliases": ["thumbnail preview", "row thumbnail"] },
+      "play_cue_button": { "canonical": "Play", "type": "button", "aliases": ["play button", "cue button", "play/cue button", "advance button"] },
+      "on_cue_state": { "canonical": "On Cue", "type": "state", "aliases": ["on cue state", "currently active block", "cued block", "red border state", "active row"] },
+      "step_button": { "canonical": "Step Button", "type": "button", "aliases": ["coloured step button", "step sub-button", "secondary action button"] },
+      "green_checkmark": { "canonical": "Green Checkmark", "type": "indicator", "aliases": ["green check", "media download checkmark", "successful download indicator", "✓"] },
+      "countdown_timer": { "canonical": "Countdown Timer", "type": "countdown", "aliases": ["clip countdown", "timecode countdown"] },
+      "block_row_3_dots_menu": { "canonical": "Block Row 3-Dots Menu", "type": "icon", "aliases": ["row 3-dots menu", "block actions menu", "⋮"] },
+      "configure_automation_action": { "canonical": "Configure automation", "type": "menu_item", "aliases": ["configure automation menu item"] }
+    },
+
+    "block_automation_configuration_panel": {
+      "block_automation_configuration_panel_container": { "canonical": "Block Automation Configuration Panel", "type": "panel", "aliases": ["automation config panel", "right side configuration panel", "configuration sidebar"] },
+
+      "tabs": {
+        "on_cue_tab": { "canonical": "On Cue", "type": "tab", "aliases": ["on cue tab"] },
+        "steps_tab": { "canonical": "Steps", "type": "tab", "aliases": ["steps tab"] },
+        "timecode_tab": { "canonical": "Timecode", "type": "tab", "aliases": ["timecode tab"] },
+        "next_tab": { "canonical": "Next", "type": "tab", "aliases": ["next tab"] },
+        "blur_tab": { "canonical": "Blur", "type": "tab", "aliases": ["blur tab"] },
+        "settings_tab": { "canonical": "Settings", "type": "tab", "aliases": ["settings tab"] }
+      },
+
+      "conditions": {
+        "_note": "Logic applied to action execution. The Condition dropdown selects between Always, If, and If Else.",
+        "condition_dropdown": { "canonical": "Condition", "type": "dropdown", "aliases": ["condition dropdown", "logic selector"] },
+        "always_condition": { "canonical": "Always", "type": "menu_item", "aliases": ["always option", "unconditional"] },
+        "if_condition": { "canonical": "If", "type": "menu_item", "aliases": ["if option", "if condition"] },
+        "if_else_condition": { "canonical": "If Else", "type": "menu_item", "aliases": ["if-else option", "branching condition"] },
+        "field_selector_dropdown": { "canonical": "Field Selector", "type": "dropdown", "aliases": ["field selector dropdown", "condition field"] },
+        "comparator_dropdown": { "canonical": "Comparator", "type": "dropdown", "aliases": ["comparator dropdown", "condition operator"] },
+        "value_field": { "canonical": "Value", "type": "input", "aliases": ["value field", "condition value", "comparison value"] },
+        "else_function_set": { "canonical": "Else Function Set", "type": "panel", "aliases": ["else branch", "else automation set"] }
+      },
+
+      "automation_action_rows": {
+        "_note": "Each row represents one device action. Has Device dropdown, Function dropdown, Input/Value, Delay, and a 6-dots menu.",
+        "automation_action_row": { "canonical": "Automation Action Row", "type": "action_row", "aliases": ["action row", "function row", "automation row"] },
+        "add_automation_button": { "canonical": "Add Automation", "type": "button", "aliases": ["add automation button", "+ add automation"] },
+        "device_dropdown": { "canonical": "Device", "type": "dropdown", "aliases": ["device dropdown", "device selector"] },
+        "function_dropdown": { "canonical": "Function", "type": "dropdown", "aliases": ["function dropdown", "function selector", "action selector"] },
+        "input_value_field": { "canonical": "Input Value", "type": "input", "aliases": ["input value field", "value field input", "function value", "function input"] },
+        "delay_field": { "canonical": "Delay", "type": "input", "aliases": ["delay field", "delay input", "milliseconds field"] },
+        "dynamic_delay": { "canonical": "Dynamic Delay", "type": "reference", "aliases": ["dynamic delay reference", "delay from field"] },
+        "action_row_6_dots_menu": { "canonical": "Action Row 6-Dots Menu", "type": "icon", "aliases": ["action 6-dots menu", "function 6-dots menu", "row actions menu"] },
+
+        "action_row_menu_items": {
+          "enabled_toggle": { "canonical": "Enabled", "type": "toggle", "aliases": ["enabled toggle", "enabled checkmark", "green checkmark toggle"] },
+          "duplicate_action": { "canonical": "Duplicate", "type": "menu_item" },
+          "copy_action": { "canonical": "Copy", "type": "menu_item" },
+          "paste_clipboard_action": { "canonical": "Paste Clipboard", "type": "menu_item", "aliases": ["paste action"] }
+        }
+      }
+    },
+
+    "steps_configuration": {
+      "_note": "Steps create coloured sub-buttons in the Trigger Box. Each Step has a name, colour, optional visibility condition, and one or more automations.",
+      "add_step_button": { "canonical": "Add Step", "type": "button", "aliases": ["add step button", "+ add step", "add step button button"] },
+      "step_name_field": { "canonical": "Step Name", "type": "input", "aliases": ["step name field", "step label input"] },
+      "step_colour_picker": { "canonical": "Step Colour", "type": "picker", "aliases": ["step colour picker", "step color picker"] },
+      "add_visibility_condition_button": { "canonical": "Add Visibility Condition", "type": "button", "aliases": ["add visibility condition button", "visibility condition button"] }
+    },
+
+    "cuezdeck_configuration": {
+      "_note": "CuezDeck is a virtual button panel pinned to the top of the Automator screen. Three button types: Button, Status, Timer.",
+      "cuezdeck_panel": { "canonical": "CuezDeck", "type": "panel", "aliases": ["cuezdeck configuration panel", "cuezdeck settings"] },
+      "add_cuezdeck_button": { "canonical": "Add CuezDeck Button", "type": "button", "aliases": ["add cuezdeck button button", "+ add cuezdeck button"] },
+      "cuezdeck_button_name_field": { "canonical": "CuezDeck Button Name", "type": "input", "aliases": ["cuezdeck button name field", "deck button name"] },
+      "cuezdeck_button_type_selector": { "canonical": "CuezDeck Button Type", "type": "dropdown", "aliases": ["cuezdeck button type selector", "deck button type"] },
+      "cuezdeck_button_colour_picker": { "canonical": "CuezDeck Button Colour", "type": "picker", "aliases": ["cuezdeck button colour picker", "deck button color picker"] },
+
+      "cuezdeck_button_types": {
+        "button_type": { "canonical": "Button", "type": "menu_item", "aliases": ["button type option"] },
+        "status_type": { "canonical": "Status", "type": "menu_item", "aliases": ["status type option"] },
+        "timer_type": { "canonical": "Timer", "type": "menu_item", "aliases": ["timer type option"] }
+      },
+
+      "status_button_extras": {
+        "device_property_listener": { "canonical": "Device Property Listener", "type": "dropdown", "aliases": ["device property listener dropdown", "property listener selector"] }
+      }
+    },
+
+    "keyboard_shortcuts_panel": {
+      "_note": "Configurable mappings of keyboard keys to automation function sets. Accessed via Gear → Keyboard shortcuts.",
+      "keyboard_shortcuts_panel_container": { "canonical": "Keyboard Shortcuts Panel", "type": "panel", "aliases": ["keyboard shortcuts panel container", "shortcuts configuration panel"] },
+      "add_shortcut_button": { "canonical": "Add Shortcut", "type": "button", "aliases": ["add shortcut button", "+ add shortcut"] },
+      "blue_keyboard_icon": { "canonical": "Record Key", "type": "icon", "aliases": ["blue keyboard icon", "record key icon", "key recording icon"] },
+      "selected_key_display": { "canonical": "Selected Key", "type": "display", "aliases": ["selected key display", "captured key display"] }
+    },
+
+    "macros_panel": {
+      "_note": "Reusable automation sequences. Accessed via Gear → Macros. Use Macros by selecting 'Macro' as device in any automation.",
+      "macros_panel_container": { "canonical": "Macros Panel", "type": "panel", "aliases": ["macros panel container", "macros configuration panel"] },
+      "add_macro_button": { "canonical": "Add Macro", "type": "button", "aliases": ["add macro button", "+ add macro"] },
+      "macro_name_field": { "canonical": "Macro Name", "type": "input", "aliases": ["macro name field"] }
+    },
+
+    "variables_panel": {
+      "_note": "Two variable kinds: Normal (x) and AB-alternator (⇄). Accessed via Gear → Variables.",
+      "variables_panel_container": { "canonical": "Variables Panel", "type": "panel", "aliases": ["variables panel container", "variables configuration panel"] },
+      "add_variable_button": { "canonical": "+ add variable", "type": "button", "aliases": ["add variable button", "add normal variable", "+add variable"] },
+      "add_ab_alternator_button": { "canonical": "+ add AB-alternator", "type": "button", "aliases": ["add ab-alternator button", "add ab alternator", "+add ab-alternator"] },
+      "variable_name_field": { "canonical": "Variable Name", "type": "input", "aliases": ["variable name field", "name field"] },
+      "variable_description_field": { "canonical": "Variable Description", "type": "input", "aliases": ["variable description field", "description field"] },
+      "variable_default_value_field": { "canonical": "Default Value", "type": "input", "aliases": ["default value field", "value a field"] },
+      "variable_b_value_field": { "canonical": "B-value", "type": "input", "aliases": ["b-value field", "alternator b value", "value b field"] },
+      "normal_variable_icon": { "canonical": "Normal Variable Icon", "type": "icon", "aliases": ["x icon", "(x) icon", "variable x indicator"] },
+      "ab_alternator_icon": { "canonical": "AB-alternator Icon", "type": "icon", "aliases": ["alternator icon", "⇄ icon", "swap icon"] }
+    },
+
+    "rundown_events_panel": {
+      "_note": "Configure functions that auto-execute when opening an Episode. Same automation configuration interface as Block triggers.",
+      "rundown_events_panel_container": { "canonical": "Rundown Events Panel", "type": "panel", "aliases": ["rundown events panel container", "rundown events configuration"] }
+    },
+
+    "project_settings": {
+      "project_settings_panel": { "canonical": "Project Settings", "type": "panel", "aliases": ["project settings panel", "automator project settings"] },
+      "block_filter_setting": { "canonical": "Block Filter", "type": "panel", "aliases": ["block filter setting", "block type filter"] },
+      "title_field_selector": { "canonical": "Title Field", "type": "dropdown", "aliases": ["title field selector", "title field dropdown"] },
+      "subtitle_field_selector": { "canonical": "Subtitle Field", "type": "dropdown", "aliases": ["subtitle field selector", "subtitle field dropdown"] },
+      "trigger_layout_selector": { "canonical": "Trigger Layout", "type": "dropdown", "aliases": ["trigger layout selector", "trigger layout dropdown"] },
+      "trigger_layout_wider": { "canonical": "Wider", "type": "menu_item", "aliases": ["wider layout option", "wider trigger layout"] },
+      "trigger_layout_regular": { "canonical": "Regular", "type": "menu_item", "aliases": ["regular layout option", "regular trigger layout"] }
+    },
+
+    "devices_panel": {
+      "devices_panel_container": { "canonical": "Devices Panel", "type": "panel", "aliases": ["devices panel container", "devices configuration"] },
+      "add_device_button": { "canonical": "Add device", "type": "button", "aliases": ["add device button", "+ add device"] },
+      "device_type_dropdown": { "canonical": "Device type", "type": "dropdown", "aliases": ["device type dropdown", "device type selector"] },
+      "device_name_field": { "canonical": "Device name", "type": "input", "aliases": ["device name field", "device name input"] },
+      "device_enable_disable_toggle": { "canonical": "Enable/Disable", "type": "toggle", "aliases": ["enable disable toggle", "device enable toggle"] },
+      "hostname_field": { "canonical": "Hostname", "type": "input", "aliases": ["hostname field", "host field", "ip address field"] },
+      "http_port_field": { "canonical": "HTTP Port", "type": "input", "aliases": ["http port field", "http port input"] },
+      "tcp_port_field": { "canonical": "TCP Port", "type": "input", "aliases": ["tcp port field", "tcp port input"] },
+      "websocket_port_field": { "canonical": "WebSocket Port", "type": "input", "aliases": ["websocket port field", "ws port field"] },
+      "telnet_port_field": { "canonical": "Telnet Port", "type": "input", "aliases": ["telnet port field"] },
+      "socket_port_field": { "canonical": "Socket Port", "type": "input", "aliases": ["socket port field"] },
+      "port_field": { "canonical": "Port", "type": "input", "aliases": ["port field", "port input"] },
+      "token_field": { "canonical": "Token", "type": "input", "aliases": ["token field", "auth token field"] },
+      "password_field": { "canonical": "Password", "type": "input", "aliases": ["password field"] },
+      "app_token_field": { "canonical": "App Token", "type": "input", "aliases": ["app token field"] },
+      "graphics_token_field": { "canonical": "Graphics Token", "type": "input", "aliases": ["graphics token field"] },
+      "client_id_field": { "canonical": "Client ID", "type": "input", "aliases": ["client id field"] },
+      "api_key_field": { "canonical": "API Key", "type": "input", "aliases": ["api key field"] },
+      "url_field": { "canonical": "URL", "type": "input", "aliases": ["url field"] },
+      "method_dropdown": { "canonical": "Method", "type": "dropdown", "aliases": ["method dropdown", "http method dropdown"] },
+      "headers_field": { "canonical": "Headers", "type": "input", "aliases": ["headers field", "http headers field"] },
+      "body_field": { "canonical": "Body", "type": "input", "aliases": ["body field", "request body field"] },
+      "playlist_name_field": { "canonical": "Playlist Name", "type": "input", "aliases": ["playlist name field"] },
+      "project_path_field": { "canonical": "Project Path", "type": "input", "aliases": ["project path field", "nbtlproj path field"] },
+      "telnet_control_checkbox": { "canonical": "Telnet Control", "type": "checkbox", "aliases": ["telnet control checkbox", "enable telnet control"] },
+
+      "media_handling": {
+        "_note": "Per-device media auto-downloader configuration. Appears when 'Handles media' is checked.",
+        "handles_media_checkbox": { "canonical": "Handles media", "type": "checkbox", "aliases": ["handles media checkbox"] },
+        "download_folder_field": { "canonical": "Download folder", "type": "input", "aliases": ["download folder field", "download folder path"] },
+        "device_media_folder_field": { "canonical": "Device media folder", "type": "input", "aliases": ["device media folder field", "device media folder path"] },
+        "keep_original_filenames_checkbox": { "canonical": "Keep original filenames", "type": "checkbox", "aliases": ["keep original filenames checkbox"] },
+        "automatically_delete_files_dropdown": { "canonical": "Automatically delete files", "type": "dropdown", "aliases": ["automatically delete files dropdown", "auto-delete files"] },
+        "auto_delete_24_hours": { "canonical": "24 hours", "type": "menu_item", "aliases": ["24 hours option"] },
+        "auto_delete_1_week": { "canonical": "1 week", "type": "menu_item", "aliases": ["1 week option"] },
+        "add_media_field_button": { "canonical": "Add media field", "type": "button", "aliases": ["add media field button", "+ add media field"] },
+        "block_configuration_dropdown": { "canonical": "Block Configuration", "type": "dropdown", "aliases": ["block configuration dropdown", "block template dropdown"] },
+        "field_name_dropdown": { "canonical": "Field Name", "type": "dropdown", "aliases": ["field name dropdown"] }
+      },
+
+      "device_types": {
+        "_note": "The 34+ supported device integrations. Each appears as an option in the Device Type dropdown. Per-device-type configuration field combinations vary; the generic field canonicals above (Hostname, HTTP Port, etc.) cover them.",
+
+        "video_switchers": {
+          "vmix": { "canonical": "vMix", "type": "device_type", "aliases": ["vmix device"] },
+          "obs": { "canonical": "OBS", "type": "device_type", "aliases": ["obs studio device", "obs device"] },
+          "tricaster": { "canonical": "TriCaster", "type": "device_type", "aliases": ["tricaster vizrt", "vizrt tricaster", "newtek tricaster", "tricaster device"] },
+          "blackmagic_atem": { "canonical": "Blackmagic ATEM", "type": "device_type", "aliases": ["atem device", "atem switcher"] },
+          "evs_dyvi": { "canonical": "EVS Dyvi", "type": "device_type", "aliases": ["dyvi device"] },
+          "grass_valley_ampp": { "canonical": "Grass Valley AMPP", "type": "device_type", "aliases": ["ampp device", "grass valley ampp device"] },
+          "grass_valley_kahuna": { "canonical": "Grass Valley Kahuna", "type": "device_type", "aliases": ["kahuna device"] },
+          "neton_live": { "canonical": "NetOn.live", "type": "device_type", "aliases": ["neton live device"] }
+        },
+
+        "playout_servers": {
+          "evs_xt": { "canonical": "EVS XT", "type": "device_type", "aliases": ["evs xt device"] },
+          "evs_xs_neo": { "canonical": "EVS XS-NEO", "type": "device_type", "aliases": ["xs neo device", "evs xs neo"] },
+          "avid_fastserve": { "canonical": "AVID FastServe", "type": "device_type", "aliases": ["fastserve device", "avid fastserve device"] },
+          "casparcg": { "canonical": "CasparCG", "type": "device_type", "aliases": ["caspar cg", "casparcg device"] },
+          "softron_ontheair_video": { "canonical": "Softron OnTheAir Video", "type": "device_type", "aliases": ["softron device", "ontheair video"] },
+          "metus_playout": { "canonical": "Metus Playout", "type": "device_type", "aliases": ["metus device"] },
+          "imagine_nexio_amp": { "canonical": "Imagine Communications Nexio AMP", "type": "device_type", "aliases": ["nexio amp", "imagine nexio"] }
+        },
+
+        "graphics_engines": {
+          "singularlive": { "canonical": "SingularLive", "type": "device_type", "aliases": ["singular live", "singular.live", "singular.live device"] },
+          "uno": { "canonical": "UNO", "type": "device_type", "aliases": ["uno singular live", "uno by singular.live", "uno (by singular.live)", "uno device"] },
+          "viz_flowics": { "canonical": "Viz Flowics", "type": "device_type", "aliases": ["flowics device"] },
+          "vizrt": { "canonical": "Vizrt", "type": "device_type", "aliases": ["viz device", "vizrt graphics"] },
+          "chyron_prime": { "canonical": "Chyron PRIME", "type": "device_type", "aliases": ["chyron-prime", "chyron prime device", "chyron device"] },
+          "newblue": { "canonical": "NewBlue", "type": "device_type", "aliases": ["newblue device"] },
+          "xpression": { "canonical": "XPression", "type": "device_type", "aliases": ["ross xpression", "xpression device"] },
+          "spx_graphics": { "canonical": "SPX Graphics", "type": "device_type", "aliases": ["spx", "spx graphics device", "spx device", "spx graphics controller"] },
+          "mxmz_graphics": { "canonical": "MXMZ Graphics", "type": "device_type", "aliases": ["mxmz device", "mxmz graphics device"] },
+          "resolume": { "canonical": "Resolume", "type": "device_type", "aliases": ["resolume avenue", "resolume arena", "resolume arena media server", "resolume device"] }
+        },
+
+        "ptz_cameras": {
+          "panasonic_ptz": { "canonical": "Panasonic PTZ", "type": "device_type", "aliases": ["panasonic", "panasonic camera"] },
+          "sony_visca": { "canonical": "Sony (VISCA)", "type": "device_type", "aliases": ["sony ptz", "sony visca camera"] },
+          "polecam": { "canonical": "Polecam", "type": "device_type", "aliases": ["polecam device"] },
+          "shotoku": { "canonical": "SHOTOKU", "type": "device_type", "aliases": ["shotoku device"] }
+        },
+
+        "robotics_tracking": {
+          "mosys": { "canonical": "Mo-Sys", "type": "device_type", "aliases": ["mosys device", "mo sys device"] },
+          "edelkrone": { "canonical": "Edelkrone", "type": "device_type", "aliases": ["edelkrone device"] }
+        },
+
+        "audio": {
+          "yamaha_scp_rcp": { "canonical": "Yamaha (SCP/RCP)", "type": "device_type", "aliases": ["yamaha scp", "yamaha rcp", "yamaha device"] },
+          "on_hertz_artisto": { "canonical": "On-Hertz Artisto", "type": "device_type", "aliases": ["on hertz artisto", "artisto device"] },
+          "calrec": { "canonical": "Calrec", "type": "device_type", "aliases": ["calrec audio", "calrec mixing console", "calrec device"] }
+        },
+
+        "recording_routing": {
+          "blackmagic_hyperdeck": { "canonical": "Blackmagic Hyperdeck", "type": "device_type", "aliases": ["hyperdeck device"] },
+          "blackmagic_videohub": { "canonical": "Blackmagic Videohub", "type": "device_type", "aliases": ["videohub device"] }
+        },
+
+        "control_surfaces": {
+          "elgato_stream_deck": { "canonical": "Elgato Stream Deck", "type": "device_type", "aliases": ["stream deck", "stream deck device", "elgato streamdeck"] },
+          "skaarhoj": { "canonical": "SKAARHOJ", "type": "device_type", "aliases": ["skaarhoj device"] },
+          "bitfocus_companion": { "canonical": "Bitfocus Companion", "type": "device_type", "aliases": ["companion", "companion device", "bitfocus companion device"] }
+        },
+
+        "protocols": {
+          "ember_plus": { "canonical": "Ember+", "type": "device_type", "aliases": ["ember plus", "lawo ember", "ember+ device"] },
+          "osc": { "canonical": "OSC", "type": "device_type", "aliases": ["open sound control", "osc device"] },
+          "midi": { "canonical": "MIDI", "type": "device_type", "aliases": ["midi device"] },
+          "visca": { "canonical": "VISCA", "type": "device_type", "aliases": ["visca device", "visca protocol"] },
+          "webhook": { "canonical": "Webhook", "type": "device_type", "aliases": ["webhook device", "generic http webhook"] },
+          "mos": { "canonical": "MOS", "type": "device_type", "aliases": ["mos protocol", "mos device", "media object server"] },
+          "rosstalk": { "canonical": "RossTalk", "type": "device_type", "aliases": ["ross talk", "rosstalk device"] }
+        },
+
+        "virtual_devices": {
+          "system_device": { "canonical": "System", "type": "device_type", "aliases": ["system virtual device", "built-in system device"] },
+          "macro_device": { "canonical": "Macro", "type": "device_type", "aliases": ["macro virtual device"] },
+          "cuez_media_player_device": { "canonical": "Cuez Media Player", "type": "device_type", "aliases": ["cmp device", "cuez media player virtual device"] }
+        },
+
+        "cloud_mam": {
+          "ateliere": { "canonical": "Ateliere Creative Technologies", "type": "device_type", "aliases": ["ateliere", "ateliere device", "ateliere creative"] },
+          "limecraft": { "canonical": "Limecraft", "type": "device_type", "aliases": ["limecraft device"] },
+          "evs_via_map": { "canonical": "EVS VIA MAP", "type": "device_type", "aliases": ["via map device", "evs viamap"] }
+        }
+      }
+    },
+
+    "functions": {
+      "_note": "Function names selectable in the Function dropdown of an Automation Action Row. The available functions adapt per device type. These canonicals cover the common cross-device functions plus System device functions.",
+
+      "standard_functions": {
+        "play_function": { "canonical": "Play", "type": "function", "aliases": ["play function", "play action"] },
+        "pause_function": { "canonical": "Pause", "type": "function", "aliases": ["pause function", "pause action"] },
+        "resume_function": { "canonical": "Resume", "type": "function", "aliases": ["resume function", "resume action"] },
+        "stop_function": { "canonical": "Stop", "type": "function", "aliases": ["stop function", "stop action"] },
+        "load_media_function": { "canonical": "Load Media", "type": "function", "aliases": ["load media function", "load clip"] },
+        "load_template_function": { "canonical": "Load Template", "type": "function", "aliases": ["load template function", "load graphic template"] },
+        "clear_layer_function": { "canonical": "Clear Layer", "type": "function", "aliases": ["clear layer function"] },
+        "clear_function": { "canonical": "Clear", "type": "function", "aliases": ["clear function", "clear action"] },
+        "set_opacity_function": { "canonical": "Set Opacity", "type": "function", "aliases": ["set opacity function", "opacity action"] },
+        "set_volume_function": { "canonical": "Set Volume", "type": "function", "aliases": ["set volume function", "volume action"] },
+        "timecode_function": { "canonical": "Timecode", "type": "function", "aliases": ["timecode function", "timecode action"] }
+      },
+
+      "system_functions": {
+        "system_next": { "canonical": "System.Next", "type": "function", "aliases": ["system next", "next system function"] },
+        "system_next_card": { "canonical": "System.Next Card", "type": "function", "aliases": ["system next card", "next card function"] },
+        "system_previous": { "canonical": "System.Previous", "type": "function", "aliases": ["system previous", "previous system function"] },
+        "system_previous_card": { "canonical": "System.Previous Card", "type": "function", "aliases": ["system previous card", "previous card function"] },
+        "first_trigger": { "canonical": "First Trigger", "type": "function", "aliases": ["first trigger function"] },
+        "toggle_variable": { "canonical": "Toggle Variable", "type": "function", "aliases": ["toggle variable function", "system toggle variable", "ab alternator toggle"] },
+        "set_variable": { "canonical": "Set Variable", "type": "function", "aliases": ["set variable function", "system set variable"] }
+      }
+    },
+
+    "automator_local_api_browser": {
+      "_note": "Automator exposes a browser-based API explorer at localhost:7070/api/. Useful for debugging and learning trigger endpoints.",
+      "automator_api_browser": { "canonical": "Automator API Browser", "type": "panel", "aliases": ["automator local api browser", "localhost:7070/api/", "api explorer"] },
+      "pretty_print_checkbox": { "canonical": "Pretty print", "type": "checkbox", "aliases": ["pretty print checkbox", "pretty json toggle"] }
+    },
+
+    "cuez_media_player": {
+      "_note": "CMP is a browser-based playout endpoint that receives clips and images from the Automator. Built-in device type. Default port 7072.",
+      "cuez_media_player_window": { "canonical": "Cuez Media Player", "type": "container", "aliases": ["cmp window", "cuez media player window", "cmp playout window"] },
+      "channel_selector": { "canonical": "Channel", "type": "dropdown", "aliases": ["channel selector", "cmp channel selector", "playout channel"] },
+      "output_url_display": { "canonical": "Output URL", "type": "display", "aliases": ["output url display", "playout url"] }
+    },
+
+    "automator_satellite": {
+      "_note": "Automator Satellite is a remote secondary instance for distributed/multi-location production. Its UI mirrors the main Automator and reuses the canonicals above.",
+      "satellite_pairing_setup": { "canonical": "Satellite Pairing Setup", "type": "modal", "aliases": ["satellite first run setup", "satellite pairing"] }
+    }
+  }
+}

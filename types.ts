@@ -20,12 +20,21 @@ export interface VideoAnnotation {
   chunkIndex?: number;
 }
 
+export type ElementType = 
+  | 'button' | 'input' | 'link' | 'dropdown' | 'checkbox' | 'radio' | 'icon' | 'text' 
+  | 'menu_item' | 'tab' | 'toggle' | 'slider' | 'image' | 'video' | 'canvas' | 'list_item' 
+  | 'modal' | 'panel' | 'picker' | 'container' | 'state' | 'badge' | 'role' | 'shortcut' 
+  | 'layout' | 'counter' | 'timer' | 'countdown' | 'indicator' | 'display' | 'bar' 
+  | 'row' | 'swatch' | 'action' | 'switch' | 'view' | 'folder' | 'scope' 
+  | 'colour_status' | 'reference' | 'other' | string;
+
 export interface ActionTarget {
   element: string;
-  location: string;
-  panel: string;
+  element_type: ElementType;
+  container: string;
+  nearest_landmark: string;
+  relation_to_landmark: 'above' | 'below' | 'left_of' | 'right_of' | 'inside' | 'next_to' | 'none';
   visual: string;
-  spatial_bounding_box?: [number, number, number, number]; // [ymin, xmin, ymax, xmax] normalized 0-1000
 }
 
 export type ActionType = 
@@ -41,15 +50,16 @@ export type ActionType =
   | 'menu_navigate' 
   | 'system_event' 
   | 'ui_response' 
-  | 'transition';
+  | 'transition'
+  | 'other';
 
 export type ActionConfidence = 'high' | 'medium' | 'low';
 export type ActorType = 'user' | 'system';
-export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'analyzing_phase_c' | 'completed' | 'error';
+export type ChunkStatus = 'pending' | 'analyzing_phase_a' | 'analyzing_phase_b' | 'completed' | 'error';
 export type ProcessingStatus = 'idle' | 'running_visual' | 'running_narrative' | 'running_dedup' | 'paused' | 'completed' | 'error' | 'cancelled';
 export type InsightType = 'explanation' | 'rationale' | 'tip' | 'warning' | 'workflow_framing' | 'comparison';
 
-export type UIComponentType = 'button' | 'menu_item' | 'tab' | 'dropdown' | 'checkbox' | 'radio' | 'input_field' | 'toggle' | 'link' | 'modal' | 'panel' | 'other';
+export type UIComponentType = ElementType;
 
 export interface UIComponent {
   type: UIComponentType | string;
@@ -136,6 +146,9 @@ export interface LogMessage {
 export interface ProcessingState {
   status: ProcessingStatus;
   currentChunkIndex: number;
+  narrationChunkIndex?: number;
+  narrationChunkCount?: number;
+  narrationChunkSize?: number;
   totalActions: number;
   totalTokens: number;
   startTime: number | null;
@@ -179,6 +192,15 @@ export interface VideoMetadata {
     duration?: number;
 }
 
+export interface Vocabulary {
+  id: string;
+  userId: string;
+  name: string;
+  softwareName: string;
+  content: string;
+  updatedAt: number;
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -193,6 +215,8 @@ export interface Project extends ProjectSummary {
   chunkSize: number;
   overlap: number;
   customContext: string;
+  softwareName?: string;
+  glossaryPath?: string;
   
   chunks: Chunk[];
   actions: ActionItem[];

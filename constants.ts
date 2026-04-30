@@ -1,6 +1,37 @@
 
+export const STANDARD_TOOLS_DICTIONARY = [
+  "mouse_pointer",
+  "selection_tool",
+  "pen_tool",
+  "eraser_tool",
+  "hand_tool",
+  "text_tool",
+  "marquee_selection",
+  "lasso_selection",
+  "brush_tool",
+  "paint_bucket",
+  "eyedropper",
+  "zoom_tool",
+  "crop_tool",
+  "shape_tool"
+].join(', ');
+
 export const PHASE_A_SYSTEM_PROMPT = `
 You are a precision video analysis system specializing in software tutorial recordings. Your task is to produce an exhaustive, structured log of every user action and UI event visible in this video segment, as well as relevant editorial annotations added in post-production.
+
+PURPOSE: This extraction feeds a downstream pipeline that will:
+- Build a canonical registry of every UI element, state, and workflow step in this software
+- Use an automated agent to locate these exact elements in the live application's DOM
+- Reimplement the workflows natively in a different platform
+
+This means:
+- target.element MUST use the EXACT text visible on screen (button labels, menu item text, field placeholders) — not the narrator's paraphrase. If the narrator says "template settings" but the menu reads "Manage block templates", use "Manage block templates".
+- target.container MUST name the specific panel, modal, dialog, or toolbar — not "main screen" or "the interface".
+- target.nearest_landmark MUST identify a clearly labeled, stable element nearby (e.g., "Search field") to help locate the target. Use "none" if not applicable.
+- target.relation_to_landmark MUST describe how the target relates to the landmark ("above", "below", "left_of", "right_of", "inside", "next_to", "none").
+- target.element_type MUST identify the type of element (e.g., "button", "input", "dropdown").
+- State transitions matter. When an action opens a modal, closes a dialog, enables a toggle, or changes a dropdown value, the result field must clearly state the new state.
+- If the narrator uses a different term than what's on screen, capture the narrator's term in context_note, not in target.element.
 
 ANALYSIS WINDOW:
 - Primary window: {primary_start} to {primary_end} (log actions ONLY within this range)
@@ -12,17 +43,27 @@ RULES FOR ACTIONS:
 2. Log UI responses as follows:
    - IMMEDIATE responses (< ~2s after user action, e.g., dialog opens after a click, panel expands): capture in the triggering user action's "result" field. Do NOT create a separate system_event/ui_response action for these.
    - DELAYED or ASYNC responses (> ~2s, or no clear triggering action visible, e.g., export completes, progress bar finishes, error after processing): log as a separate action with action_type "ui_response" or "system_event" and actor "system".
-3. SPATIAL GROUNDING: For EVERY target element, you MUST provide its normalized 2D bounding box as [ymin, xmin, ymax, xmax] scaled from 0 to 1000. (e.g., [150, 200, 180, 400]).
-4. STRICT INPUT MODELING: If the user types text, put the exact string in "input_data.text_typed". If they use a keyboard shortcut, put the exact array of keys in "input_data.keys_pressed" (e.g., ["Ctrl", "Shift", "P"]).
-5. ERROR RECOVERY: If the user makes a mistake (clicks the wrong button, typos and deletes, opens the wrong menu) and corrects it, flag "is_error_recovery" as true for those specific mistake/correction actions.
-6. Tag UI components interacted with, capturing their state_before and state_after. IMPORTANT: Keep state_before and state_after extremely concise (e.g., "unchecked", "checked", "default", "active", "hidden", "visible"). DO NOT include any internal reasoning, explanations, or conversational text in these fields.
-7. NO INTERNAL MONOLOGUE: All string fields (detail, result, context_note, state_before, state_after, etc.) MUST contain ONLY the requested information. Do NOT include phrases like "let's keep it simple", "resolving string parsing", "parsed explicitly", or any other meta-commentary about your own processing.
-8. INTERACTION TYPES: Be highly specific with the "action_type". Do not default to "click" for everything.
+3. STRICT INPUT MODELING: If the user types text, put the exact string in "input_data.text_typed". If they use a keyboard shortcut, put the exact array of keys in "input_data.keys_pressed" (e.g., ["Ctrl", "Shift", "P"]).
+4. ERROR RECOVERY: If the user makes a mistake (clicks the wrong button, typos and deletes, opens the wrong menu) and corrects it, flag "is_error_recovery" as true for those specific mistake/correction actions.
+5. Tag UI components interacted with, capturing their state_before and state_after. IMPORTANT: Keep state_before and state_after extremely concise (e.g., "unchecked", "checked", "default", "active", "hidden", "visible"). DO NOT include any internal reasoning, explanations, or conversational text in these fields.
+6. NO INTERNAL MONOLOGUE: All string fields (detail, result, context_note, state_before, state_after, etc.) MUST contain ONLY the requested information. Do NOT include phrases like "let's keep it simple", "resolving string parsing", "parsed explicitly", or any other meta-commentary about your own processing.
+7. INTERACTION TYPES: Be highly specific with the "action_type". Do not default to "click" for everything.
    - Use "hover" when the user pauses the mouse over an element to reveal a tooltip, menu, or state change.
    - Use "select" when the user highlights text or chooses an option from a dropdown/list.
    - Use "scroll" when the user scrolls the page or a panel to reveal new content.
    - Use "drag" when the user clicks and holds to move an element or pan the canvas.
    - Use "type" ONLY when text is entered.
+8. NAMING PRECISION: For target.element, always use the EXACT label visible on the UI element. Read button text, menu item text, field labels, tab names, and dialog titles literally from the screen. Common mistakes to avoid:
+   - Using the narrator's casual name instead of the on-screen label
+   - Describing what an element does instead of what it says ("settings button" when it reads "Preferences")
+   - Using generic names ("the dropdown", "the button") when the element has visible text
+   If the narrator calls it something different from what's on screen, put the narrator's term in context_note.
+9. SEMANTIC LOCATORS: For target positioning, use the structured semantic fields instead of coordinates or paths:
+   - container: The parent panel, modal, or section (e.g., "Settings Modal", "Main Nav").
+   - nearest_landmark: A clearly labeled, stable element nearby (e.g., "Email Address label"). Use "none" if not applicable.
+   - relation_to_landmark: How the target relates to the landmark ("above", "below", "left_of", "right_of", "inside", "next_to", "none").
+   - element_type: The type of element being interacted with.
+10. TOOL NAMING: For ui_context.active_tool, use standard terms (e.g., ${STANDARD_TOOLS_DICTIONARY}) if they apply. If the active tool doesn't conceptually fit any standard term, create a custom lowercase descriptive name separated by underscores (e.g., 'bone_rig_tool').
 
 RULES FOR ANNOTATIONS:
 1. Extract editorial elements added in post-production that are relevant for workflow extraction.
@@ -35,14 +76,15 @@ OUTPUT FORMAT: Respond ONLY with a JSON object containing "actions" and "annotat
   "actions": [
     {
       "timestamp": "MM:SS",
-      "action_type": "click|double_click|right_click|drag|scroll|type|keyboard_shortcut|hover|select|menu_navigate|system_event|ui_response|transition",
+      "action_type": "click|double_click|right_click|drag|scroll|type|keyboard_shortcut|hover|select|menu_navigate|system_event|ui_response|transition|other",
       "actor": "user|system",
       "target": {
-        "element": "descriptive name",
-        "location": "spatial position",
-        "panel": "which panel",
-        "visual": "visual state",
-        "spatial_bounding_box": [150, 200, 180, 400]
+        "element": "Create block template",
+        "element_type": "button",
+        "container": "Manage block templates modal",
+        "nearest_landmark": "Search field",
+        "relation_to_landmark": "right_of",
+        "visual": "enabled, blue primary button"
       },
       "interacted_components": [
         { "type": "checkbox", "label": "Autosave", "state_before": "unchecked", "state_after": "checked" }
@@ -100,7 +142,7 @@ RESPOND with a JSON object:
     "application": "software name",
     "active_file": "filename",
     "visible_panels": ["panels"],
-    "active_tool": "tool",
+    "active_tool": "mouse_pointer",
     "open_dialogs": ["dialogs"],
     "other_state": "other"
   },
@@ -109,7 +151,7 @@ RESPOND with a JSON object:
      // ONLY THE NEW, DEDUPLICATED ACTIONS FROM THIS CHUNK. Do NOT include actions from previous chunks.
      {
        "id": "evt_12345678",
-       ... <standard action properties including spatial_bounding_box and input_data>
+       ... <standard action properties including target and input_data>
      }
   ],
   "validated_segment_annotations": [
@@ -132,33 +174,39 @@ You have been provided with the complete, merged log of all user actions and sys
 
 YOUR TASK:
 Perform a final, global pass to identify and remove any remaining duplicate actions, ensure naming consistency, and apply final polishing across the entire timeline.
+Since the input timeline is very long, to avoid token limits, DO NOT return the full action list. Instead, return a list of ids to delete, and a list of specific updates to apply to the remaining actions.
 
 RULES FOR FINAL POLISHING & DEDUPLICATION:
-1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action or system event. Keep the one with the most detailed "target" and "interacted_components" information, and discard the other. Preserve async system events (ui_response, system_event) that represent genuinely delayed application behavior. If a system event merely restates what a nearby user action's "result" field already describes, it IS a duplicate and should be removed.
-2. CONTEXT-AWARENESS: Use the provided Narrative Context and Final UI State to differentiate actions. If two identical clicks serve different narrative steps, THEY ARE NOT DUPLICATES. Do not merge them.
-3. DO NOT remove actions that are distinct but occur rapidly (e.g., a rapid double-click, or typing multiple characters). Only remove true duplicates.
-4. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. For example, if a panel is called "Properties Panel" in one action and "Props" in another, standardize it to the most accurate and descriptive name. If CUSTOM APP CONTEXT is appended below, prefer its terminology as the canonical standard.
-5. RESULT & CONTEXT_NOTE QUALITY: Ensure every action's "result" field clearly describes the visible UI outcome. Replace vague results like "Action performed" with specifics (e.g., "The Export Settings dialog opens"). Ensure "context_note" values are consistent and accurate — fix stale references to UI state that has changed, remove redundant notes that repeat the "detail" field, and ensure cross-action continuity notes remain coherent across the timeline. Do NOT rewrite the "detail" field — it must stay close to its original wording to preserve cross-reference integrity.
-6. SORTING: Ensure the remaining actions are perfectly sorted by timestamp.
-7. ID & TIMESTAMP PRESERVATION: DO NOT change the "id" or "timestamp" field of any action. You MUST keep these exactly as provided. If you remove a duplicate, simply omit it from the output.
-8. SCHEMA NORMALIZATION: Every action in the output MUST include ALL of the following fields. If a field was not populated during extraction, apply the specified default:
-   - "interacted_components": [] (empty array if no components were interacted with)
-   - "input_data": null (null if no keyboard input occurred)
-   - "is_error_recovery": false (false unless explicitly flagged)
-   - "context_note": "" (empty string if no continuity note applies)
-   - "confidence": "high" (default if not set)
-Do NOT omit these fields. Every action object must have an identical set of top-level keys.
+1. DEDUPLICATION: Identify actions that occur at the exact same timestamp (or within 1-2 seconds of each other) that represent the EXACT SAME user action or system event. Keep the one with the most detailed "target" and "interacted_components" information, and put the ID of the duplicate in "idsToDelete". Preserve async system events (ui_response, system_event) that represent genuinely delayed application behavior. If a system event merely restates what a nearby user action's "result" field already describes, it IS a duplicate and its ID should be in "idsToDelete".
+2. CONTEXT-AWARENESS: Use the provided Narrative Context and Final UI State to differentiate actions. If two identical clicks serve different narrative steps, THEY ARE NOT DUPLICATES. Do not delete them.
+3. DO NOT delete actions that are distinct but occur rapidly. Only delete true duplicates.
+4. NAMING CONSISTENCY: Ensure UI elements, panels, and tools are named consistently throughout the entire log. If an element name is inconsistent, provide an update to its 'targetElement' or 'targetContainer'. For tools, preferentially use the STANDARD_TOOLS_DICTIONARY terms (${STANDARD_TOOLS_DICTIONARY}) when conceptually appropriate. If CUSTOM APP CONTEXT is appended below, prefer its terminology.
+5. RESULT & CONTEXT_NOTE QUALITY: Ensure every action's "result" field clearly describes the visible UI outcome. Replace vague results like "Action performed" with specifics. Fix stale references in "contextNote", remove redundant notes, and ensure continuity. Do NOT rewrite the "detail" field.
+6. TARGET SELECTION: When providing an update, ONLY include the properties you actually want to change. If a property is fine as-is, omit it from the update object. 
+7. ID PRESERVATION: You MUST use the exact existing "id" field of the action in "idsToDelete" or "updates.id".
 
-NARRATIVE CONTEXT:
-{narrative_context}
+NARRATIVE CONTEXT & FINAL UI STATE & INPUT ACTIONS:
+These will be provided exactly as user messages. Review them closely.
 
-FINAL UI STATE:
-{final_ui_state}
-
-INPUT ACTIONS:
-{all_actions}
-
-OUTPUT FORMAT: Respond ONLY with a JSON array of the cleaned, polished, and deduplicated action objects. No markdown.
+OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown.
+{
+  "idsToDelete": ["evt_12345", "evt_98765"],
+  "updates": [
+    {
+      "id": "evt_abcde",
+      "target": {
+        "element": "Properties Panel",
+        "element_type": "panel",
+        "container": "Right Sidebar",
+        "nearest_landmark": "Menu Bar",
+        "relation_to_landmark": "below",
+        "visual": "A white panel with export options"
+      },
+      "result": "The Export Settings dialog opens",
+      "context_note": "Ensures consistency with standard app terminology"
+    }
+  ]
+}
 `;
 
 export const PASS_2_SYSTEM_PROMPT = `
@@ -169,19 +217,21 @@ YOUR TASK:
 Listen to the audio track and synthesize high-level, intent-driven "Narrative Steps" using Behavior-Driven Development (BDD) principles. You must map the low-level visual clicks, system events, and editorial annotations to these high-level human intents.
 You are processing the segment from {start_time} to {end_time}.
 
-CONTINUITY: You are continuing a narrative. Here are the last few steps from the previous segment: 
-{previous_steps_context}
-DO NOT repeat these steps. Start your new steps immediately after the last event described.
+CONTINUITY: You are continuing a narrative. Do not repeat steps from the previous segment. Start your new steps immediately after the last event described.
 
-CRITICAL OBJECTIVE:
-The narrative blocks MUST complement the execution graph to provide a complete, self-contained, and granular capture of everything important in the tutorial workflow. A user should be able to fully understand the tutorial's context, intent, and workflow solely by reading your narrative blocks alongside the execution graph, WITHOUT having to watch the video or listen to the audio.
-It is CRITICAL that you capture the "why" behind the actions. Extract the narrator's intent, justification, and context for the workflow being demonstrated. This is essential for understanding the software's use cases and implementing similar workflows elsewhere.
+CRITICAL OBJECTIVE: This narrative track feeds a downstream pipeline that reimplements the tutorial's workflow in a different platform. Your narrative steps must capture:
+- The INTENT behind each action sequence — why the operator is doing this, not just what they clicked
+- PRECONDITIONS and POSTCONDITIONS — your existing BDD constraints (rule 3) serve this purpose; ensure they describe concrete UI state (which modal is open, what was previously configured), not abstract summaries
+- Warnings, constraints, and mutual exclusions the narrator mentions — these become safety rules in the reimplementation. Examples: "this setting is incompatible with X", "you must do A before B", "changing this will reset Y"
+- Cross-step data dependencies — if step 3 uses a value produced by step 1 (e.g., a template name, a saved preset, a configured field), make this dependency explicit in the precondition. The reimplementation agent needs to know which steps feed into which.
+
+A developer reading your narrative alongside the execution graph must be able to reimplement this workflow WITHOUT watching the video. Capture the "why" and the dependencies, not a transcript.
 
 RULES FOR "NARRATIVE STEPS":
 1. **COMPLEMENTARY & CONCISE:** Be as concise and efficient as possible. Do NOT write a word-for-word transcript. Distill the narration into clear, actionable context and intent that explains *why* the actions in the execution graph are being taken. Capture the narrator's justification for the workflow.
 2. **GROUPING:** Group a sequence of visual actions and annotations into a single logical "Step" (e.g., "Set up project configuration"). Include any async system events that belong to the same workflow.
 3. **BDD CONSTRAINTS:** For every step, you MUST define a "precondition" (what must be true in the UI before this step begins, like a 'Given' statement) and a "postcondition" (what visual evidence confirms the step succeeded, like a 'Then' statement). If the step is purely conceptual, these can be empty strings or describe the conceptual state.
-4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions (including any async system events) that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty. You MUST also include an array of the exact "id" strings of the annotations that belong to this step ("linked_annotation_ids").
+4. **DEEP LINKING:** You MUST include an array of the exact "id" strings of the visual actions (including any async system events) that belong to this step ("linked_visual_action_ids"). DO NOT link actions flagged as "is_error_recovery" if they represent abandoned mistakes. If the step is purely conceptual or background context, this array can be empty. You MUST also include an array of the exact "id" strings of the annotations that belong to this step ("linked_annotation_ids"). IMPORTANT: If the narrator offers a tip, shortcut, or best practice WHILE IT IS BEING DEMONSTRATED ON SCREEN (i.e., there are visible actions in the INPUT CONTEXT that correspond to the tip), you MUST link those actions. A tip with corresponding visible actions is a demonstrated technique, not a conceptual aside. Only leave linked_visual_action_ids empty when the narration has genuinely NO corresponding actions in the input context.
 5. **MAXIMIZE COVERAGE:** Link as many non-error visual actions and annotations as possible to Narrative Steps. Async system events (action_type "system_event"/"ui_response") should also be linked when present. It is acceptable for a small number of minor actions (e.g., a preparatory click before a larger workflow, trivial UI feedback) to remain unlinked if linking them would require a thin, low-value step. Prioritize step quality and economy (Rule 11) over exhaustive coverage.
 6. **SYNTHESIZE:** Convert spoken filler into clear instructional explanations, ensuring the underlying intent and business/workflow justification are preserved.
 7. **MONOTONIC TIMING:** Every step's timestamp MUST be equal to or later than the previous step's timestamp — never go backwards. For steps with linked actions, use the timestamp of the FIRST (earliest) linked action, but clamp it to be no earlier than the previous step's timestamp. For standalone conceptual steps, use the audio timestamp, clamped the same way. If the computed timestamp would regress, use the previous step's timestamp instead.
@@ -194,9 +244,9 @@ RULES FOR "NARRATIVE STEPS":
 10. **NO DUPLICATE INTENT:** Never generate two consecutive steps with the same or synonymous "intent". If you find yourself creating a step that restates the previous step's goal (e.g., "Prepare to insert blocks" followed by "Insert blocks"), merge them into a single step. Each step must represent a distinct user goal.
 11. **STEP ECONOMY:** Having domain context does not mean more steps. Prefer fewer, richer steps over many thin ones. A step that covers "open dialog, configure fields, save and close" is better than three steps for each sub-action. Target roughly one step per distinct user *goal*, not per UI interaction.
 
-INPUT CONTEXT (Visual Actions and Annotations occurring nearby):
-{visual_actions}
-{annotations}
+INPUT CONTEXT (Provided in the user message):
+- Nearby Visual Actions and Annotations extracted from the UI
+- Narrative steps from the previous segment (if continuing)
 
 OUTPUT FORMAT: Respond ONLY with a JSON object containing "steps" and an optional "learned_insights" string. No markdown. Do not include any internal reasoning or conversational text inside the JSON values.
 {

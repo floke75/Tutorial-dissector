@@ -12,11 +12,11 @@ actor System
 
 value ActionTarget {
     element: String
-    location: String
-    panel: String
+    element_type: String
+    container: String
+    nearest_landmark: String
+    relation_to_landmark: String
     visual: String
-    -- Normalized bounding box [ymin, xmin, ymax, xmax] on a 0-1000 scale
-    spatial_bounding_box: List<Decimal>?
 }
 
 value UIComponent {
@@ -53,6 +53,9 @@ value LogMessage {
 value ProcessingState {
     status: ProcessingStatus
     current_chunk_index: Integer
+    narration_chunk_index: Integer
+    narration_chunk_size: Integer
+    narration_chunk_count: Integer
     total_actions: Integer
     total_tokens: Integer
     start_time: Timestamp?
@@ -74,7 +77,7 @@ value InputData {
 ------------------------------------------------------------
 
 enum ProcessingStatus { idle | running_visual | running_narrative | running_dedup | paused | completed | error | cancelled }
-enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | analyzing_phase_c | completed | error }
+enum ChunkStatus { pending | analyzing_phase_a | analyzing_phase_b | completed | error }
 enum ActionConfidence { high | medium | low }
 enum ActorType { user | system }
 enum ActionType { 
@@ -87,15 +90,36 @@ enum AnnotationType {
     transition | illustration | bullet_points | other
 }
 enum InsightType { explanation | rationale | tip | warning | workflow_framing | comparison }
-enum UIComponentType { button | menu_item | tab | dropdown | checkbox | radio | input_field | toggle | link | modal | panel | other }
+enum UIComponentType { button | input | link | dropdown | checkbox | radio | icon | text | menu_item | tab | toggle | slider | image | video | canvas | list_item | modal | panel | other }
 enum LogLevel { info | warn | error | success }
 
 ------------------------------------------------------------
 -- Entities
 ------------------------------------------------------------
 
+entity UserProfile {
+    id: String
+    email: String
+    display_name: String?
+    photo_url: String?
+    
+    -- Relationships
+    projects: Project with user = this
+    vocabularies: Vocabulary with user = this
+}
+
+entity Vocabulary {
+    id: String
+    user: UserProfile
+    name: String
+    software_name: String
+    content: String
+    updated_at: Timestamp
+}
+
 entity Project {
     id: String
+    user: UserProfile
     name: String
     video_url: String
     updated_at: Timestamp
@@ -106,10 +130,14 @@ entity Project {
     duration_input: String
     chunk_size: Duration
     overlap: Duration
+    narration_chunk_size: Duration?
     custom_context: String
+    software_name: String?
+    glossary_path: String?
 
     -- Relationships
     chunks: Chunk with project = this
+    narration_chunks: NarrationChunk with project = this
     actions: ActionItem with project = this
     annotations: VideoAnnotation with project = this
     narrative_steps: NarrativeStep with project = this
@@ -139,6 +167,20 @@ entity Chunk {
     phase_b_added_count: Integer?
     interaction_id: String?
     action_count: Integer?
+}
+
+entity NarrationChunk {
+    project: Project
+    index: Integer
+    
+    -- Time windows (wider than standard chunks)
+    clip_start: Duration
+    clip_end: Duration
+    primary_start: Duration
+    primary_end: Duration
+    
+    -- Note: This entity is a logical model. Progress is tracked via
+    -- project.proc_state.narration_chunk_index, not per-chunk status.
 }
 
 -- Low-level mechanical action
@@ -237,7 +279,7 @@ rule CompletePhaseB {
     -- Uses "Zipper" optimization: strips ui_context before LLM processing
     -- and re-attaches it using a cascading content-similarity fallback 
     -- to prevent data loss from ID drift.
-    ensures: chunk.status = analyzing_phase_c
+    ensures: chunk.status = completed
     ensures: chunk.project.latest_ui_state = ui_state
     ensures: chunk.action_count = count(merged_actions)
     
@@ -276,32 +318,39 @@ rule CompletePhaseB {
             )
 }
 
+rule StartNarrativeSynthesis {
+    when: VisualAnalysisCompleted(project)
+    requires: project.status = running_visual
+    requires: project.proc_state.current_chunk_index >= count(project.chunks)
+    ensures: project.status = running_narrative
+    ensures: project.proc_state.status = running_narrative
+}
+
 rule CompletePhaseC {
-    when: PhaseCCompleted(chunk, narrative_steps, learned_insights)
+    when: PhaseCCompleted(narration_chunk, narrative_steps, learned_insights)
     
-    requires: chunk.status = analyzing_phase_c
-    requires: chunk.project.status = running_narrative
+    requires: narration_chunk.project.proc_state.narration_chunk_index = narration_chunk.index
+    requires: narration_chunk.project.status = running_narrative
     
-    let context_window_start = chunk.clip_start - config.narration_context_buffer
-    let context_window_end = chunk.clip_end + config.narration_context_buffer
+    let context_window_start = narration_chunk.clip_start - config.narration_context_buffer
+    let context_window_end = narration_chunk.clip_end + config.narration_context_buffer
     
-    let visual_context = chunk.project.actions where 
+    let visual_context = narration_chunk.project.actions where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
         
-    let annotation_context = chunk.project.annotations where 
+    let annotation_context = narration_chunk.project.annotations where 
         parse_mmss(timestamp) >= context_window_start and parse_mmss(timestamp) <= context_window_end
 
-    ensures: chunk.status = completed
-    ensures: chunk.project.proc_state.current_chunk_index = chunk.index + 1
+    ensures: narration_chunk.project.proc_state.narration_chunk_index = narration_chunk.index + 1
     
     -- Accumulate learned context
-    ensures: if learned_insights then chunk.project.proc_state.learned_context = (if chunk.project.proc_state.learned_context = "" then "- " else chunk.project.proc_state.learned_context + "\n- ") + learned_insights
+    ensures: if learned_insights then narration_chunk.project.proc_state.learned_context = (if narration_chunk.project.proc_state.learned_context = "" then "- " else narration_chunk.project.proc_state.learned_context + "\n- ") + learned_insights
     
     -- Add Narrative Steps (Intent layer)
     ensures:
         for step in narrative_steps:
             NarrativeStep.created(
-                project: chunk.project,
+                project: narration_chunk.project,
                 id: step.id,
                 timestamp: step.timestamp,
                 intent: step.intent,
@@ -315,10 +364,18 @@ rule CompletePhaseC {
             )
 }
 
+rule StartGlobalDeduplication {
+    when: NarrativeSynthesisCompleted(project)
+    requires: project.status = running_narrative
+    requires: project.proc_state.narration_chunk_index >= count(project.narration_chunks)
+    ensures: project.status = running_dedup
+    ensures: project.proc_state.status = running_dedup
+}
+
 rule GlobalDeduplication {
     when: GlobalDeduplicationCompleted(project, deduplicated_actions, old_to_new_id_map)
     requires: project.status = running_dedup
-    requires: project.proc_state.current_chunk_index >= count(project.chunks)
+    requires: project.proc_state.narration_chunk_index >= count(project.narration_chunks)
     
     -- The actual deduplication logic replaces actions and remaps narrative links
     -- This is a complex graph operation, represented here as an atomic state transition.
@@ -334,6 +391,22 @@ rule GlobalDeduplication {
 -- Surfaces
 ------------------------------------------------------------
 
+surface ProjectDashboard {
+    facing user: User
+    
+    context user_profile: UserProfile
+    
+    exposes:
+        user_profile.projects
+        user_profile.vocabularies
+        
+    provides:
+        UserCreatesProject()
+        UserDeletesProject(project)
+        UserUploadsVocabulary(vocabulary)
+        UserDeletesVocabulary(vocabulary)
+}
+
 surface AnalysisDashboard {
     facing user: User 
     
@@ -344,8 +417,12 @@ surface AnalysisDashboard {
         project.duration_input
         project.chunk_size
         project.overlap
+        project.narration_chunk_size
         project.custom_context
+        project.software_name
+        project.glossary_path
         project.chunks
+        project.narration_chunks
         project.actions
         project.annotations
         project.narrative_steps

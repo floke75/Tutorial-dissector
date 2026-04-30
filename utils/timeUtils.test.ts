@@ -64,5 +64,34 @@ describe('Time Utilities', () => {
       expect(chunks[1].clipStart).toBe(55);
       expect(chunks[1].clipEnd).toBe(120);
     });
+
+    it('should fold short tail chunks into the preceding chunk', () => {
+      // 190s / 60s = chunks at 0-60, 60-120, 120-180, 180-190
+      // Last chunk is 10s = 16.7% of 60 → folds into chunk 2
+      const chunks = computeChunkWindows(190, 60, 10);
+      expect(chunks).toHaveLength(3);
+      const last = chunks[chunks.length - 1];
+      expect(last.primaryStart).toBe(120);
+      expect(last.primaryEnd).toBe(190);
+      expect(last.clipStart).toBe(110); // unchanged from original chunk 2
+      expect(last.clipEnd).toBe(190);
+    });
+
+    it('should keep tail chunks at 50% or more of chunk size', () => {
+      // 210s / 60s = chunks at 0-60, 60-120, 120-180, 180-210
+      // Last chunk is 30s = exactly 50% → NOT folded (strict <)
+      const chunks = computeChunkWindows(210, 60, 10);
+      expect(chunks).toHaveLength(4);
+      expect(chunks[3].primaryStart).toBe(180);
+      expect(chunks[3].primaryEnd).toBe(210);
+      expect(chunks[3].clipStart).toBe(170); // 180 - 10 overlap
+      expect(chunks[3].clipEnd).toBe(210);   // capped at duration
+    });
+
+    it('should not fold when there is only one chunk', () => {
+      const chunks = computeChunkWindows(20, 60, 10);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].primaryEnd).toBe(20);
+    });
   });
 });

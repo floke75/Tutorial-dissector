@@ -1,7 +1,9 @@
 
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { v4 as uuidv4 } from 'uuid';
-import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT } from '../constants.ts';
+import * as fs from 'fs';
+import * as path from 'path';
+import { PHASE_A_SYSTEM_PROMPT, PHASE_B_SYSTEM_PROMPT, PASS_2_SYSTEM_PROMPT, GLOBAL_DEDUPLICATION_PROMPT, STANDARD_TOOLS_DICTIONARY } from '../constants.ts';
 import type { ActionItem, PhaseBResponse, NarrativeStep, LogLevel, VideoAnnotation } from '../types.ts';
 import { formatMMSS } from '../utils/timeUtils.ts';
 import { cleanForPrompt, stripEmptyAndDefaults, compactStringify } from '../utils/jsonOptimize.ts';
@@ -75,16 +77,26 @@ export function fixNullable(schema: any): any {
 
 // --- SCHEMA DEFINITIONS FOR STRUCTURED OUTPUT ---
 
+const elementTypes = [
+  'button', 'input', 'link', 'dropdown', 'checkbox', 'radio', 'icon', 'text', 
+  'menu_item', 'tab', 'toggle', 'slider', 'image', 'video', 'canvas', 'list_item', 
+  'modal', 'panel', 'picker', 'container', 'state', 'badge', 'role', 'shortcut', 
+  'layout', 'counter', 'timer', 'countdown', 'indicator', 'display', 'bar', 
+  'row', 'swatch', 'action', 'switch', 'view', 'folder', 'scope', 
+  'colour_status', 'reference', 'other'
+] as const;
+
 export const actionTargetSchema = z.object({
   element: z.string(),
-  location: z.string(),
-  panel: z.string(),
-  visual: z.string(),
-  spatial_bounding_box: z.array(z.number()).describe("Array of 4 numbers: [ymin, xmin, ymax, xmax] normalized to 1000").optional()
+  element_type: z.enum(elementTypes),
+  container: z.string().describe("The parent panel, modal, or section (e.g., 'Settings Modal', 'Main Nav')"),
+  nearest_landmark: z.string().describe("A clearly labeled, stable element nearby (e.g., 'Email Address label'). Use 'none' if not applicable."),
+  relation_to_landmark: z.enum(['above', 'below', 'left_of', 'right_of', 'inside', 'next_to', 'none']),
+  visual: z.string().describe("Visual description of the element (e.g., 'blue pill-shaped button', 'gear icon')")
 });
 
 export const uiComponentSchema = z.object({
-  type: z.enum(['button', 'menu_item', 'tab', 'dropdown', 'checkbox', 'radio', 'input_field', 'toggle', 'link', 'modal', 'panel', 'other']),
+  type: z.enum(elementTypes),
   label: z.string(),
   state_before: z.enum(['default', 'hover', 'active', 'disabled', 'checked', 'unchecked', 'hidden', 'visible', 'expanded', 'collapsed', 'selected', 'unselected', 'focused', 'unfocused', 'error', 'loading', 'open', 'closed', 'other']).describe("The state of the component BEFORE the action.").optional(),
   state_after: z.enum(['default', 'hover', 'active', 'disabled', 'checked', 'unchecked', 'hidden', 'visible', 'expanded', 'collapsed', 'selected', 'unselected', 'focused', 'unfocused', 'error', 'loading', 'open', 'closed', 'other']).describe("The state of the component AFTER the action.").optional(),
@@ -98,14 +110,14 @@ export const inputDataSchema = z.object({
 
 export const uiContextSnapshotSchema = z.object({
   active_panel: z.string(),
-  active_tool: z.string(),
+  active_tool: z.string().describe(`The currently active tool. Prefer using these standard names: ${STANDARD_TOOLS_DICTIONARY}. If none fit, invent a custom lowercase name using underscores (e.g., 'bone_rig_tool').`),
   open_dialogs: z.array(z.string())
 });
 
 export const actionItemSchema = z.object({
   id: z.string().optional(),
   timestamp: z.string(),
-  action_type: z.enum(['click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'keyboard_shortcut', 'hover', 'select', 'menu_navigate', 'system_event', 'ui_response', 'transition']),
+  action_type: z.enum(['click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'keyboard_shortcut', 'hover', 'select', 'menu_navigate', 'system_event', 'ui_response', 'transition', 'other']),
   actor: z.enum(['user', 'system']),
   target: actionTargetSchema.nullable().optional(),
   interacted_components: z.array(uiComponentSchema).nullable().optional(),
@@ -137,7 +149,7 @@ export const uiStateSchema = z.object({
   application: z.string(),
   active_file: z.string(),
   visible_panels: z.array(z.string()),
-  active_tool: z.string(),
+  active_tool: z.string().describe(`The currently active tool. Prefer using these standard names: ${STANDARD_TOOLS_DICTIONARY}. If none fit, invent a custom lowercase name using underscores (e.g., 'bone_rig_tool').`),
   open_dialogs: z.array(z.string()),
   other_state: z.string()
 });
@@ -203,16 +215,44 @@ export async function analyzeChunkPhaseA(
       let currentPrompt = `Analyze this video segment.`;
       currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
 
-      let systemInstruction = basePrompt;
+      let systemInstruction = '';
       if (customContext) {
-        systemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+        systemInstruction += `CUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.\n\n---\n\n`;
       }
+      systemInstruction += basePrompt;
 
       onLog?.('info', `Phase A (Attempt ${attempt}): Sending GenerateContent request to Gemini 3.1 Pro Preview`, { 
         videoUrl, 
         clip: `${startSec}s - ${endSec}s`,
         primary: `${primaryStartSec}s - ${primaryEndSec}s`
       });
+
+      const contentsToLog = [{
+        role: 'user',
+        parts: [
+          (videoUrl.startsWith('https://') || videoUrl.startsWith('gs://')) ? {
+            fileData: {
+              fileUri: videoUrl,
+              ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' })
+            },
+            videoMetadata: {
+              startOffset: `${startSec}s`,
+              endOffset: `${endSec}s`,
+            }
+          } : {
+            text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+          },
+          { text: currentPrompt }
+        ]
+      }];
+
+      try {
+        const outDir = path.resolve('test-output');
+        if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(path.join(outDir, `prompt_PhaseA_${startSec}_${endSec}_attempt${attempt}.json`), JSON.stringify({ systemInstruction, contents: contentsToLog }, null, 2));
+      } catch (e) {
+        console.error('Failed to log Phase A prompt', e);
+      }
 
       const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
@@ -335,10 +375,11 @@ export async function accumulateChunkPhaseB(
     .replace('{video_url}', videoUrl)
     .replace('{total_duration}', durationStr);
 
-  let finalSystemInstruction = systemInstruction;
+  let finalSystemInstruction = '';
   if (customContext) {
-    finalSystemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+    finalSystemInstruction += `CUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.\n\n---\n\n`;
   }
+  finalSystemInstruction += systemInstruction;
 
   // Strip ui_context to save tokens in Phase B (and in chat history)
   const simplifiedChunkActions = chunkActions.map(a => {
@@ -354,9 +395,11 @@ export async function accumulateChunkPhaseB(
     extracted_annotations: chunkAnnotations.map(a => cleanForPrompt(a))
   });
 
+  const userText = `The following actions and annotations were extracted from a new time chunk of the video. Please merge them into our running stateful execution graph, resolving duplicates and conflicts.\n\n${message}`;
+
   const contents = [
     ...chatHistory,
-    { role: 'user', parts: [{ text: message }] }
+    { role: 'user', parts: [{ text: userText }] }
   ];
 
   let lastError: any;
@@ -369,6 +412,22 @@ export async function accumulateChunkPhaseB(
         rawActionsCount: chunkActions.length,
         chatHistoryTurns: chatHistory.length
       });
+
+      try {
+        const outDir = path.resolve('test-output');
+        if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+        const historySnapshot = chatHistory.map(turn => ({
+          role: turn.role,
+          contentPreview: (turn.parts?.[0]?.text || '').substring(0, 500) + '...'
+        })); // Log a shallow history for sanity plus the new contents full
+        fs.writeFileSync(path.join(outDir, `prompt_PhaseB_chunk${chunkNumber}_attempt${attempt}.json`), JSON.stringify({ 
+          systemInstruction: finalSystemInstruction, 
+          historyTurns: historySnapshot,
+          newMessage: message
+        }, null, 2));
+      } catch (e) {
+        console.error('Failed to log Phase B prompt', e);
+      }
 
       const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
@@ -520,7 +579,7 @@ export async function analyzeNarrationSegment(
       timestamp: a.timestamp,
       action: a.action_type,
       element: a.target?.element,
-      panel: a.target?.panel,
+      container: a.target?.container,
       detail: a.detail,
       input_data: a.input_data,
       is_error_recovery: a.is_error_recovery,
@@ -549,10 +608,7 @@ export async function analyzeNarrationSegment(
 
   const prompt = PASS_2_SYSTEM_PROMPT
     .replace('{start_time}', formatMMSS(startSec))
-    .replace('{end_time}', formatMMSS(endSec))
-    .replace('{previous_steps_context}', previousStepsContext)
-    .replace('{visual_actions}', compactStringify(simplifiedActions))
-    .replace('{annotations}', compactStringify(relevantAnnotations.map(a => cleanForPrompt(a))));
+    .replace('{end_time}', formatMMSS(endSec));
 
   let lastError: any;
 
@@ -560,16 +616,51 @@ export async function analyzeNarrationSegment(
     try {
       let currentPrompt = `Analyze this video segment.`;
       currentPrompt += `\n\nTIMING CONTEXT: You are analyzing the video segment from ${formatMMSS(startSec)} to ${formatMMSS(endSec)}. Ensure timestamps are relative to the start of the full video (00:00).`;
+      
+      currentPrompt += `\n\nINPUT CONTEXT (Visual Actions and Annotations occurring nearby):\n`;
+      currentPrompt += `VISUAL ACTIONS:\n${compactStringify(simplifiedActions)}\n`;
+      currentPrompt += `ANNOTATIONS:\n${compactStringify(relevantAnnotations.map(a => cleanForPrompt(a)))}\n`;
+      
+      currentPrompt += `\n\nCONTINUITY (Narrative steps from the previous segment):\n`;
+      currentPrompt += `${previousStepsContext}`;
 
-      let systemInstruction = prompt;
+      let systemInstruction = '';
       if (customContext) {
-        systemInstruction += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.`;
+        systemInstruction += `CUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to better understand the application, standardize function names, and provide a more holistic analysis.\n\n---\n\n`;
       }
+      systemInstruction += prompt;
 
       onLog?.('info', `Narration Phase (Attempt ${attempt}): Analyzing audio segment`, {
          window: `${startSec}s - ${endSec}s`,
          visualContextCount: relevantVisualActions.length
       });
+
+      const contentsToLog = [{
+        role: 'user',
+        parts: [
+          (videoUrl.startsWith('https://') || videoUrl.startsWith('gs://')) ? {
+            fileData: {
+              fileUri: videoUrl,
+              ...(videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be') ? {} : { mimeType: 'video/mp4' })
+            },
+            videoMetadata: {
+              startOffset: `${startSec}s`,
+              endOffset: `${endSec}s`,
+            }
+          } : {
+            text: `Video URL: ${videoUrl}\nStart: ${startSec}s\nEnd: ${endSec}s\n\n`
+          },
+          { text: currentPrompt }
+        ]
+      }];
+
+      try {
+        const outDir = path.resolve('test-output');
+        if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(path.join(outDir, `prompt_PhaseC_${startSec}_${endSec}_attempt${attempt}.json`), JSON.stringify({ systemInstruction, contents: contentsToLog }, null, 2));
+      } catch (e) {
+        console.error('Failed to log Phase C prompt', e);
+      }
 
       const response = await withTimeout(ai.models.generateContent({
         // =========================================================================================
@@ -694,7 +785,6 @@ export async function analyzeGlobalDeduplication(
 
   const simplifiedActions = actions.map(a => {
     const target = a.target ? { ...a.target } : undefined;
-    if (target) delete target.spatial_bounding_box;  // not needed for dedup reasoning
 
     return stripEmptyAndDefaults({
       id: a.id,
@@ -708,34 +798,60 @@ export async function analyzeGlobalDeduplication(
       input_data: a.input_data,
       is_error_recovery: a.is_error_recovery,
       context_note: a.context_note
-      // confidence intentionally omitted — not referenced by dedup prompt, Zod forces it in output
+      // confidence intentionally omitted
     });
   });
 
-  let prompt = GLOBAL_DEDUPLICATION_PROMPT
-    .replace('{all_actions}', compactStringify(simplifiedActions))
-    .replace('{narrative_context}', compactStringify(minifiedNarrative))
-    .replace('{final_ui_state}', compactStringify(finalUiState));
+  let systemInstruction = GLOBAL_DEDUPLICATION_PROMPT;
 
   if (customContext) {
-    prompt += `\n\nCUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.`;
+    systemInstruction = `CUSTOM APP CONTEXT:\n${customContext}\n\nUse this context to ensure naming consistency matches the user's specific application terminology.\n\n---\n\n` + systemInstruction;
   }
 
+  const prompt = `NARRATIVE CONTEXT:\n${compactStringify(minifiedNarrative)}\n\nFINAL UI STATE:\n${compactStringify(finalUiState)}\n\nINPUT ACTIONS:\n${compactStringify(simplifiedActions)}`;
+
+  const dedupResponseSchema = z.object({
+    idsToDelete: z.array(z.string()).default([]),
+    updates: z.array(z.object({
+      id: z.string(),
+      target: z.object({
+        element: z.string(),
+        element_type: z.string(),
+        container: z.string(),
+        nearest_landmark: z.string(),
+        relation_to_landmark: z.string(),
+        visual: z.string()
+      }).optional(),
+      result: z.string().optional(),
+      context_note: z.string().optional()
+    })).default([])
+  });
+
   let lastError: any;
+  let finalActions = [...actions];
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      onLog?.('info', `Global Deduplication (Attempt ${attempt}): Sending ${actions.length} actions for final cleanup`);
+      onLog?.('info', `Global Deduplication (Attempt ${attempt}): Sending ${actions.length} actions for patch-based analysis...`);
       onProgress?.(93);
+
+      try {
+        const outDir = path.resolve('test-output');
+        if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(path.join(outDir, `prompt_PhaseD_attempt${attempt}.json`), JSON.stringify({ systemInstruction, prompt }, null, 2));
+      } catch (e) {
+        console.error('Failed to log Phase D prompt', e);
+      }
 
       const response = await withTimeout(ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          systemInstruction: systemInstruction,
           responseMimeType: 'application/json',
-          responseSchema: fixNullable(zodToJsonSchema(z.array(phaseBActionItemSchema), { target: "jsonSchema7", $refStrategy: "none" })) as any,
-          maxOutputTokens: 100000
+          responseSchema: fixNullable(zodToJsonSchema(dedupResponseSchema, { target: "jsonSchema7", $refStrategy: "none" })) as any,
+          maxOutputTokens: 65536 // Increased to maximum allowed output token limit for Gemini 3.1 Pro to accommodate high thinking tokens
         }
       }), 480000, 'Phase D GenerateContent');
 
@@ -757,44 +873,52 @@ export async function analyzeGlobalDeduplication(
 
       const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       
+      let result;
       try {
-        const result = JSON.parse(cleanText) as ActionItem[];
-        if (!Array.isArray(result)) throw new Error("Global Deduplication response must be a JSON array");
-        
-        onProgress?.(98);
-
-        // Re-attach stripped fields (ui_context, chunkIndex)
-        const originalActionMap = new Map(actions.map(a => [a.id, a]));
-        const enrichedResult = result.map(action => {
-          let original = action.id ? originalActionMap.get(action.id) : undefined;
-          
-          // Fallback: if ID drifted or was dropped, try to match by content similarity
-          if (!original) {
-            const strictMatch = actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type && a.detail === action.detail);
-            const moderateMatch = !strictMatch && actions.find(a => a.timestamp === action.timestamp && a.action_type === action.action_type);
-            
-            original = strictMatch || moderateMatch;
-          }
-
-          if (original) {
-            return {
-              ...action,
-              ui_context: original.ui_context,
-              chunkIndex: original.chunkIndex
-            };
-          }
-          onLog?.('warn', `Global Deduplication: action id "${action.id}" not found in original map even with fallback; ui_context/chunkIndex will be missing`);
-          return action;
-        });
-
-        const removedCount = actions.length - enrichedResult.length;
-        onLog?.('success', `Global Deduplication (Attempt ${attempt}): Removed ${removedCount} duplicates. Final count: ${enrichedResult.length}`);
-        
-        return enrichedResult;
+        result = JSON.parse(cleanText);
       } catch (parseError) {
         onLog?.('warn', `Global Deduplication JSON Parse error (Attempt ${attempt})`, { error: String(parseError), textPreview: cleanText.substring(0, 500) });
         throw new Error(`JSON_PARSE_ERROR: ${parseError}`); 
       }
+
+      const idsToDelete = new Set<string>(result.idsToDelete || []);
+      const updatesMap = new Map<string, any>();
+      if (Array.isArray(result.updates)) {
+        for (const u of result.updates) {
+          if (u && u.id) updatesMap.set(u.id, u);
+        }
+      }
+
+      let removedCount = 0;
+      let updateCount = 0;
+      const patchedActions: ActionItem[] = [];
+
+      for (const action of actions) {
+        if (idsToDelete.has(action.id)) {
+          removedCount++;
+          continue;
+        }
+
+        const update = updatesMap.get(action.id);
+        if (update) {
+          updateCount++;
+          const updatedAction = { ...action };
+          if (update.target) {
+             updatedAction.target = updatedAction.target ? { ...updatedAction.target, ...update.target } : { ...update.target } as any;
+          }
+          if (update.result !== undefined) updatedAction.result = update.result;
+          if (update.context_note !== undefined) updatedAction.context_note = update.context_note;
+          
+          patchedActions.push(updatedAction);
+        } else {
+          patchedActions.push(action);
+        }
+      }
+
+      onProgress?.(98);
+      onLog?.('success', `Global Deduplication applied. Removed ${removedCount} duplicates, updated ${updateCount} actions. Final count: ${patchedActions.length}`);
+      
+      return patchedActions;
 
     } catch (error: any) {
       onLog?.('error', `Global Deduplication Attempt ${attempt} failed`, { error: String(error) });
